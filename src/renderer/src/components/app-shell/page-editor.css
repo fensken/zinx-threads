@@ -1,0 +1,151 @@
+/* ===== Notion-style page editor (BlockNote), themed to the app's tokens =====
+   Imported AFTER `@blocknote/ariakit/style.css` in page-editor.tsx so these win. */
+
+/* 1) Theme variables. BlockNote sets its `--bn-*` on `.bn-root`, and its floating
+   menus / toolbars are PORTALED to <body> with their own `.bn-root` — so these
+   overrides are GLOBAL (not scoped to `.zinx-editor`) to reach them. The doubled
+   class lifts specificity above BlockNote's `.bn-root[data-color-scheme=dark]`;
+   our own `.dark` tokens handle the light/dark flip. */
+.bn-root.bn-root {
+  --bn-colors-editor-text: var(--foreground);
+  --bn-colors-editor-background: transparent;
+  --bn-colors-menu-text: var(--popover-foreground);
+  --bn-colors-menu-background: var(--popover);
+  --bn-colors-tooltip-text: var(--popover-foreground);
+  --bn-colors-tooltip-background: var(--popover);
+  --bn-colors-hovered-text: var(--accent-foreground);
+  --bn-colors-hovered-background: var(--accent);
+  --bn-colors-selected-text: var(--accent-foreground);
+  --bn-colors-selected-background: var(--accent);
+  --bn-colors-disabled-text: var(--muted-foreground);
+  --bn-colors-disabled-background: var(--muted);
+  --bn-colors-shadow: color-mix(in oklab, var(--foreground) 14%, transparent);
+  --bn-colors-border: var(--border);
+  --bn-colors-side-menu: var(--muted-foreground);
+  --bn-font-family: inherit;
+  --zinx-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  --bn-border-radius-small: calc(var(--radius) - 2px);
+  --bn-border-radius-medium: var(--radius);
+  --bn-border-radius-large: calc(var(--radius) + 2px);
+}
+
+/* 2) The ariakit variant hardcodes #007acc as its accent (slash-menu selection,
+   tabs, primary buttons, focus rings), bypassing the vars above — re-map to our
+   tokens. Global, for the same portal reason. */
+.bn-ak-menu-item[data-active-item],
+.bn-ak-menu-item[aria-selected='true'],
+.bn-ak-menu-item:hover,
+.bn-ak-select-item[data-active-item],
+.bn-ak-tab[aria-selected='true'] {
+  color: var(--accent-foreground);
+  background-color: var(--accent);
+}
+
+.bn-ak-primary,
+.bn-ak-primary:hover {
+  color: var(--primary-foreground);
+  background-color: var(--primary);
+}
+
+.bn-ak-button:focus-visible,
+.bn-ak-button[data-focus-visible],
+.bn-ak-tab:focus-visible,
+.bn-ak-tab[data-focus-visible],
+.bn-ak-input:focus-visible,
+.bn-ak-input[data-focus-visible],
+.bn-ak-popover:focus-visible,
+.bn-ak-popover[data-focus-visible],
+.bn-ak-hovercard:focus-visible,
+.bn-ak-hovercard[data-focus-visible] {
+  outline-color: var(--ring);
+}
+
+/* Slash menu: we swap out BlockNote's `size` middleware (see page-editor.tsx), so
+   give the menu a fixed, scrollable height here — otherwise its `max-height:inherit`
+   resolves to none and it grows unbounded. `flip` then opens it up near the bottom. */
+.bn-root .bn-suggestion-menu {
+  max-height: min(22rem, 60dvh);
+}
+
+/* 3) Floating formatting toolbar. Match our popover surface, and — since Electron
+   apps are commonly used in a narrow window — let it WRAP onto multiple rows when
+   the viewport is too narrow for one row, instead of overflowing into a scroll
+   strip (BlockNote defaults to `overflow: scroll`, a single non-wrapping row).
+   `overflow: visible` + wrap keeps every button reachable at any width with no
+   scrollbar. `max-width` is viewport-relative so it only wraps when actually needed. */
+.bn-ak-toolbar {
+  background-color: var(--popover);
+  border: 1px solid var(--border);
+  flex-wrap: wrap;
+  justify-content: center;
+  overflow: visible;
+  max-width: calc(100vw - 1rem);
+}
+
+/* 4) Editor surface + app-scale. `.bn-default-styles` anchors the base font at a
+   fixed 16px; switch it to 1rem so the page zooms with our UI-scale (the root
+   <html> font-size). Headings are em-relative to the base, so they scale too. */
+.zinx-editor .bn-editor {
+  background: transparent;
+  padding-inline: 54px;
+}
+.zinx-editor .bn-default-styles {
+  font-size: 1rem;
+}
+
+/* Side-menu handles (the ＋ add-block and ⠿ drag icons) are fixed-px by default,
+   so they look oversized and ignore the UI-scale. Size them in `em` (relative to
+   the editor font = 1rem = scaled) so they stay proportional. */
+.zinx-editor .bn-side-menu svg,
+.bn-side-menu svg {
+  width: 1.15em;
+  height: 1.15em;
+}
+
+/* Page title area aligns with the editor's block text (same inline padding). */
+.zinx-page-head {
+  padding-inline: 54px;
+}
+
+/* 5) Block content BlockNote hardcodes (near-black code block, gray quote, inline
+   code) → tokens, so they match the app in both light and dark. */
+.zinx-editor .bn-block-content[data-content-type='codeBlock'] {
+  color: var(--foreground);
+  background-color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--zinx-mono);
+}
+.zinx-editor [data-content-type='quote'] blockquote {
+  color: var(--muted-foreground);
+  border-left: 3px solid var(--muted-foreground);
+}
+.zinx-editor .bn-inline-content code {
+  font-family: var(--zinx-mono);
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  padding: 0.1em 0.35em;
+  font-size: 0.9em;
+}
+
+/* 6) Custom callout block */
+.zinx-callout {
+  display: flex;
+  gap: 0.75rem;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+  padding: 0.75rem 1rem;
+}
+.zinx-callout-emoji {
+  flex-shrink: 0;
+  font-size: 1.125rem;
+  line-height: 1.6;
+  user-select: none;
+}
+.zinx-callout-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}

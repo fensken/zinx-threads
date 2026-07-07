@@ -1,0 +1,19 @@
+{
+  /* Convex functions are typechecked by `npx convex dev` against the generated
+     types in `convex/_generated`, separate from the app's tsconfigs. */
+  "compilerOptions": {
+    "allowJs": true,
+    "strict": true,
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "target": "ESNext",
+    "lib": ["ES2021", "dom"],
+    "forceConsistentCasingInFileNames": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "isolatedModules": true
+  },
+  "include": ["./**/*"],
+  "exclude": ["./_generated"]
+}

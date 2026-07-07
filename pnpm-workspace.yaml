@@ -1,0 +1,7 @@
+# pnpm 11 build-script approvals. The "pnpm" field in package.json is no longer
+# read; pnpm auto-generated this allow-list. Native/binary deps must be allowed
+# to run their install scripts (esbuild binary, electron binary, winstaller).
+allowBuilds:
+  electron: true
+  electron-winstaller: true
+  esbuild: true

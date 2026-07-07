@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- Theme (light/dark/system; default system) is resolved by the theme store before render. -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Electron</title>
+    <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
+         connect-src is widened for Convex (realtime over wss + https) and WorkOS
+         AuthKit (token exchange); applies to both the desktop and web builds.
+         Narrow the wildcards to your exact deployment / AuthKit domain in prod. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.convex.site https://api.workos.com https://*.workos.com https://*.authkit.app; form-action 'self' https://*.workos.com https://*.authkit.app"
+    />
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

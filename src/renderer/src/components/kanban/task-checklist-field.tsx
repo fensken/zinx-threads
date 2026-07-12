@@ -4,7 +4,7 @@ import { ListChecks, PencilSimple, Plus, Trash } from '@phosphor-icons/react'
 import { Button } from '@renderer/components/ui/button'
 import { Checkbox } from '@renderer/components/ui/checkbox'
 import { Label } from '@renderer/components/ui/label'
-import type { ChecklistItem } from '@renderer/data/workspaces'
+import type { ChecklistItem } from '@renderer/components/kanban/board-types'
 import { cn } from '@renderer/lib/utils'
 
 const MAX_CHECKLIST_ITEMS = 50

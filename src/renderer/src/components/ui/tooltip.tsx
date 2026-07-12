@@ -49,4 +49,24 @@ function TooltipContent({
   )
 }
 
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider }
+/** A thin wrapper for the common case: wrap ANY single element (usually a `<button>`)
+ *  in a shadcn tooltip. `<Tip label="Mute"><button …/></Tip>` — replaces bare
+ *  `title=` attributes with the styled tooltip. Keep an `aria-label` on the child. */
+function Tip({
+  label,
+  side = 'top',
+  children
+}: {
+  label: string
+  side?: 'top' | 'bottom' | 'left' | 'right'
+  children: React.ReactElement
+}): React.JSX.Element {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={children} />
+      <TooltipContent side={side}>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider, Tip }

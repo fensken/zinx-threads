@@ -1,10 +1,17 @@
-import { useMemo, useState } from 'react'
-import { Plus } from '@phosphor-icons/react'
+import { useEffect, useMemo, useState } from 'react'
+import { Kanban as Kanban2, Plus } from '@phosphor-icons/react'
 
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Kanban, KanbanBoard, KanbanOverlay } from '@renderer/components/ui/kanban'
-import type { Board, KanbanTask } from '@renderer/data/workspaces'
+import type { KanbanTask } from '@renderer/components/kanban/board-types'
+import {
+  DEFAULT_BOARD_COLUMNS,
+  type BoardColumn,
+  type BoardMember,
+  type BoardOrder,
+  type TaskFields
+} from './board-types'
 import { TaskDialog } from './task-dialog'
 import { TaskBoard } from './task-board'
 import { TaskCard } from './task-card'
@@ -17,80 +24,101 @@ function blankTask(): KanbanTask {
   return { id: '', title: '', priority: 'medium' }
 }
 
+/** Column order + each column's task order, as one comparable string. */
+function layoutSignature(value: Record<string, KanbanTask[]>): string {
+  return Object.entries(value)
+    .map(([columnId, tasks]) => `${columnId}:${tasks.map((task) => task.id).join(',')}`)
+    .join('|')
+}
+
 /** Kanban board channel — ported 1:1 from `zinx-os` (dnd-kit `Kanban` primitive +
- *  shadcn cards), adapted to mock data + local `useState`. */
+ *  shadcn cards).
+ *
+ *  **Presentational.** `columns` is the source of truth and every mutation goes
+ *  out through a handler, so the same component renders the in-session demo board
+ *  (`mock-board-view`) and the Convex one (`real-board-view`). It knows nothing
+ *  about the mock getters or about Convex ids.
+ *
+ *  Drag state is local while a drag is in flight — the `Kanban` primitive fires
+ *  `onValueChange` on every pointer move — and `onReorder` is called once, on
+ *  drop. Between drags, `columns` from the parent wins. */
 export function BoardView({
-  board,
-  serverId
+  columns,
+  members,
+  currentUserId,
+  onCreateTask,
+  onUpdateTask,
+  onDeleteTask,
+  onCreateColumn,
+  onRenameColumn,
+  onDeleteColumn,
+  onReorder,
+  onUseDefaultColumns
 }: {
-  board: Board
-  serverId: string
+  columns: BoardColumn[]
+  members: BoardMember[]
+  currentUserId: string
+  onCreateTask: (columnId: string, fields: TaskFields) => void
+  onUpdateTask: (taskId: string, fields: TaskFields) => void
+  onDeleteTask: (taskId: string) => void
+  onCreateColumn: (title: string) => void
+  onRenameColumn: (columnId: string, title: string) => void
+  onDeleteColumn: (columnId: string) => void
+  onReorder: (order: BoardOrder) => void
+  /** Offered only on an empty board — see `EmptyBoard`. */
+  onUseDefaultColumns: () => void
 }): React.JSX.Element {
-  const [tasksByColumn, setTasksByColumn] = useState<Record<string, KanbanTask[]>>(() =>
-    Object.fromEntries(board.columns.map((column) => [column.id, column.tasks]))
-  )
-  const [names, setNames] = useState<Record<string, string>>(() =>
-    Object.fromEntries(board.columns.map((column) => [column.id, column.title]))
-  )
   const [dialog, setDialog] = useState<DialogState | null>(null)
+  /** The optimistic layout, kept from the first drag move until the server echoes
+   *  it back. Dropping it on `onDragEnd` would snap the board to stale data for
+   *  the length of the round-trip. */
+  const [local, setLocal] = useState<Record<string, KanbanTask[]> | null>(null)
 
-  // Column order is the value's key order (the primitive rebuilds it on reorder).
-  const columnIds = Object.keys(tasksByColumn)
-  const allTasks = useMemo(() => Object.values(tasksByColumn).flat(), [tasksByColumn])
+  const names = useMemo(
+    () => Object.fromEntries(columns.map((column) => [column.id, column.title])),
+    [columns]
+  )
+  const serverValue = useMemo(
+    () => Object.fromEntries(columns.map((column) => [column.id, column.tasks])),
+    [columns]
+  )
+  const serverSignature = useMemo(() => layoutSignature(serverValue), [serverValue])
 
-  const mapTasks = (fn: (task: KanbanTask) => KanbanTask | null): void => {
-    setTasksByColumn((prev) =>
-      Object.fromEntries(
-        Object.entries(prev).map(([column, tasks]) => [
-          column,
-          tasks.map(fn).filter((task): task is KanbanTask => task !== null)
-        ])
-      )
-    )
-  }
+  // Release the optimistic layout once the server's own layout changes — the same
+  // `[signature]`-guarded mirror the channel sidebar uses for its DnD state. A
+  // single set, so it can't cascade.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLocal(null)
+  }, [serverSignature])
 
-  const updateTask = (id: string, patch: Partial<KanbanTask>): void =>
-    mapTasks((task) => (task.id === id ? { ...task, ...patch } : task))
+  // The primitive's `value` key order *is* the column order.
+  const value = local ?? serverValue
+  const columnIds = Object.keys(value)
+  const allTasks = useMemo(() => Object.values(value).flat(), [value])
 
-  const deleteTask = (id: string): void => mapTasks((task) => (task.id === id ? null : task))
-
-  const addTask = (columnId: string, fields: Partial<KanbanTask>): void => {
-    setTasksByColumn((prev) => ({
-      ...prev,
-      [columnId]: [
-        ...(prev[columnId] ?? []),
-        { id: crypto.randomUUID(), title: 'Untitled', priority: 'medium', ...fields }
-      ]
-    }))
-  }
-
-  const addColumn = (title: string): void => {
-    const id = crypto.randomUUID()
-    setTasksByColumn((prev) => ({ ...prev, [id]: [] }))
-    setNames((prev) => ({ ...prev, [id]: title }))
-  }
-
-  const renameColumn = (columnId: string, title: string): void =>
-    setNames((prev) => ({ ...prev, [columnId]: title }))
-
-  const deleteColumn = (columnId: string): void => {
-    setTasksByColumn((prev) => {
-      const next = { ...prev }
-      delete next[columnId]
-      return next
-    })
-    setNames((prev) => {
-      const next = { ...prev }
-      delete next[columnId]
-      return next
-    })
+  if (columnIds.length === 0) {
+    return <EmptyBoard onUseDefaults={onUseDefaultColumns} onAdd={onCreateColumn} />
   }
 
   return (
     <div className="min-h-0 flex-1 overflow-hidden bg-muted/20 p-4">
       <Kanban
-        value={tasksByColumn}
-        onValueChange={setTasksByColumn}
+        value={value}
+        // Fires on every pointer move during a drag, so it only touches local state.
+        onValueChange={setLocal}
+        onDragEnd={() => {
+          if (!local || layoutSignature(local) === serverSignature) return
+          onReorder({
+            columnIds: Object.keys(local),
+            taskIdsByColumn: Object.fromEntries(
+              Object.entries(local).map(([columnId, tasks]) => [
+                columnId,
+                tasks.map((task) => task.id)
+              ])
+            )
+          })
+        }}
         getItemValue={(task: KanbanTask) => task.id}
         className="h-full"
       >
@@ -100,34 +128,38 @@ export function BoardView({
               key={columnId}
               columnId={columnId}
               name={names[columnId] ?? 'Untitled'}
-              tasks={tasksByColumn[columnId] ?? []}
-              serverId={serverId}
+              tasks={value[columnId] ?? []}
+              members={members}
+              currentUserId={currentUserId}
               onAddTask={(id) => setDialog({ mode: 'create', columnId: id })}
               onOpenTask={(task) => setDialog({ mode: 'edit', task })}
-              onDeleteTask={deleteTask}
-              onRename={renameColumn}
-              onDeleteColumn={deleteColumn}
+              onDeleteTask={onDeleteTask}
+              onRename={onRenameColumn}
+              onDeleteColumn={onDeleteColumn}
             />
           ))}
-          <AddColumn onAdd={addColumn} />
+          <AddColumn onAdd={onCreateColumn} />
         </KanbanBoard>
 
         <KanbanOverlay>
-          {({ value, variant }) => {
+          {({ value: dragged, variant }) => {
             if (variant === 'column') {
-              const columnId = String(value)
+              const columnId = String(dragged)
               return (
                 <TaskBoard
                   columnId={columnId}
                   name={names[columnId] ?? ''}
-                  tasks={tasksByColumn[columnId] ?? []}
-                  serverId={serverId}
+                  tasks={value[columnId] ?? []}
+                  members={members}
+                  currentUserId={currentUserId}
                   overlay
                 />
               )
             }
-            const task = allTasks.find((item) => item.id === value)
-            return task ? <TaskCard task={task} serverId={serverId} overlay /> : null
+            const task = allTasks.find((item) => item.id === dragged)
+            return task ? (
+              <TaskCard task={task} members={members} currentUserId={currentUserId} overlay />
+            ) : null
           }}
         </KanbanOverlay>
       </Kanban>
@@ -137,24 +169,70 @@ export function BoardView({
           mode="create"
           columnName={names[dialog.columnId]}
           initial={blankTask()}
-          serverId={serverId}
-          onSubmit={(fields) => addTask(dialog.columnId, fields)}
+          members={members}
+          onSubmit={(fields) => onCreateTask(dialog.columnId, toFields(fields))}
           onClose={() => setDialog(null)}
         />
       ) : null}
 
       {dialog?.mode === 'edit' ? (
         <TaskDialog
+          // Keyed: the description editor reads `initialMarkdown` once, at mount.
+          key={dialog.task.id}
           mode="edit"
           initial={dialog.task}
-          serverId={serverId}
-          onSubmit={(patch) => updateTask(dialog.task.id, patch)}
-          onDelete={() => deleteTask(dialog.task.id)}
+          members={members}
+          onSubmit={(fields) =>
+            onUpdateTask(dialog.task.id, toFields({ ...dialog.task, ...fields }))
+          }
+          onDelete={() => onDeleteTask(dialog.task.id)}
           onClose={() => setDialog(null)}
         />
       ) : null}
     </div>
   )
+}
+
+/** A board with no columns. New kanban channels are seeded with the defaults at
+ *  creation, so this is reached by boards that predate the seeding, or by someone
+ *  who deleted every column. Offering the defaults as a *button* rather than
+ *  re-seeding on read means the second case stays deleted. */
+function EmptyBoard({
+  onUseDefaults,
+  onAdd
+}: {
+  onUseDefaults: () => void
+  onAdd: (title: string) => void
+}): React.JSX.Element {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-muted/20 p-8 text-center">
+      <Kanban2 className="size-9 text-muted-foreground opacity-40" weight="duotone" />
+      <div>
+        <p className="text-lg font-semibold">This board is empty</p>
+        <p className="max-w-sm text-sm text-muted-foreground">
+          Start with {DEFAULT_BOARD_COLUMNS.join(' · ')}, or make your own.
+        </p>
+      </div>
+      <div className="mt-1 flex items-center gap-2">
+        <Button onClick={onUseDefaults}>Use the default columns</Button>
+        <AddColumn onAdd={onAdd} />
+      </div>
+    </div>
+  )
+}
+
+/** The dialog reports a `Partial<KanbanTask>`; the handlers want a whole task. */
+function toFields(task: Partial<KanbanTask>): TaskFields {
+  return {
+    title: task.title ?? 'Untitled',
+    description: task.description,
+    priority: task.priority ?? 'medium',
+    assigneeIds: task.assigneeIds,
+    labels: task.labels,
+    checklist: task.checklist,
+    dueDate: task.dueDate,
+    storyPoints: task.storyPoints
+  }
 }
 
 function AddColumn({ onAdd }: { onAdd: (title: string) => void }): React.JSX.Element {

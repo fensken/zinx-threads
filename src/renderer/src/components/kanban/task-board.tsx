@@ -10,15 +10,17 @@ import {
   KanbanColumnContent,
   KanbanColumnHandle
 } from '@renderer/components/ui/kanban'
-import type { KanbanTask } from '@renderer/data/workspaces'
+import type { KanbanTask } from '@renderer/components/kanban/board-types'
 import { cn } from '@renderer/lib/utils'
+import type { BoardMember } from './board-types'
 import { TaskCard } from './task-card'
 
 export function TaskBoard({
   columnId,
   name,
   tasks,
-  serverId,
+  members,
+  currentUserId,
   overlay,
   onAddTask,
   onOpenTask,
@@ -29,7 +31,8 @@ export function TaskBoard({
   columnId: string
   name: string
   tasks: KanbanTask[]
-  serverId: string
+  members: BoardMember[]
+  currentUserId: string
   overlay?: boolean
   onAddTask?: (columnId: string) => void
   onOpenTask?: (task: KanbanTask) => void
@@ -123,7 +126,8 @@ export function TaskBoard({
                 <TaskCard
                   key={task.id}
                   task={task}
-                  serverId={serverId}
+                  members={members}
+                  currentUserId={currentUserId}
                   asHandle={!overlay}
                   onOpen={onOpenTask ? () => onOpenTask(task) : undefined}
                   onDelete={onDeleteTask ? () => onDeleteTask(task.id) : undefined}

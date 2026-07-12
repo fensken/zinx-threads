@@ -25,14 +25,14 @@ import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@renderer/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@renderer/components/ui/select'
-import {
-  getMembers,
-  type ChecklistItem,
-  type KanbanTask,
-  type TaskPriority
-} from '@renderer/data/workspaces'
+import type {
+  ChecklistItem,
+  KanbanTask,
+  TaskPriority
+} from '@renderer/components/kanban/board-types'
 import { cn } from '@renderer/lib/utils'
-import { MarkdownTextarea } from './markdown-textarea'
+import { ChatComposer } from '@renderer/components/chat/chat-composer'
+import type { BoardMember } from './board-types'
 import { TaskChecklistField } from './task-checklist-field'
 
 const PRIORITY_ORDER: TaskPriority[] = ['lowest', 'low', 'medium', 'high', 'highest']
@@ -62,7 +62,7 @@ export function TaskDialog({
   mode,
   columnName,
   initial,
-  serverId,
+  members,
   onSubmit,
   onDelete,
   onClose
@@ -70,12 +70,12 @@ export function TaskDialog({
   mode: 'create' | 'edit'
   columnName?: string
   initial: KanbanTask
-  serverId: string
+  /** Assignable people on this board — the picker and the chips read this. */
+  members: BoardMember[]
   onSubmit: (fields: Partial<KanbanTask>) => void
   onDelete?: () => void
   onClose: () => void
 }): React.JSX.Element {
-  const members = getMembers(serverId)
   const memberById = new Map(members.map((member) => [member.id, member]))
 
   const [title, setTitle] = useState(initial.title)
@@ -145,15 +145,28 @@ export function TaskDialog({
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="task-description" className="text-sm font-medium">
-                Description
-              </Label>
-              <MarkdownTextarea
-                id="task-description"
-                value={description}
+              <Label className="text-sm font-medium">Description</Label>
+              {/* The same WYSIWYG editor the chat composer uses, in `field` mode:
+                  Enter makes a paragraph instead of submitting, and the Markdown
+                  streams out on every keystroke. `initialMarkdown` is read once at
+                  mount, which is why the dialog is keyed per task. */}
+              <ChatComposer
+                mode="field"
+                placeholder="Add a description… (Markdown, or type '/' for commands)"
+                initialMarkdown={initial.description}
                 onChange={setDescription}
-                placeholder="Add a description…"
-              />
+                defaultExpanded
+              >
+                <ChatComposer.Box variant="field">
+                  <ChatComposer.Toolbar />
+                  <ChatComposer.Row>
+                    <ChatComposer.Editor className="max-h-64 min-h-24" />
+                    <ChatComposer.Actions>
+                      <ChatComposer.Emoji />
+                    </ChatComposer.Actions>
+                  </ChatComposer.Row>
+                </ChatComposer.Box>
+              </ChatComposer>
             </div>
 
             <TaskChecklistField items={checklist} onChange={setChecklist} />

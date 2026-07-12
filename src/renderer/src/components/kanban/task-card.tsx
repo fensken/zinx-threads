@@ -5,8 +5,10 @@ import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { KanbanItem, KanbanItemHandle } from '@renderer/components/ui/kanban'
-import { currentUser, getMember, type KanbanTask, type Member } from '@renderer/data/workspaces'
+import type { KanbanTask } from '@renderer/components/kanban/board-types'
+import { messagePreview } from '@renderer/lib/message-preview'
 import { cn } from '@renderer/lib/utils'
+import type { BoardMember } from './board-types'
 import { PriorityBadge } from './priority-badge'
 
 /** Due-date label + urgency color (overdue = red, due today/tomorrow = amber). */
@@ -27,25 +29,29 @@ function dueInfo(dueDate: string): { label: string; cls: string } {
 
 export function TaskCard({
   task,
-  serverId,
+  members,
+  currentUserId,
   onOpen,
   onDelete,
   asHandle,
   overlay
 }: {
   task: KanbanTask
-  serverId: string
+  /** Everyone assignable on this board — the card resolves `assigneeIds` here. */
+  members: BoardMember[]
+  currentUserId: string
   onOpen?: () => void
   onDelete?: () => void
   asHandle?: boolean
   overlay?: boolean
 }): React.JSX.Element {
   const assignees = (task.assigneeIds ?? [])
-    .map((id) => getMember(serverId, id))
-    .filter((member): member is Member => member !== undefined)
-  const isMine = task.assigneeIds?.includes(currentUser.id) ?? false
+    .map((id) => members.find((member) => member.id === id))
+    .filter((member): member is BoardMember => member !== undefined)
+  const isMine = task.assigneeIds?.includes(currentUserId) ?? false
   const due = task.dueDate ? dueInfo(task.dueDate) : null
-  const hasBody = !!task.description
+  const preview = task.description ? messagePreview(task.description).text : ''
+  const hasBody = Boolean(preview)
   const checklistTotal = task.checklist?.length ?? 0
   const checklistDone = task.checklist?.filter((item) => item.completed).length ?? 0
 
@@ -90,9 +96,10 @@ export function TaskCard({
           ) : null}
         </div>
 
-        {task.description ? (
-          <p className="line-clamp-3 text-xs text-muted-foreground">{task.description}</p>
-        ) : null}
+        {/* The description is Markdown. A three-line clamp is no place to render
+            it, so show the same flattened preview the reply chips use — otherwise
+            `**bold**` and `[@Alice](zinx://user/…)` leak onto the card. */}
+        {preview ? <p className="line-clamp-3 text-xs text-muted-foreground">{preview}</p> : null}
 
         <div className={cn('flex flex-col gap-2', hasBody && 'border-t pt-2.5')}>
           <div className="flex flex-wrap items-center gap-1.5">

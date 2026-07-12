@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { ThreadView } from '@renderer/components/app-shell/thread-view'
+import type { Id } from '@convex/_generated/dataModel'
+import { RealThreadPage } from '@renderer/components/chat/real-thread-page'
 
 export const Route = createFileRoute('/w/$workspaceId/t/$threadId')({
   component: ThreadPage
@@ -7,5 +8,11 @@ export const Route = createFileRoute('/w/$workspaceId/t/$threadId')({
 
 function ThreadPage(): React.JSX.Element {
   const { workspaceId, threadId } = Route.useParams()
-  return <ThreadView key={threadId} serverId={workspaceId} threadId={threadId} />
+  return (
+    <RealThreadPage
+      key={threadId}
+      workspaceSlug={workspaceId}
+      threadId={threadId as Id<'threads'>}
+    />
+  )
 }

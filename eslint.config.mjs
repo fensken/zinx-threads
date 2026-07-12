@@ -10,7 +10,14 @@ export default defineConfig(
     // `convex/` has its own toolchain (`npx convex dev` typechecks it against
     // generated types + the not-yet-installed component packages) — keep it out
     // of the app's lint pass.
-    ignores: ['**/node_modules', '**/dist', '**/out', '**/routeTree.gen.ts', 'convex/**']
+    ignores: [
+      '**/node_modules',
+      '**/dist',
+      '**/out',
+      '**/routeTree.gen.ts',
+      'convex/**',
+      'scripts/**'
+    ]
   },
   tseslint.configs.recommended,
   eslintPluginReact.configs.flat.recommended,
@@ -45,6 +52,14 @@ export default defineConfig(
       'react-hooks/refs': 'off',
       'react/prop-types': 'off',
       '@typescript-eslint/no-explicit-any': 'off'
+    }
+  },
+  {
+    // Vitest test files — relax the return-type strictness on test/`describe`
+    // callbacks (they're always void) so specs read like specs.
+    files: ['**/*.test.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off'
     }
   },
   eslintConfigPrettier

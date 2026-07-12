@@ -1,0 +1,104 @@
+/* TipTap chat composer — the contenteditable surface. Kept minimal + token-based
+   so it inherits the active theme. */
+.chat-prose {
+  outline: none;
+  /* Anchors the absolutely-positioned placeholder (below). */
+  position: relative;
+}
+.chat-prose p {
+  margin: 0;
+}
+.chat-prose p + p {
+  margin-top: 0.4rem;
+}
+.chat-prose ul,
+.chat-prose ol {
+  margin: 0.25rem 0;
+  padding-left: 1.35rem;
+}
+.chat-prose ul {
+  list-style: disc;
+}
+.chat-prose ol {
+  list-style: decimal;
+}
+.chat-prose li > p {
+  margin: 0;
+}
+.chat-prose blockquote {
+  margin: 0.25rem 0;
+  border-left: 3px solid var(--border);
+  padding-left: 0.6rem;
+  color: var(--muted-foreground);
+}
+.chat-prose code {
+  background: var(--muted);
+  border-radius: 4px;
+  padding: 0.05em 0.3em;
+  font-size: 0.88em;
+}
+.chat-prose pre {
+  margin: 0.35rem 0;
+  background: var(--muted);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  overflow-x: auto;
+}
+.chat-prose pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.88em;
+}
+.chat-prose a {
+  color: var(--primary);
+  text-decoration: underline;
+}
+/* Inline images (GIFs) while editing a message. */
+.chat-prose img {
+  max-height: 10rem;
+  border-radius: 8px;
+}
+.chat-prose img.ProseMirror-selectednode {
+  outline: 2px solid var(--ring);
+}
+
+/* Mention pills (atomic inline nodes) — mirrors `MentionPill`'s rendered look so
+   what you type matches what you send. Group pings borrow the amber that the
+   message list already uses for "mentioned you". */
+.chat-prose .mention-pill {
+  display: inline-block;
+  border-radius: 4px;
+  padding: 0 0.2em;
+  font-weight: 500;
+  background: color-mix(in oklch, var(--primary) 12%, transparent);
+  color: var(--primary);
+  cursor: default;
+}
+.chat-prose .mention-pill[data-mention-kind='channel'] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.chat-prose .mention-pill[data-mention-kind='group'] {
+  background: color-mix(in oklch, var(--primary) 8%, transparent);
+  color: var(--primary);
+}
+.chat-prose .mention-pill.ProseMirror-selectednode {
+  outline: 2px solid var(--ring);
+}
+
+/* Placeholder (TipTap `Placeholder` sets `is-editor-empty` + data-placeholder).
+   Absolutely positioned + single-line with an ellipsis so a long channel name
+   (or a narrow thread composer) truncates cleanly instead of wrapping — the old
+   `float: left` let it wrap into the actions. Out of flow, so it adds no height:
+   the empty paragraph keeps the row one line tall on its own. */
+.chat-prose p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  color: var(--muted-foreground);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

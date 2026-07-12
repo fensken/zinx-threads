@@ -9,25 +9,74 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WorkspacesRouteImport } from './routes/workspaces'
+import { Route as LocalRouteImport } from './routes/local'
+import { Route as CallbackRouteImport } from './routes/callback'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as LocalIndexRouteImport } from './routes/local.index'
 import { Route as WWorkspaceIdRouteImport } from './routes/w.$workspaceId'
+import { Route as LocalChannelIdRouteImport } from './routes/local.$channelId'
+import { Route as InviteCodeRouteImport } from './routes/invite.$code'
+import { Route as ConnectTokenRouteImport } from './routes/connect.$token'
 import { Route as WWorkspaceIdIndexRouteImport } from './routes/w.$workspaceId.index'
+import { Route as WWorkspaceIdChannelSlugRouteImport } from './routes/w.$workspaceId.$channelSlug'
 import { Route as WWorkspaceIdTThreadIdRouteImport } from './routes/w.$workspaceId.t.$threadId'
 import { Route as WWorkspaceIdCChannelIdRouteImport } from './routes/w.$workspaceId.c.$channelId'
+import { Route as WWorkspaceIdGGroupSlugChannelSlugRouteImport } from './routes/w.$workspaceId.g.$groupSlug.$channelSlug'
 
+const WorkspacesRoute = WorkspacesRouteImport.update({
+  id: '/workspaces',
+  path: '/workspaces',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LocalRoute = LocalRouteImport.update({
+  id: '/local',
+  path: '/local',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CallbackRoute = CallbackRouteImport.update({
+  id: '/callback',
+  path: '/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const LocalIndexRoute = LocalIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => LocalRoute,
 } as any)
 const WWorkspaceIdRoute = WWorkspaceIdRouteImport.update({
   id: '/w/$workspaceId',
   path: '/w/$workspaceId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LocalChannelIdRoute = LocalChannelIdRouteImport.update({
+  id: '/$channelId',
+  path: '/$channelId',
+  getParentRoute: () => LocalRoute,
+} as any)
+const InviteCodeRoute = InviteCodeRouteImport.update({
+  id: '/invite/$code',
+  path: '/invite/$code',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConnectTokenRoute = ConnectTokenRouteImport.update({
+  id: '/connect/$token',
+  path: '/connect/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WWorkspaceIdIndexRoute = WWorkspaceIdIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => WWorkspaceIdRoute,
+} as any)
+const WWorkspaceIdChannelSlugRoute = WWorkspaceIdChannelSlugRouteImport.update({
+  id: '/$channelSlug',
+  path: '/$channelSlug',
   getParentRoute: () => WWorkspaceIdRoute,
 } as any)
 const WWorkspaceIdTThreadIdRoute = WWorkspaceIdTThreadIdRouteImport.update({
@@ -40,64 +89,155 @@ const WWorkspaceIdCChannelIdRoute = WWorkspaceIdCChannelIdRouteImport.update({
   path: '/c/$channelId',
   getParentRoute: () => WWorkspaceIdRoute,
 } as any)
+const WWorkspaceIdGGroupSlugChannelSlugRoute =
+  WWorkspaceIdGGroupSlugChannelSlugRouteImport.update({
+    id: '/g/$groupSlug/$channelSlug',
+    path: '/g/$groupSlug/$channelSlug',
+    getParentRoute: () => WWorkspaceIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/callback': typeof CallbackRoute
+  '/local': typeof LocalRouteWithChildren
+  '/workspaces': typeof WorkspacesRoute
+  '/connect/$token': typeof ConnectTokenRoute
+  '/invite/$code': typeof InviteCodeRoute
+  '/local/$channelId': typeof LocalChannelIdRoute
   '/w/$workspaceId': typeof WWorkspaceIdRouteWithChildren
+  '/local/': typeof LocalIndexRoute
+  '/w/$workspaceId/$channelSlug': typeof WWorkspaceIdChannelSlugRoute
   '/w/$workspaceId/': typeof WWorkspaceIdIndexRoute
   '/w/$workspaceId/c/$channelId': typeof WWorkspaceIdCChannelIdRoute
   '/w/$workspaceId/t/$threadId': typeof WWorkspaceIdTThreadIdRoute
+  '/w/$workspaceId/g/$groupSlug/$channelSlug': typeof WWorkspaceIdGGroupSlugChannelSlugRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/callback': typeof CallbackRoute
+  '/workspaces': typeof WorkspacesRoute
+  '/connect/$token': typeof ConnectTokenRoute
+  '/invite/$code': typeof InviteCodeRoute
+  '/local/$channelId': typeof LocalChannelIdRoute
+  '/local': typeof LocalIndexRoute
+  '/w/$workspaceId/$channelSlug': typeof WWorkspaceIdChannelSlugRoute
   '/w/$workspaceId': typeof WWorkspaceIdIndexRoute
   '/w/$workspaceId/c/$channelId': typeof WWorkspaceIdCChannelIdRoute
   '/w/$workspaceId/t/$threadId': typeof WWorkspaceIdTThreadIdRoute
+  '/w/$workspaceId/g/$groupSlug/$channelSlug': typeof WWorkspaceIdGGroupSlugChannelSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/callback': typeof CallbackRoute
+  '/local': typeof LocalRouteWithChildren
+  '/workspaces': typeof WorkspacesRoute
+  '/connect/$token': typeof ConnectTokenRoute
+  '/invite/$code': typeof InviteCodeRoute
+  '/local/$channelId': typeof LocalChannelIdRoute
   '/w/$workspaceId': typeof WWorkspaceIdRouteWithChildren
+  '/local/': typeof LocalIndexRoute
+  '/w/$workspaceId/$channelSlug': typeof WWorkspaceIdChannelSlugRoute
   '/w/$workspaceId/': typeof WWorkspaceIdIndexRoute
   '/w/$workspaceId/c/$channelId': typeof WWorkspaceIdCChannelIdRoute
   '/w/$workspaceId/t/$threadId': typeof WWorkspaceIdTThreadIdRoute
+  '/w/$workspaceId/g/$groupSlug/$channelSlug': typeof WWorkspaceIdGGroupSlugChannelSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/callback'
+    | '/local'
+    | '/workspaces'
+    | '/connect/$token'
+    | '/invite/$code'
+    | '/local/$channelId'
     | '/w/$workspaceId'
+    | '/local/'
+    | '/w/$workspaceId/$channelSlug'
     | '/w/$workspaceId/'
     | '/w/$workspaceId/c/$channelId'
     | '/w/$workspaceId/t/$threadId'
+    | '/w/$workspaceId/g/$groupSlug/$channelSlug'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/callback'
+    | '/workspaces'
+    | '/connect/$token'
+    | '/invite/$code'
+    | '/local/$channelId'
+    | '/local'
+    | '/w/$workspaceId/$channelSlug'
     | '/w/$workspaceId'
     | '/w/$workspaceId/c/$channelId'
     | '/w/$workspaceId/t/$threadId'
+    | '/w/$workspaceId/g/$groupSlug/$channelSlug'
   id:
     | '__root__'
     | '/'
+    | '/callback'
+    | '/local'
+    | '/workspaces'
+    | '/connect/$token'
+    | '/invite/$code'
+    | '/local/$channelId'
     | '/w/$workspaceId'
+    | '/local/'
+    | '/w/$workspaceId/$channelSlug'
     | '/w/$workspaceId/'
     | '/w/$workspaceId/c/$channelId'
     | '/w/$workspaceId/t/$threadId'
+    | '/w/$workspaceId/g/$groupSlug/$channelSlug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CallbackRoute: typeof CallbackRoute
+  LocalRoute: typeof LocalRouteWithChildren
+  WorkspacesRoute: typeof WorkspacesRoute
+  ConnectTokenRoute: typeof ConnectTokenRoute
+  InviteCodeRoute: typeof InviteCodeRoute
   WWorkspaceIdRoute: typeof WWorkspaceIdRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/workspaces': {
+      id: '/workspaces'
+      path: '/workspaces'
+      fullPath: '/workspaces'
+      preLoaderRoute: typeof WorkspacesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/local': {
+      id: '/local'
+      path: '/local'
+      fullPath: '/local'
+      preLoaderRoute: typeof LocalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/callback': {
+      id: '/callback'
+      path: '/callback'
+      fullPath: '/callback'
+      preLoaderRoute: typeof CallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/local/': {
+      id: '/local/'
+      path: '/'
+      fullPath: '/local/'
+      preLoaderRoute: typeof LocalIndexRouteImport
+      parentRoute: typeof LocalRoute
     }
     '/w/$workspaceId': {
       id: '/w/$workspaceId'
@@ -106,11 +246,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WWorkspaceIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/local/$channelId': {
+      id: '/local/$channelId'
+      path: '/$channelId'
+      fullPath: '/local/$channelId'
+      preLoaderRoute: typeof LocalChannelIdRouteImport
+      parentRoute: typeof LocalRoute
+    }
+    '/invite/$code': {
+      id: '/invite/$code'
+      path: '/invite/$code'
+      fullPath: '/invite/$code'
+      preLoaderRoute: typeof InviteCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/connect/$token': {
+      id: '/connect/$token'
+      path: '/connect/$token'
+      fullPath: '/connect/$token'
+      preLoaderRoute: typeof ConnectTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/w/$workspaceId/': {
       id: '/w/$workspaceId/'
       path: '/'
       fullPath: '/w/$workspaceId/'
       preLoaderRoute: typeof WWorkspaceIdIndexRouteImport
+      parentRoute: typeof WWorkspaceIdRoute
+    }
+    '/w/$workspaceId/$channelSlug': {
+      id: '/w/$workspaceId/$channelSlug'
+      path: '/$channelSlug'
+      fullPath: '/w/$workspaceId/$channelSlug'
+      preLoaderRoute: typeof WWorkspaceIdChannelSlugRouteImport
       parentRoute: typeof WWorkspaceIdRoute
     }
     '/w/$workspaceId/t/$threadId': {
@@ -127,19 +295,43 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WWorkspaceIdCChannelIdRouteImport
       parentRoute: typeof WWorkspaceIdRoute
     }
+    '/w/$workspaceId/g/$groupSlug/$channelSlug': {
+      id: '/w/$workspaceId/g/$groupSlug/$channelSlug'
+      path: '/g/$groupSlug/$channelSlug'
+      fullPath: '/w/$workspaceId/g/$groupSlug/$channelSlug'
+      preLoaderRoute: typeof WWorkspaceIdGGroupSlugChannelSlugRouteImport
+      parentRoute: typeof WWorkspaceIdRoute
+    }
   }
 }
 
+interface LocalRouteChildren {
+  LocalChannelIdRoute: typeof LocalChannelIdRoute
+  LocalIndexRoute: typeof LocalIndexRoute
+}
+
+const LocalRouteChildren: LocalRouteChildren = {
+  LocalChannelIdRoute: LocalChannelIdRoute,
+  LocalIndexRoute: LocalIndexRoute,
+}
+
+const LocalRouteWithChildren = LocalRoute._addFileChildren(LocalRouteChildren)
+
 interface WWorkspaceIdRouteChildren {
+  WWorkspaceIdChannelSlugRoute: typeof WWorkspaceIdChannelSlugRoute
   WWorkspaceIdIndexRoute: typeof WWorkspaceIdIndexRoute
   WWorkspaceIdCChannelIdRoute: typeof WWorkspaceIdCChannelIdRoute
   WWorkspaceIdTThreadIdRoute: typeof WWorkspaceIdTThreadIdRoute
+  WWorkspaceIdGGroupSlugChannelSlugRoute: typeof WWorkspaceIdGGroupSlugChannelSlugRoute
 }
 
 const WWorkspaceIdRouteChildren: WWorkspaceIdRouteChildren = {
+  WWorkspaceIdChannelSlugRoute: WWorkspaceIdChannelSlugRoute,
   WWorkspaceIdIndexRoute: WWorkspaceIdIndexRoute,
   WWorkspaceIdCChannelIdRoute: WWorkspaceIdCChannelIdRoute,
   WWorkspaceIdTThreadIdRoute: WWorkspaceIdTThreadIdRoute,
+  WWorkspaceIdGGroupSlugChannelSlugRoute:
+    WWorkspaceIdGGroupSlugChannelSlugRoute,
 }
 
 const WWorkspaceIdRouteWithChildren = WWorkspaceIdRoute._addFileChildren(
@@ -148,6 +340,11 @@ const WWorkspaceIdRouteWithChildren = WWorkspaceIdRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CallbackRoute: CallbackRoute,
+  LocalRoute: LocalRouteWithChildren,
+  WorkspacesRoute: WorkspacesRoute,
+  ConnectTokenRoute: ConnectTokenRoute,
+  InviteCodeRoute: InviteCodeRoute,
   WWorkspaceIdRoute: WWorkspaceIdRouteWithChildren,
 }
 export const routeTree = rootRouteImport

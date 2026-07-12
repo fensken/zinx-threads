@@ -14,11 +14,17 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite'
 // fallbacks), and the router picks browser vs hash history per target.
 export default defineConfig({
   root: resolve(__dirname, 'src/renderer'),
+  // `.env.local` lives at the project root, but `envDir` defaults to `root`
+  // (src/renderer) — point it back so the web build sees VITE_CONVEX_URL / WorkOS.
+  envDir: __dirname,
   // Absolute base so assets resolve from the host root regardless of the current
   // deep-link path (browser history). Change if deploying under a sub-path.
   base: '/',
   resolve: {
-    alias: { '@renderer': resolve(__dirname, 'src/renderer/src') }
+    alias: {
+      '@renderer': resolve(__dirname, 'src/renderer/src'),
+      '@convex': resolve(__dirname, 'convex')
+    }
   },
   plugins: [
     // Same file-based routing as the desktop build. Paths are relative to the

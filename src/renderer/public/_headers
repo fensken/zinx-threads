@@ -1,0 +1,9 @@
+# Cloudflare Pages response headers. The Content-Security-Policy ships as a <meta>
+# tag in index.html (so it applies to the desktop build too) — these are the
+# security headers a meta tag CAN'T set. Deliberately NO Permissions-Policy here:
+# the web app needs camera / microphone / display-capture for voice calls, which
+# are allowed for the top-level origin by default.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY

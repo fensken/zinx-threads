@@ -1,8 +1,8 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
-import { servers } from '@renderer/data/workspaces'
+import { createFileRoute } from '@tanstack/react-router'
+import { WorkspaceEntry } from '@renderer/components/workspace/workspace-entry'
 
+// `/` sends the user to their first workspace, or to onboarding if they have
+// none (mock server when no backend is configured). See WorkspaceEntry.
 export const Route = createFileRoute('/')({
-  beforeLoad: () => {
-    throw redirect({ to: '/w/$workspaceId', params: { workspaceId: servers[0].id } })
-  }
+  component: WorkspaceEntry
 })

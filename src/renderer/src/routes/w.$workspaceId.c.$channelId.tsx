@@ -1,12 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { ChannelView } from '@renderer/components/app-shell/channel-view'
+import { RealChannelPage } from '@renderer/components/chat/real-channel-page'
 
+// Permalink to a channel by its **id** (`/w/<workspace>/c/<channelId>`). The sidebar
+// and links build the readable slug URLs, but this stable by-id form stays for
+// deep links + as the reliable target for a shared channel a guest reaches.
 export const Route = createFileRoute('/w/$workspaceId/c/$channelId')({
   component: ChannelPage
 })
 
 function ChannelPage(): React.JSX.Element {
   const { workspaceId, channelId } = Route.useParams()
-  // key remounts the view (resetting local message/thread state) per channel.
-  return <ChannelView key={channelId} serverId={workspaceId} channelId={channelId} />
+  return <RealChannelPage serverId={workspaceId} channelId={channelId} />
 }

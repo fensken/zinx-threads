@@ -2,7 +2,7 @@ import { Flag } from '@phosphor-icons/react'
 
 import { Badge } from '@renderer/components/ui/badge'
 import { cn } from '@renderer/lib/utils'
-import type { TaskPriority } from '@renderer/data/workspaces'
+import type { TaskPriority } from '@renderer/components/kanban/board-types'
 
 const PRIORITY_LABEL: Record<TaskPriority, string> = {
   lowest: 'Lowest',

@@ -1,13 +1,17 @@
 import { useEffect } from 'react'
-import { Outlet, createFileRoute } from '@tanstack/react-router'
-import { ChannelSidebar } from '@renderer/components/app-shell/channel-sidebar'
-import { ServerRail } from '@renderer/components/app-shell/server-rail'
-import { ResizeHandle } from '@renderer/components/app-shell/resize-handle'
-import { SettingsDialog } from '@renderer/components/app-shell/settings-dialog'
-import { CommandPalette } from '@renderer/components/app-shell/command-palette'
-import { getServer } from '@renderer/data/workspaces'
+import { Navigate, Outlet, createFileRoute } from '@tanstack/react-router'
+import { useQuery } from 'convex-helpers/react/cache/hooks'
+import { api } from '@convex/_generated/api'
+import type { Id } from '@convex/_generated/dataModel'
+import { RealChannelSidebar } from '@renderer/components/chat/real-channel-sidebar'
+import { ResizeHandle } from '@renderer/components/layout/resize-handle'
+import { SettingsDialog } from '@renderer/components/settings/settings-dialog'
+import { CommandPalette } from '@renderer/components/layout/command-palette'
+import { WorkspaceDirectoryProvider } from '@renderer/components/chat/workspace-directory'
+import { WorkspaceRightPanel } from '@renderer/components/chat/workspace-right-panel'
+import { VoiceCallProvider } from '@renderer/components/voice/voice-call-provider'
+import { Spinner } from '@renderer/components/ui/spinner'
 import { useUiStore } from '@renderer/store/ui-store'
-import { useSettingsStore } from '@renderer/store/settings-store'
 import { useMediaQuery } from '@renderer/lib/use-media-query'
 import { cn } from '@renderer/lib/utils'
 
@@ -15,15 +19,47 @@ export const Route = createFileRoute('/w/$workspaceId')({
   component: ServerLayout
 })
 
+/** Resolve the workspace slug via Convex; not-a-member / unknown → onboarding. */
 function ServerLayout(): React.JSX.Element {
   const { workspaceId } = Route.useParams()
-  const server = getServer(workspaceId)
+  const workspace = useQuery(api.workspaces.getBySlug, { slug: workspaceId })
+
+  if (workspace === undefined) {
+    return (
+      <div className="flex h-dvh items-center justify-center bg-sidebar">
+        <Spinner className="size-6 text-muted-foreground" />
+      </div>
+    )
+  }
+  if (workspace === null) return <Navigate to="/workspaces" replace />
+  return <Shell workspaceId={workspaceId} workspaceDocId={workspace.workspace._id} />
+}
+
+/** The workspace shell — sidebar + outlet + right panel + overlays. */
+function Shell({
+  workspaceId,
+  workspaceDocId
+}: {
+  workspaceId: string
+  workspaceDocId: Id<'workspaces'>
+}): React.JSX.Element {
   const sidebarWidth = useUiStore((state) => state.sidebarWidth)
   const setSidebarWidth = useUiStore((state) => state.setSidebarWidth)
+  const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed)
   const navOpen = useUiStore((state) => state.navOpen)
   const setNavOpen = useUiStore((state) => state.setNavOpen)
-  const showServerRail = useSettingsStore((state) => state.showServerRail)
-  const isWide = useMediaQuery('(min-width: 1024px)')
+  // Left sidebar is an inline column at md+ and a slide-in drawer below md.
+  // (The right panel's breakpoint is xl, handled in the channel page.)
+  const isMdUp = useMediaQuery('(min-width: 768px)')
+  // Desktop-only collapse (persisted). Below md the sidebar is a drawer, so the
+  // collapse doesn't apply there — the hamburger opens/closes it instead.
+  const sidebarHidden = sidebarCollapsed && isMdUp
+
+  // A thread belongs to one workspace. Carrying `activeThreadId` across a switch
+  // would query a thread you can't see.
+  useEffect(() => {
+    useUiStore.getState().closeThread()
+  }, [workspaceId])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -35,57 +71,60 @@ function ServerLayout(): React.JSX.Element {
         ui.setInboxOpen(false)
         ui.setSettingsOpen(false)
         ui.setThreadsOpen(false)
+        ui.setEventsOpen(false)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  if (!server) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-card text-muted-foreground">
-        Server “{workspaceId}” not found.
-      </div>
-    )
-  }
-
   return (
-    <div className="relative flex h-screen overflow-hidden bg-card">
-      {/* Optional Discord-style workspace rail (desktop only; on compact, switch
-          workspaces via the sidebar dropdown). */}
-      {showServerRail && isWide ? <ServerRail /> : null}
+    <VoiceCallProvider>
+      <div className="relative flex h-dvh overflow-hidden bg-card">
+        {/* Sidebar: a persistent resizable column on desktop; below md it becomes a
+            slide-in drawer over the content (Slack/Notion-style), toggled from the
+            header hamburger. Hidden entirely when collapsed (desktop). */}
+        {!sidebarHidden ? (
+          <div
+            className={cn(
+              'z-40 flex shrink-0 border-r border-border bg-sidebar',
+              'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:w-[85dvw] max-md:max-w-80 max-md:shadow-2xl max-md:transition-transform max-md:duration-200',
+              navOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'
+            )}
+            style={isMdUp ? { width: sidebarWidth } : undefined}
+          >
+            <RealChannelSidebar serverId={workspaceId} />
+          </div>
+        ) : null}
 
-      {/* Sidebar: a persistent resizable column on desktop; below lg it becomes a
-          slide-in drawer over the content (Slack/Notion-style), toggled from the
-          header hamburger. Inline width only applies on desktop so the drawer can
-          use its own responsive width. */}
-      <div
-        className={cn(
-          'z-40 flex shrink-0 border-r border-border bg-sidebar',
-          'max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:w-[85vw] max-lg:max-w-80 max-lg:shadow-2xl max-lg:transition-transform max-lg:duration-200',
-          navOpen ? 'max-lg:translate-x-0' : 'max-lg:-translate-x-full'
-        )}
-        style={isWide ? { width: sidebarWidth } : undefined}
-      >
-        <ChannelSidebar serverId={workspaceId} />
+        {isMdUp && !sidebarHidden ? (
+          <ResizeHandle
+            onDelta={(dx) => setSidebarWidth(useUiStore.getState().sidebarWidth + dx)}
+          />
+        ) : null}
+
+        {navOpen ? (
+          <button
+            type="button"
+            aria-label="Close navigation"
+            onClick={() => setNavOpen(false)}
+            className="fixed inset-0 z-30 bg-black/40 md:hidden"
+          />
+        ) : null}
+
+        {/* The directory (members + channels) resolves `@user` / `#channel` mentions
+            and backs the author profile card. It sits above BOTH the Outlet and the
+            right panel — a thread's replies render in the panel and need it too. */}
+        <WorkspaceDirectoryProvider slug={workspaceId} workspaceId={workspaceDocId}>
+          <Outlet />
+          {/* Workspace-level right panel: a sibling of the Outlet, so channel
+              navigation never tears it down. */}
+          <WorkspaceRightPanel workspaceId={workspaceDocId} workspaceSlug={workspaceId} />
+        </WorkspaceDirectoryProvider>
+
+        <SettingsDialog workspaceSlug={workspaceId} />
+        <CommandPalette serverId={workspaceId} workspaceDocId={workspaceDocId} />
       </div>
-
-      {isWide ? (
-        <ResizeHandle onDelta={(dx) => setSidebarWidth(useUiStore.getState().sidebarWidth + dx)} />
-      ) : null}
-
-      {navOpen ? (
-        <button
-          type="button"
-          aria-label="Close navigation"
-          onClick={() => setNavOpen(false)}
-          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
-        />
-      ) : null}
-
-      <Outlet />
-      <SettingsDialog />
-      <CommandPalette serverId={workspaceId} />
-    </div>
+    </VoiceCallProvider>
   )
 }

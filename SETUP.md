@@ -53,7 +53,37 @@ and writes `CONVEX_DEPLOYMENT` + `VITE_CONVEX_URL` into `.env.local`.
 npx convex env set WORKOS_CLIENT_ID     client_xxx
 npx convex env set WORKOS_API_KEY       sk_xxx
 npx convex env set WORKOS_WEBHOOK_SECRET wh_xxx      # once you enable sync/SCIM
+npx convex env set KLIPY_API_KEY        klipy_xxx    # GIF + sticker search
+npx convex env set UNSPLASH_ACCESS_KEY  unsplash_xxx # page-cover photos
+
+# Cloudflare R2 file uploads (@convex-dev/r2). Create an R2 bucket + an API token
+# (Object Read & Write) in the Cloudflare dashboard, then:
+npx convex env set R2_TOKEN             r2_xxx
+npx convex env set R2_ACCESS_KEY_ID     xxx
+npx convex env set R2_SECRET_ACCESS_KEY xxx
+npx convex env set R2_ENDPOINT          https://<account-id>.r2.cloudflarestorage.com
+npx convex env set R2_BUCKET            <bucket>
+npx convex env set R2_PUBLIC_URL        https://<public-bucket-domain>   # stable image URLs
 ```
+
+**R2 bucket CORS** — the browser uploads straight to R2, so the bucket needs a CORS
+rule allowing `PUT` from the app origin (Cloudflare → R2 → your bucket → Settings →
+CORS Policy):
+
+```json
+[
+  {
+    "AllowedOrigins": ["http://localhost:5173"],
+    "AllowedMethods": ["GET", "PUT"],
+    "AllowedHeaders": ["Content-Type"]
+  }
+]
+```
+
+Add your production origin(s) to `AllowedOrigins` when you deploy. Enable the bucket's
+**Public access** (r2.dev subdomain) or attach a custom domain, and set that as
+`R2_PUBLIC_URL` — uploaded avatars are served from `<R2_PUBLIC_URL>/<key>`. Uploads work
+without it (7-day signed URLs), but the URLs aren't permanent.
 
 **Frontend** — copy `.env.sample` → `.env.local` and fill:
 

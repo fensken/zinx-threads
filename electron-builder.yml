@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: zinx-threads
+appId: com.zinxthreads.app
+productName: Zinx Threads
 directories:
   buildResources: build
 files:
@@ -11,6 +11,14 @@ files:
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
   - resources/**
+# Register the zinx:// URL scheme so the installer sets the app as the OS handler for
+# deep links (zinx://invite/<code>, zinx://connect/<token>, zinx://w/<slug>/…) — the
+# "Open in app" flow. NOT auth (that runs entirely in the in-app login window). See
+# src/main/index.ts (setAsDefaultProtocolClient + deep-link routing).
+protocols:
+  - name: Zinx Threads
+    schemes:
+      - zinx
 win:
   executableName: zinx-threads
 nsis:

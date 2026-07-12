@@ -6,7 +6,7 @@ export type UiScale = 'xs' | 'sm' | 'md' | 'lg'
 
 const STORAGE_KEY = 'zinx-ui-scale'
 const DEFAULT_SCALE: UiScale = 'md'
-const RAIL_KEY = 'zinx-server-rail'
+const COMPOSER_KEY = 'zinx-composer-expanded'
 
 const ROOT_PX: Record<UiScale, string> = {
   xs: '12px',
@@ -29,9 +29,9 @@ function applyScale(scale: UiScale): void {
 interface SettingsState {
   uiScale: UiScale
   setUiScale: (scale: UiScale) => void
-  /** Show workspaces as a Discord-style left rail (opt-in); else just the dropdown. */
-  showServerRail: boolean
-  setShowServerRail: (show: boolean) => void
+  /** Chat composer shows its formatting toolbar. Compact (false) by default. */
+  composerExpanded: boolean
+  setComposerExpanded: (expanded: boolean) => void
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -41,10 +41,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     applyScale(uiScale)
     set({ uiScale })
   },
-  showServerRail: localStorage.getItem(RAIL_KEY) === '1',
-  setShowServerRail: (show) => {
-    localStorage.setItem(RAIL_KEY, show ? '1' : '0')
-    set({ showServerRail: show })
+  composerExpanded: localStorage.getItem(COMPOSER_KEY) === '1',
+  setComposerExpanded: (expanded) => {
+    localStorage.setItem(COMPOSER_KEY, expanded ? '1' : '0')
+    set({ composerExpanded: expanded })
   }
 }))
 

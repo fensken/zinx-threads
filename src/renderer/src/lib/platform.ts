@@ -11,12 +11,36 @@
  * build free of desktop-only assumptions (see CLAUDE.md).
  */
 
-/** True when running inside the Electron renderer (preload bridge present). */
+/** True when running inside the Electron renderer. Primarily the preload bridge
+ *  (`window.electron`), but ALSO the Electron user-agent as a fallback — under
+ *  `pnpm dev` a renderer reload can momentarily race the preload so `window.electron`
+ *  is briefly undefined, and we must NOT then treat the desktop app as web (that's
+ *  what made screen share skip our picker and grab the primary screen directly). */
 export const isElectron: boolean =
-  typeof window !== 'undefined' && typeof window.electron !== 'undefined'
+  typeof window !== 'undefined' &&
+  (typeof window.electron !== 'undefined' ||
+    (typeof navigator !== 'undefined' && /\bElectron\//i.test(navigator.userAgent)))
 
 /** True when running in a normal browser (web build). */
 export const isWeb = !isElectron
+
+/** True only when the preload BRIDGE actually loaded (so native IPC calls work).
+ *  Distinct from `isElectron` — which UA-detects Electron even if the preload failed
+ *  to expose `window.api` (in which case screen share / fullscreen silently no-op). */
+export const hasNativeBridge: boolean =
+  typeof window !== 'undefined' && typeof window.api !== 'undefined'
+
+/**
+ * True only for a **packaged** desktop build — the renderer loaded over `file://`.
+ * In `pnpm dev` the Electron renderer is served over `http://localhost:5173`, so
+ * this is false there.
+ *
+ * Used by `router.ts` to pick hash history (a `file://` build has no server to
+ * rewrite deep links) vs browser history (web + `pnpm dev`). Auth no longer depends
+ * on it — desktop sign-in runs in the main process, identically in dev and packaged.
+ */
+export const isPackagedDesktop: boolean =
+  isElectron && typeof window !== 'undefined' && window.location.protocol === 'file:'
 
 export const platform = {
   isElectron,
@@ -33,5 +57,126 @@ export const platform = {
     } else {
       window.open(url, '_blank', 'noopener,noreferrer')
     }
+  },
+
+  /**
+   * True only on desktop with the preload bridge loaded — where "reveal the data
+   * folder" is meaningful. On web the data lives in the browser's origin storage,
+   * which has no folder to open, so callers hide the affordance.
+   */
+  canRevealDataFolder(): boolean {
+    return isElectron && Boolean(window.api?.openDataFolder)
+  },
+
+  /**
+   * Reveal the app's data folder (settings, caches) in the OS file manager.
+   * Desktop only — a no-op resolving to null on web.
+   */
+  openDataFolder(): Promise<string | null> {
+    if (isElectron && window.api?.openDataFolder) return window.api.openDataFolder()
+    return Promise.resolve(null)
+  },
+
+  /**
+   * File-backed offline workspaces (desktop): one folder per workspace under
+   * `userData/offline-workspaces/`. On web there is no filesystem — the offline
+   * store falls back to localStorage (`isFileBacked()` is the branch).
+   */
+  offlineData: {
+    isFileBacked(): boolean {
+      return isElectron && Boolean(window.api?.offlineData)
+    },
+    /** Full read of every workspace folder — hydrates the offline store at boot. */
+    load(): Promise<OfflineSnapshot | null> {
+      if (isElectron && window.api?.offlineData) return window.api.offlineData.load()
+      return Promise.resolve(null)
+    },
+    /** Write only the changed files (null = delete). Resolves false on failure. */
+    save(payload: OfflineSavePayload): Promise<boolean> {
+      if (isElectron && window.api?.offlineData) return window.api.offlineData.save(payload)
+      return Promise.resolve(false)
+    },
+    /** Open a workspace's folder (or the offline root) in the OS file manager. */
+    openFolder(workspaceId?: string): Promise<string | null> {
+      if (isElectron && window.api?.offlineData) {
+        return window.api.offlineData.openFolder(workspaceId)
+      }
+      return Promise.resolve(null)
+    }
+  },
+
+  /**
+   * List the shareable screens/windows for the desktop screen-share picker. On web
+   * there's no picker (the browser shows its own on getDisplayMedia) → empty list.
+   */
+  getScreenSources(): Promise<ScreenSource[]> {
+    if (isElectron && window.api?.getScreenSources) return window.api.getScreenSources()
+    return Promise.resolve([])
+  },
+
+  /** Record which source the user picked + whether to include system audio, for the
+   *  next screen-share request. */
+  setScreenShareSource(id: string, audio: boolean): Promise<void> {
+    if (isElectron && window.api?.setScreenShareSource) {
+      return window.api.setScreenShareSource(id, audio)
+    }
+    return Promise.resolve()
+  },
+
+  /** Native OS-window fullscreen (desktop). On web the HTML fullscreen API already
+   *  covers the display, so this is a no-op there. */
+  setWindowFullScreen(flag: boolean): Promise<void> {
+    if (isElectron && window.api?.setWindowFullScreen) {
+      return window.api.setWindowFullScreen(flag)
+    }
+    return Promise.resolve()
+  },
+
+  /** Subscribe to native window fullscreen changes (desktop). No-op on web (use the
+   *  DOM `fullscreenchange` event there). Returns an unsubscribe fn. */
+  onWindowFullScreenChange(handler: (fullscreen: boolean) => void): () => void {
+    if (isElectron && window.api?.onWindowFullScreenChange) {
+      return window.api.onWindowFullScreenChange(handler)
+    }
+    return () => {}
+  },
+
+  /** The `zinx://…` deep link that cold-started the desktop app, if any. Null on web
+   *  (a browser opens the URL as a normal route) or when there was none. */
+  getInitialDeepLink(): Promise<string | null> {
+    if (isElectron && window.api?.getInitialDeepLink) return window.api.getInitialDeepLink()
+    return Promise.resolve(null)
+  },
+
+  /** Subscribe to deep links opened while the desktop app runs. Returns an
+   *  unsubscribe fn; no-op on web. */
+  onDeepLink(handler: (url: string) => void): () => void {
+    if (isElectron && window.api?.onDeepLink) return window.api.onDeepLink(handler)
+    return () => {}
   }
+}
+
+/** A shareable screen or window (thumbnail + optional app icon are data URLs). */
+export interface ScreenSource {
+  id: string
+  name: string
+  thumbnail: string
+  appIcon: string | null
+  isScreen: boolean
+}
+
+/** Raw file contents of one offline workspace folder (relPath → JSON string). */
+export interface OfflineWorkspaceFiles {
+  id: string
+  files: Record<string, string>
+}
+export interface OfflineSnapshot {
+  root: string | null
+  workspaces: OfflineWorkspaceFiles[]
+}
+/** Incremental save: only changed files. A `null` file deletes it; a `null`
+ *  workspace deletes its whole folder; an absent key is unchanged. */
+export interface OfflineSavePayload {
+  root?: string | null
+  workspaces?: Record<string, Record<string, string | null> | null>
 }

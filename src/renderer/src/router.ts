@@ -1,13 +1,17 @@
 import { createRouter, createHashHistory, createBrowserHistory } from '@tanstack/react-router'
 import { routeTree } from './routeTree.gen'
-import { isElectron } from './lib/platform'
+import { isPackagedDesktop } from './lib/platform'
 
-// Desktop is served over file:// in production (no server to rewrite deep links)
-// → hash history. The web build is served by a host with SPA fallback → clean
-// browser-history URLs. Same renderer, history picked per target at load.
+// ONLY a packaged desktop build (served over `file://`, no server to rewrite deep
+// links) needs hash history. `pnpm dev` runs the Electron renderer over
+// `http://localhost:5173` — a real origin with Vite's SPA fallback — so it uses
+// browser history exactly like the web build. This also matters for auth: the
+// WorkOS redirect lands on the *path* `/callback`, which only browser history
+// routes; under hash history the callback route never matched, which is why
+// dev sign-in didn't redirect. (Gated on `isPackagedDesktop`, same as auth-actions.)
 export const router = createRouter({
   routeTree,
-  history: isElectron ? createHashHistory() : createBrowserHistory(),
+  history: isPackagedDesktop ? createHashHistory() : createBrowserHistory(),
   defaultPreload: 'intent',
   scrollRestoration: true
 })

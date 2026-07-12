@@ -3,14 +3,23 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Electron</title>
+    <title>Zinx Threads</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="theme-color" content="#e11d48" />
+    <meta name="description" content="Zinx Threads — team chat, docs, and boards in one place." />
     <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
-         connect-src is widened for Convex (realtime over wss + https) and WorkOS
-         AuthKit (token exchange); applies to both the desktop and web builds.
-         Narrow the wildcards to your exact deployment / AuthKit domain in prod. -->
+         connect-src is widened for Convex (realtime over wss + https), WorkOS
+         AuthKit (token exchange), and Cloudflare R2 (the browser PUTs uploads
+         straight to R2's S3 endpoint via a signed URL); applies to both the
+         desktop and web builds. Uploaded images load from R2's public domain,
+         already covered by `img-src https:`. `connect-src` also allows the LiveKit
+         signaling websocket — `ws://localhost:7880` for a local `livekit-server
+         --dev`; for a self-hosted prod server ADD its `wss://<your-livekit-host>`
+         here (WebRTC media itself is UDP and not CSP-gated). Narrow the wildcards
+         to your exact deployment / AuthKit / R2 / LiveKit domain in prod. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.convex.cloud wss://*.convex.cloud https://*.convex.site https://api.workos.com https://*.workos.com https://*.authkit.app; form-action 'self' https://*.workos.com https://*.authkit.app"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' blob: https://*.convex.cloud wss://*.convex.cloud https://*.convex.site https://api.workos.com https://*.workos.com https://*.authkit.app https://cdn.jsdelivr.net https://*.r2.cloudflarestorage.com https://*.r2.dev ws://localhost:7880 wss://localhost:7880 wss://*.livekit.cloud https://*.livekit.cloud; form-action 'self' https://*.workos.com https://*.authkit.app"
     />
   </head>
 

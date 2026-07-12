@@ -1,0 +1,5 @@
+# Cloudflare Pages SPA fallback. TanStack Router uses BROWSER history on the web
+# target, so a hard load / deep link to any client route (e.g. /w/acme/general,
+# /invite/<code>, /connect/<token>, /local) must serve index.html and let the
+# router take over. Static assets are matched first; only unmatched paths hit this.
+/*    /index.html    200

@@ -255,6 +255,28 @@ export const platform = {
   },
 
   /**
+   * In-app auto-update (title-bar "Update available" badge, desktop only). Web has no
+   * updater — `getState` resolves "nothing available" and `onStateChange` is a no-op, so
+   * the badge simply never shows.
+   */
+  updates: {
+    getState(): Promise<UpdateState> {
+      if (isElectron && window.api?.updates) return window.api.updates.getState()
+      return Promise.resolve({ available: false, downloaded: false, version: null, url: null })
+    },
+    /** Restart into the staged update (Windows/Linux). Resolves false when nothing is staged. */
+    install(): Promise<boolean> {
+      if (isElectron && window.api?.updates) return window.api.updates.install()
+      return Promise.resolve(false)
+    },
+    /** Subscribe to update-state changes. Returns an unsubscribe fn; no-op on web. */
+    onStateChange(handler: (state: UpdateState) => void): () => void {
+      if (isElectron && window.api?.updates) return window.api.updates.onStateChange(handler)
+      return () => {}
+    }
+  },
+
+  /**
    * Desktop "lives in the tray" settings, Discord/Slack-style (see
    * src/main/system-integration.ts). Web has no login item or tray — `supported()` is
    * false there, so the settings UI hides the whole section rather than showing dead toggles.
@@ -290,6 +312,14 @@ export const platform = {
 export interface SystemPrefs {
   openAtLogin: boolean
   runInBackground: boolean
+}
+
+/** In-app auto-update state (title-bar badge). */
+export interface UpdateState {
+  available: boolean
+  downloaded: boolean
+  version: string | null
+  url: string | null
 }
 
 /** The app draws its own title bar on desktop; the web build has the browser's chrome

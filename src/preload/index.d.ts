@@ -106,6 +106,21 @@ export interface ZinxApi {
   setBadgeCount: (count: number) => Promise<void>
   /** Desktop launch-at-startup + run-in-background (tray) settings. */
   systemPrefs: SystemPrefsBridge
+  /** In-app auto-update state + install trigger (title-bar badge). */
+  updates: UpdatesBridge
+}
+
+/** In-app auto-update state (title-bar badge). */
+export interface UpdateState {
+  available: boolean
+  downloaded: boolean
+  version: string | null
+  url: string | null
+}
+export interface UpdatesBridge {
+  getState: () => Promise<UpdateState>
+  install: () => Promise<boolean>
+  onStateChange: (handler: (state: UpdateState) => void) => () => void
 }
 
 /** Desktop launch-at-startup + run-in-background (tray) settings. */

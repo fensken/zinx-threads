@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter, useRouterState } from '@tanstack/react-router'
 import { CaretLeft, CaretRight, MagnifyingGlass, SidebarSimple } from '@phosphor-icons/react'
 import { Logo } from '@renderer/components/layout/logo'
+import { UpdateBadge } from '@renderer/components/layout/update-badge'
 import { WindowControls } from '@renderer/components/layout/window-controls'
 import { hasCustomTitleBar, windowControlsStyle } from '@renderer/lib/platform'
 import { useMediaQuery } from '@renderer/lib/use-media-query'
@@ -119,9 +120,14 @@ export function TitleBar(): React.JSX.Element | null {
         </button>
       </div>
 
-      {/* Windows/Linux: our minimise / maximise / close, flush to the corner. macOS:
-          renders nothing (the traffic lights are already at the other end). */}
-      <WindowControls />
+      {/* Right cluster: the "Update available" pill sits just LEFT of the window action
+          buttons. On macOS (no buttons on this side) it's flush to the right edge. */}
+      <div className="flex shrink-0 items-center gap-1 pl-1">
+        <UpdateBadge />
+        {/* Windows/Linux: our minimise / maximise / close, flush to the corner. macOS:
+            renders nothing (the traffic lights are already at the other end). */}
+        <WindowControls />
+      </div>
     </div>
   )
 }

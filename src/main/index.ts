@@ -426,8 +426,9 @@ app.whenReady().then(() => {
 
   createWindow()
 
-  // Check GitHub Releases for a newer build (packaged builds only — a no-op in dev).
-  initAutoUpdater()
+  // Check GitHub Releases for a newer build (packaged builds only — a no-op in dev). Broadcasts
+  // update state to the renderer's title-bar "Update available" badge.
+  initAutoUpdater(() => mainWindow)
 
   app.on('activate', function () {
     // Clicking the dock icon reopens the app. If the window is only HIDDEN (run-in-background

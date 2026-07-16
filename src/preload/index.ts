@@ -121,6 +121,19 @@ const api = {
   /** Unread count on the dock (macOS) / taskbar (Linux). A no-op on Windows. */
   setBadgeCount: (count: number): Promise<void> => ipcRenderer.invoke('set-badge-count', count),
 
+  /** In-app auto-update state for the title-bar "Update available" badge (see
+   *  src/main/updater.ts). `getState` on mount, then subscribe via `onStateChange`;
+   *  `install` restarts into the staged update (Windows/Linux). */
+  updates: {
+    getState: (): Promise<UpdateState> => ipcRenderer.invoke('update:get-state'),
+    install: (): Promise<boolean> => ipcRenderer.invoke('update:install'),
+    onStateChange: (handler: (state: UpdateState) => void): (() => void) => {
+      const listener = (_event: IpcRendererEvent, state: UpdateState): void => handler(state)
+      ipcRenderer.on('update:state', listener)
+      return () => ipcRenderer.removeListener('update:state', listener)
+    }
+  },
+
   /** Desktop "lives in the tray" settings, Discord/Slack-style (see src/main/system-integration.ts).
    *  `launchAtStartup` registers a login item with the OS; `runInBackground` makes closing the
    *  window hide it to a tray icon and keep the app running until the user quits. */
@@ -142,6 +155,14 @@ export interface SystemPrefs {
   openAtLogin: boolean
   /** Closing the window hides it to the tray instead of quitting. */
   runInBackground: boolean
+}
+
+/** In-app auto-update state (title-bar badge). */
+export interface UpdateState {
+  available: boolean
+  downloaded: boolean
+  version: string | null
+  url: string | null
 }
 
 /** A shareable screen or window (thumbnail is a data URL). */

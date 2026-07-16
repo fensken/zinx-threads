@@ -5,6 +5,7 @@ import { api } from '@convex/_generated/api'
 import { IconButton } from '@renderer/components/common/icon-button'
 import { SidebarToggle } from '@renderer/components/layout/sidebar-toggle'
 import { LoadingBlock } from '@renderer/components/common/loading-block'
+import { CalendarSkeleton } from '@renderer/components/common/skeletons'
 import { Button } from '@renderer/components/ui/button'
 import { EventDetailDialog } from '@renderer/components/events/event-detail-dialog'
 import { EventDialog } from '@renderer/components/events/event-dialog'
@@ -135,7 +136,7 @@ export function EventsPage({ serverId }: { serverId: string }): React.JSX.Elemen
           </div>
 
           {monthEvents === undefined ? (
-            <LoadingBlock />
+            <CalendarSkeleton />
           ) : (
             <MonthGrid
               days={days}

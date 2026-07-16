@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { api } from '@convex/_generated/api'
 import type { Doc, Id } from '@convex/_generated/dataModel'
 import { useWorkspaceDirectory } from '@renderer/components/chat/workspace-directory-context'
-import { Spinner } from '@renderer/components/ui/spinner'
+import { BoardSkeleton } from '@renderer/components/common/skeletons'
 import { errorMessage } from '@renderer/lib/convex-error'
 import { initialsOf } from '@renderer/lib/initials'
 import type { KanbanTask } from '@renderer/components/kanban/board-types'
@@ -61,13 +61,7 @@ export function RealBoardView({ channel }: { channel: Doc<'channels'> }): React.
     [board]
   )
 
-  if (board === undefined) {
-    return (
-      <div className="flex min-h-0 flex-1 items-center justify-center bg-muted/20">
-        <Spinner className="size-6 text-muted-foreground" />
-      </div>
-    )
-  }
+  if (board === undefined) return <BoardSkeleton />
 
   return (
     <BoardView

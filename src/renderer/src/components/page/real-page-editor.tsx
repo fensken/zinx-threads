@@ -11,7 +11,7 @@ import {
   parsePageContent,
   type PageDoc
 } from '@renderer/components/page/page-schema'
-import { Spinner } from '@renderer/components/ui/spinner'
+import { PageSkeleton } from '@renderer/components/common/skeletons'
 import { errorMessage } from '@renderer/lib/convex-error'
 import { useDebouncedCallback } from '@renderer/lib/use-debounced-callback'
 
@@ -42,13 +42,7 @@ function mergeMeta(previous: PageMetaPatch, next: PageMetaPatch): PageMetaPatch 
 export function RealPageEditor({ channel }: { channel: Doc<'channels'> }): React.JSX.Element {
   const page = useQuery(api.pages.getByChannel, { channelId: channel._id })
 
-  if (page === undefined) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <Spinner className="size-6 text-muted-foreground" />
-      </div>
-    )
-  }
+  if (page === undefined) return <PageSkeleton />
 
   // `null` = nothing written yet. Start from an empty document titled after the
   // channel; the first real edit creates the row.

@@ -6,7 +6,7 @@ import type { Id } from '@convex/_generated/dataModel'
 import { Avatar, FALLBACK_AVATAR_COLOR } from '@renderer/components/common/avatar'
 import { IconButton } from '@renderer/components/common/icon-button'
 import { UserProfilePopover } from '@renderer/components/chat/user-profile-popover'
-import { Spinner } from '@renderer/components/ui/spinner'
+import { MemberListSkeleton } from '@renderer/components/common/skeletons'
 import { presenceWithConnectivity } from '@renderer/lib/user-status'
 import { avatarImageFor } from '@renderer/lib/app-logo'
 import { BotBadge } from '@renderer/components/chat/author-role-badge'
@@ -67,9 +67,7 @@ export function RealMemberList({
 
       <div className="min-h-0 flex-1 overflow-y-auto py-4">
         {members === undefined ? (
-          <div className="flex h-full w-full items-center justify-center">
-            <Spinner className="size-5 text-muted-foreground" />
-          </div>
+          <MemberListSkeleton />
         ) : (
           groups.map((group) => (
             <div key={group.role} className="mb-5 px-2">

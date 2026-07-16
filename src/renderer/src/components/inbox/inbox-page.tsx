@@ -5,7 +5,7 @@ import { Check, List, Tray } from '@phosphor-icons/react'
 import { api } from '@convex/_generated/api'
 import { IconButton } from '@renderer/components/common/icon-button'
 import { SidebarToggle } from '@renderer/components/layout/sidebar-toggle'
-import { LoadingBlock } from '@renderer/components/common/loading-block'
+import { InboxListSkeleton } from '@renderer/components/common/skeletons'
 import { InboxRow } from '@renderer/components/inbox/inbox-row'
 import { useOpenInboxItem } from '@renderer/lib/use-open-inbox-item'
 import {
@@ -95,7 +95,7 @@ export function InboxPage(): React.JSX.Element {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex min-h-full max-w-3xl flex-col p-3">
           {items === undefined ? (
-            <LoadingBlock />
+            <InboxListSkeleton rows={8} />
           ) : items.length === 0 ? (
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 text-center">
               <span className="mb-1 flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">

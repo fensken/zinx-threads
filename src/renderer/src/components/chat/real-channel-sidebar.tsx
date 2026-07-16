@@ -65,6 +65,7 @@ import {
 } from '@renderer/components/ui/context-menu'
 import { WorkspaceSwitcher } from '@renderer/components/workspace/workspace-switcher'
 import { SidebarQuickNav } from '@renderer/components/chat/sidebar-quick-nav'
+import { ChannelListSkeleton } from '@renderer/components/common/skeletons'
 import { PendingChannelInvites } from '@renderer/components/chat/pending-channel-invites'
 import { SharedChannelsSection } from '@renderer/components/chat/shared-channels-section'
 import { DmSection } from '@renderer/components/chat/dm-section'
@@ -335,6 +336,10 @@ export function RealChannelSidebar({ serverId }: { serverId: string }): React.JS
       <PendingChannelInvites workspaceId={workspaceId} />
 
       <div className="flex-1 overflow-y-auto px-2 pt-1 pb-2">
+        {/* While the channel list is loading, a skeleton stands in for it — the empty
+            DnD tree below renders nothing, so this is what shows. */}
+        {channelsData === undefined ? <ChannelListSkeleton /> : null}
+
         {/* The home channel sits outside the DnD tree — it can't be dragged. */}
         {defaultChannel ? (
           <ChannelRow
@@ -456,7 +461,7 @@ export function RealChannelSidebar({ serverId }: { serverId: string }): React.JS
           </Button>
         )}
 
-        {channels.length === 0 ? (
+        {channelsData !== undefined && channels.length === 0 ? (
           <p className="px-2 py-2 text-xs text-muted-foreground">
             No channels yet — create one below.
           </p>

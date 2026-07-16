@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps } from 'react'
 import { ArrowDown } from '@phosphor-icons/react'
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom'
-import { Spinner } from '@renderer/components/ui/spinner'
+import { MessageListSkeleton } from '@renderer/components/common/skeletons'
 import { cn } from '@renderer/lib/utils'
 
 /** Fills the message region while a `useQuery` is `undefined`.
@@ -10,14 +10,10 @@ import { cn } from '@renderer/lib/utils'
  *  `StickToBottom` would measure a zero-height list, then jump when the messages
  *  land. The composer stays mounted below, so the channel never looks broken.
  *
- *  A skeleton list belongs here eventually; a spinner is the honest placeholder
- *  until then. */
+ *  A bottom-anchored message skeleton (not a spinner) so the swap to real messages
+ *  doesn't move the composer or flash an empty column. */
 export function ConversationLoading({ className }: { className?: string }): React.JSX.Element {
-  return (
-    <div className={cn('flex min-h-0 flex-1 items-center justify-center', className)}>
-      <Spinner className="size-6 text-muted-foreground" />
-    </div>
-  )
+  return <MessageListSkeleton className={className} />
 }
 
 /** The scrolling message region, ported from `_zinx`'s `conversation.tsx` (same

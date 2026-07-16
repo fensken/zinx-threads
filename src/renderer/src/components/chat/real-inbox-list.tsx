@@ -3,7 +3,7 @@ import { useMutation } from 'convex/react'
 import { useQuery } from 'convex-helpers/react/cache/hooks'
 import { ArrowRight, Check, Tray } from '@phosphor-icons/react'
 import { api } from '@convex/_generated/api'
-import { LoadingBlock } from '@renderer/components/common/loading-block'
+import { InboxListSkeleton } from '@renderer/components/common/skeletons'
 import { NavEmptyState } from '@renderer/components/chat/nav-flyout'
 import { InboxRow } from '@renderer/components/inbox/inbox-row'
 import { useOpenInboxItem } from '@renderer/lib/use-open-inbox-item'
@@ -35,7 +35,7 @@ export function RealInboxList({
   const navigate = useNavigate()
   const now = useNow()
 
-  if (items === undefined) return <LoadingBlock />
+  if (items === undefined) return <InboxListSkeleton rows={5} className="p-1" />
   const hasUnread = items.some((item) => !item.read)
 
   return (

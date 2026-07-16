@@ -1,7 +1,7 @@
 import { Navigate, createFileRoute } from '@tanstack/react-router'
 import { useQuery } from 'convex-helpers/react/cache/hooks'
 import { api } from '@convex/_generated/api'
-import { Spinner } from '@renderer/components/ui/spinner'
+import { ChannelViewSkeleton } from '@renderer/components/common/skeletons'
 import { toSlug } from '@renderer/lib/slug'
 
 export const Route = createFileRoute('/w/$workspaceId/')({
@@ -24,22 +24,14 @@ function WorkspaceHome(): React.JSX.Element {
   const groups = useQuery(api.groups.listBySlug, { slug: workspaceId })
 
   if (channels === undefined) {
-    return (
-      <div className="flex min-w-0 flex-1 items-center justify-center">
-        <Spinner className="size-6 text-muted-foreground" />
-      </div>
-    )
+    return <ChannelViewSkeleton />
   }
   const target = landingChannel(channels)
   if (!target) return <EmptyState />
 
   // A grouped landing target needs the group name to build the canonical URL.
   if (target.groupId && groups === undefined) {
-    return (
-      <div className="flex min-w-0 flex-1 items-center justify-center">
-        <Spinner className="size-6 text-muted-foreground" />
-      </div>
-    )
+    return <ChannelViewSkeleton />
   }
   const group = target.groupId ? groups?.find((g) => g._id === target.groupId) : undefined
   return group ? (

@@ -11,7 +11,7 @@ import { WorkspaceDirectoryProvider } from '@renderer/components/chat/workspace-
 import { WorkspaceRightPanel } from '@renderer/components/chat/workspace-right-panel'
 import { VoiceCallProvider } from '@renderer/components/voice/voice-call-provider'
 import { EventReminderBanner } from '@renderer/components/events/event-reminder-banner'
-import { Spinner } from '@renderer/components/ui/spinner'
+import { WorkspaceShellSkeleton } from '@renderer/components/common/skeletons'
 import { useUiStore } from '@renderer/store/ui-store'
 import { useMediaQuery } from '@renderer/lib/use-media-query'
 import { cn } from '@renderer/lib/utils'
@@ -25,13 +25,7 @@ function ServerLayout(): React.JSX.Element {
   const { workspaceId } = Route.useParams()
   const workspace = useQuery(api.workspaces.getBySlug, { slug: workspaceId })
 
-  if (workspace === undefined) {
-    return (
-      <div className="flex h-full items-center justify-center bg-sidebar">
-        <Spinner className="size-6 text-muted-foreground" />
-      </div>
-    )
-  }
+  if (workspace === undefined) return <WorkspaceShellSkeleton />
   if (workspace === null) return <Navigate to="/workspaces" replace />
   return <Shell workspaceId={workspaceId} workspaceDocId={workspace.workspace._id} />
 }

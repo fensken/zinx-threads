@@ -45,7 +45,9 @@ export function TaskBoard({
   return (
     <KanbanColumn
       value={columnId}
-      className="flex max-h-full w-[280px] shrink-0 flex-col sm:w-[320px]"
+      // `cursor-default` undoes the board's `cursor-grab`: the background pans, a
+      // column doesn't, so the grab hand must stop at the column's edge.
+      className="flex max-h-full w-[280px] shrink-0 cursor-default flex-col sm:w-[320px]"
     >
       <Card
         data-size="sm"

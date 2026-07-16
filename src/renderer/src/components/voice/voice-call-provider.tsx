@@ -12,7 +12,7 @@ import { toast } from 'sonner'
 import { api } from '@convex/_generated/api'
 import type { Id } from '@convex/_generated/dataModel'
 import { useVoiceStore } from '@renderer/store/voice-store'
-import { playJoinSound, playLeaveSound } from '@renderer/lib/call-sounds'
+import { playJoinSound, playLeaveSound } from '@renderer/lib/sounds'
 import { errorMessage } from '@renderer/lib/convex-error'
 
 // The LiveKit server URL (public; the minted token is the capability). Absent →

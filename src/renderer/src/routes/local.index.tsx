@@ -47,7 +47,7 @@ function FirstRun(): React.JSX.Element {
   return (
     <div className="flex min-w-0 flex-1 flex-col items-center justify-center p-6">
       <div className="flex w-full max-w-sm flex-col items-center gap-4 text-center">
-        <span className="flex size-14 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-600 shadow-lg dark:text-amber-400">
+        <span className="flex size-14 items-center justify-center rounded-2xl bg-warning/15 text-warning shadow-lg">
           <WifiSlash className="size-7" weight="bold" />
         </span>
         <div>

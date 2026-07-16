@@ -13,6 +13,9 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite'
 // everywhere), native calls go through `src/renderer/src/lib/platform.ts` (web
 // fallbacks), and the router picks browser vs hash history per target.
 export default defineConfig({
+  // Excalidraw reads `process.env.IS_PREACT` at module scope — see the note in
+  // electron.vite.config.ts.
+  define: { 'process.env.IS_PREACT': JSON.stringify('false') },
   root: resolve(__dirname, 'src/renderer'),
   // `.env.local` lives at the project root, but `envDir` defaults to `root`
   // (src/renderer) — point it back so the web build sees VITE_CONVEX_URL / WorkOS.

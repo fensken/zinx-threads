@@ -37,15 +37,23 @@ mac:
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
+  # AppImage (run-anywhere, just `chmod +x`) + deb. `snap` was dropped for beta — it needs
+  # `snapcraft` on the build machine (absent on GitHub's `ubuntu-latest`) and a store login to be
+  # useful; add it back once there's a reason to publish to the Snap Store.
   target:
     - AppImage
-    - snap
     - deb
   maintainer: electronjs.org
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
+# Distribution + auto-update = GitHub Releases. `electron-builder --publish always` (via the
+# release:* scripts) builds the installers AND uploads them + the `latest*.yml` update manifests
+# to a Release, which `electron-updater` (src/main/updater.ts) then reads. Needs a `GH_TOKEN`
+# env var with `repo` scope. Beta builds are UNSIGNED — they auto-update on Windows/Linux;
+# macOS refuses unsigned updates (re-download manually until signed).
 publish:
-  provider: generic
-  url: https://example.com/auto-updates
+  provider: github
+  owner: fensken
+  repo: zinx-threads

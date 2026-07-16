@@ -17,6 +17,8 @@ import { Label } from '@renderer/components/ui/label'
 import { Button } from '@renderer/components/ui/button'
 import { Spinner } from '@renderer/components/ui/spinner'
 import { BusyLabel } from '@renderer/components/common/busy-label'
+import { TimezoneSelect } from '@renderer/components/common/timezone-select'
+import { detectTimeZone } from '@renderer/lib/timezone'
 import { errorMessage } from '@renderer/lib/convex-error'
 import { toSlug } from '@renderer/lib/slug'
 
@@ -33,6 +35,10 @@ export function CreateWorkspaceDialog({
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [slugTouched, setSlugTouched] = useState(false)
+  // The team's clock. Defaulted to the creator's own zone (nearly always right), but
+  // asked for up front rather than assumed: it's what events are authored in, and a
+  // wrong one shifts every meeting by hours in a way nobody thinks to check later.
+  const [timezone, setTimezone] = useState(detectTimeZone())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const create = useMutation(api.workspaces.create)
@@ -52,11 +58,12 @@ export function CreateWorkspaceDialog({
     setBusy(true)
     setError(null)
     try {
-      const result = await create({ name: name.trim(), slug })
+      const result = await create({ name: name.trim(), slug, timezone })
       onOpenChange(false)
       setName('')
       setSlug('')
       setSlugTouched(false)
+      setTimezone(detectTimeZone())
       await navigate({ to: '/w/$workspaceId', params: { workspaceId: result.slug } })
     } catch (err) {
       setError(errorMessage(err, 'Could not create workspace'))
@@ -76,7 +83,7 @@ export function CreateWorkspaceDialog({
     }
     if (availability.available) {
       return (
-        <p className="flex items-center gap-1 text-xs text-emerald-500">
+        <p className="flex items-center gap-1 text-xs text-success">
           <Check className="size-3.5" weight="bold" /> Available
         </p>
       )
@@ -132,6 +139,14 @@ export function CreateWorkspaceDialog({
               />
             </div>
             {status()}
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Time zone</Label>
+            <TimezoneSelect value={timezone} onChange={setTimezone} />
+            <p className="text-xs text-muted-foreground">
+              The team&apos;s working clock. Events are scheduled in it — everyone still sees the
+              time in their own zone as well.
+            </p>
           </div>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
         </form>

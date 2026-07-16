@@ -209,7 +209,7 @@ export function PageEditor({
                 patchMeta({ title: event.target.value })
               }}
               placeholder="Untitled"
-              className="w-full bg-transparent text-4xl font-bold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/40"
+              className="w-full bg-transparent text-4xl font-bold tracking-tight text-foreground outline-none placeholder:text-muted-foreground"
             />
             {doc.subtitle ? <p className="mt-2 text-muted-foreground">{doc.subtitle}</p> : null}
           </div>

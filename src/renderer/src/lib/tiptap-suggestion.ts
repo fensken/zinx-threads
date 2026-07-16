@@ -18,7 +18,8 @@ export interface SuggestionApplyContext {
 
 /** The left-hand visual for a menu row. Kept as a *token*, not a `ReactNode`, so
  *  entry builders stay in plain `.ts` and the menu owns all rendering. */
-export type SuggestionIcon = 'chat' | 'voice' | 'page' | 'kanban' | 'group'
+export type SuggestionIcon =
+  'chat' | 'voice' | 'page' | 'kanban' | 'whiteboard' | 'group' | 'silent'
 
 export interface SuggestionEntry {
   id: string

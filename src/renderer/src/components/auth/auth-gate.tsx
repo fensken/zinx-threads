@@ -13,12 +13,15 @@ export function AuthGate({ children }: { children: React.ReactNode }): React.JSX
 
   // Offline mode needs no account — render it straight through.
   if (pathname.startsWith('/local')) return <>{children}</>
+  // The developer docs are public — a person evaluating the API or connecting an AI reads
+  // them before they have (or need) an account.
+  if (pathname.startsWith('/docs')) return <>{children}</>
   if (!authEnabled) return <>{children}</>
 
   return (
     <>
       <AuthLoading>
-        <div className="flex h-dvh items-center justify-center bg-sidebar">
+        <div className="flex h-full items-center justify-center bg-sidebar">
           <Spinner className="size-6 text-muted-foreground" />
         </div>
       </AuthLoading>

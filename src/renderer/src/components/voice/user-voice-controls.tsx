@@ -39,9 +39,9 @@ function VoiceConnectedStripContent({ channelName }: { channelName: string }): R
   return (
     <div className="mx-2 mt-2 rounded-lg bg-sidebar-accent/40 px-2 py-2">
       <div className="flex items-center gap-2">
-        <Waveform className="size-4 shrink-0 text-emerald-500" weight="bold" />
+        <Waveform className="size-4 shrink-0 text-success" weight="bold" />
         <div className="min-w-0 flex-1 leading-tight">
-          <div className="truncate text-xs font-semibold text-emerald-500">Voice Connected</div>
+          <div className="truncate text-xs font-semibold text-success">Voice Connected</div>
           <div className="truncate text-xs text-muted-foreground">{channelName}</div>
         </div>
         <Tip label="Disconnect">

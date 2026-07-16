@@ -59,8 +59,10 @@ export function SharedChannelsSection({
               <Link
                 to="/w/$workspaceId/c/$channelId"
                 params={{ workspaceId: serverId, channelId: channel.channelId }}
-                activeProps={{ className: 'bg-sidebar-accent text-foreground' }}
-                inactiveProps={{ className: 'text-muted-foreground hover:text-foreground' }}
+                activeProps={{ className: 'bg-sidebar-accent text-sidebar-foreground' }}
+                inactiveProps={{
+                  className: 'text-muted-foreground hover:text-sidebar-foreground'
+                }}
                 className={cn(
                   'group flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-sidebar-accent/60'
                 )}
@@ -72,8 +74,14 @@ export function SharedChannelsSection({
               className="size-4 shrink-0 text-muted-foreground"
             />
             <span className="min-w-0 flex-1 truncate">{channel.name}</span>
-            {/* Org badge — which workspace hosts this channel (connected via plug). */}
-            <span className="flex shrink-0 items-center gap-1 truncate rounded bg-sidebar-accent px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            {/* Org badge — the **host** workspace: the one that owns this channel and
+                shared it into yours. Styled like the channel header's connection pill
+                (`channel-connection-pill.tsx`), so a shared channel reads the same
+                whether you're looking at the sidebar or the header you land on. */}
+            <span
+              title={`Shared from ${channel.ownerWorkspaceName}`}
+              className="inline-flex shrink-0 items-center gap-1 truncate rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+            >
               <PlugsConnected className="size-2.5 shrink-0" weight="bold" />
               {channel.ownerWorkspaceName}
             </span>
@@ -94,8 +102,10 @@ export function SharedChannelsSection({
         description={
           <>
             Your workspace loses access to this shared channel.{' '}
-            <span className="font-medium text-foreground">{leaving?.ownerWorkspaceName}</span> keeps
-            it and its history. You can be re-invited later.
+            <span className="font-medium text-sidebar-foreground">
+              {leaving?.ownerWorkspaceName}
+            </span>{' '}
+            keeps it and its history. You can be re-invited later.
           </>
         }
         confirmLabel="Leave channel"

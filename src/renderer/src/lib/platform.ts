@@ -153,8 +153,137 @@ export const platform = {
   onDeepLink(handler: (url: string) => void): () => void {
     if (isElectron && window.api?.onDeepLink) return window.api.onDeepLink(handler)
     return () => {}
+  },
+
+  /** Drive the window controls we draw ourselves (Windows/Linux). No-ops on web and
+   *  on macOS, where the native traffic lights do this and are never redrawn. */
+  windowControls: {
+    minimize(): void {
+      void window.api?.windowControls?.minimize()
+    },
+    toggleMaximize(): void {
+      void window.api?.windowControls?.toggleMaximize()
+    },
+    close(): void {
+      void window.api?.windowControls?.close()
+    },
+    async isMaximized(): Promise<boolean> {
+      return (await window.api?.windowControls?.isMaximized()) ?? false
+    },
+    /** Returns an unsubscribe fn. */
+    onMaximizeChange(handler: (maximized: boolean) => void): () => void {
+      return window.api?.windowControls?.onMaximizeChange(handler) ?? ((): void => {})
+    }
+  },
+
+  /**
+   * OS notifications. Desktop goes through the preload bridge (main shows a real
+   * native notification); **web falls back to the browser's Notification API**, which
+   * is the same idea with a permission prompt in front of it.
+   *
+   * `silent` defaults true: we play our own chime in-app, and letting the OS add its
+   * own on top means two sounds for one message.
+   *
+   * `tag` **coalesces**: a later notification with the same tag *replaces* the earlier
+   * one instead of stacking a second banner. Without it, spamming a source (e.g. the
+   * settings "test notification" button) piles up N banners in the OS notification
+   * centre. Distinct events should use distinct tags (or none); repeated ones share a
+   * tag so the newest wins.
+   */
+  notify(payload: {
+    title: string
+    body: string
+    route?: string
+    silent?: boolean
+    tag?: string
+  }): void {
+    if (isElectron && window.api?.notify) {
+      void window.api.notify(payload)
+      return
+    }
+    // Web: only when the user has already granted permission. We never *prompt* from
+    // here — a permission dialog that appears because a message arrived is exactly the
+    // kind of interruption this feature is supposed to avoid.
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        new Notification(payload.title, {
+          body: payload.body,
+          silent: payload.silent !== false,
+          // Same tag → the browser replaces the previous banner rather than adding one.
+          tag: payload.tag
+        })
+      }
+    } catch {
+      /* not supported — a missing notification is not worth an exception */
+    }
+  },
+
+  /**
+   * May we show a desktop notification — asking for permission if we haven't yet?
+   *
+   * The *only* caller is the settings toggle. `notify()` deliberately never prompts (a
+   * permission dialog that appears because a message arrived is exactly the interruption
+   * the feature exists to avoid), but a person who just clicked "Desktop notifications" has
+   * asked for the prompt, so this is where it belongs. Desktop needs none — the OS owns it.
+   */
+  async requestNotificationPermission(): Promise<boolean> {
+    if (isElectron) return Boolean(window.api?.notify)
+    try {
+      if (typeof Notification === 'undefined') return false
+      if (Notification.permission === 'granted') return true
+      // 'denied' is the browser's setting, not ours: re-asking is not allowed and would
+      // be ignored anyway.
+      if (Notification.permission === 'denied') return false
+      return (await Notification.requestPermission()) === 'granted'
+    } catch {
+      return false
+    }
+  },
+
+  /** The user clicked a notification: the `route` it carried. Desktop only (main has
+   *  already focused the window); a no-op on web. */
+  onNotificationClick(handler: (route: string) => void): () => void {
+    if (isElectron && window.api?.onNotificationClick) {
+      return window.api.onNotificationClick(handler)
+    }
+    return () => {}
+  },
+
+  /** Unread count on the dock (macOS) / taskbar (Linux). No-op on Windows and web. */
+  setBadgeCount(count: number): void {
+    if (isElectron && window.api?.setBadgeCount) void window.api.setBadgeCount(count)
   }
 }
+
+/** The app draws its own title bar on desktop; the web build has the browser's chrome
+ *  and must not reserve a strip for one. */
+export const hasCustomTitleBar = isElectron
+
+/**
+ * Who draws the minimise / maximise / close buttons — the one cross-platform decision in
+ * the title bar, and it is not uniform on purpose.
+ *
+ *  - `'custom'` (Windows, Linux) — **we** draw them (`layout/window-controls.tsx`), so
+ *    they follow the app's theme. The window is `frame: false`. This is what Discord,
+ *    VS Code and Slack all do on these platforms, because the native buttons offer no
+ *    real styling: Electron's `titleBarOverlay` exposes two colours and a height, and
+ *    nothing else.
+ *  - `'native'` (macOS) — the traffic lights, **always**. Nobody redraws those. Their
+ *    colours, position, hover glyphs and Option-click behaviour are muscle memory, and a
+ *    hand-drawn imitation reads as a broken app rather than a styled one. Discord, VS
+ *    Code and Slack all leave them alone too. We only inset them into our taller bar.
+ *  - `'none'` (web) — the browser has its own chrome.
+ */
+export type WindowControlsStyle = 'custom' | 'native' | 'none'
+
+const IS_MAC_PLATFORM =
+  typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent)
+
+export const windowControlsStyle: WindowControlsStyle = !isElectron
+  ? 'none'
+  : IS_MAC_PLATFORM
+    ? 'native'
+    : 'custom'
 
 /** A shareable screen or window (thumbnail + optional app icon are data URLs). */
 export interface ScreenSource {

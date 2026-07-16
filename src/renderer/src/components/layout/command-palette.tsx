@@ -1,10 +1,13 @@
 import { useCallback, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from 'convex-helpers/react/cache/hooks'
-import { ChatsCircle, Gear, MagnifyingGlass, Tray, Users } from '@phosphor-icons/react'
+import { useMutation } from 'convex/react'
+import { toast } from 'sonner'
+import { Scribble, Gear, MagnifyingGlass, Tray, Users } from '@phosphor-icons/react'
 import { api } from '@convex/_generated/api'
 import type { Id } from '@convex/_generated/dataModel'
 import { cn } from '@renderer/lib/utils'
+import { errorMessage } from '@renderer/lib/convex-error'
 import { initialsOf } from '@renderer/lib/initials'
 import { messagePreview } from '@renderer/lib/message-preview'
 import { presenceForStatus, STATUS_LABEL, normalizeStatus } from '@renderer/lib/user-status'
@@ -110,6 +113,8 @@ function RealPalette({
 }): React.JSX.Element {
   const { close, navigate, openThread, actions } = usePaletteChrome()
   const setMemberListOpen = useUiStore((state) => state.setMemberListOpen)
+  const openDm = useMutation(api.dms.open)
+  const me = useQuery(api.users.me)
   const [query, setQuery] = useState('')
 
   const channels = useQuery(api.channels.listBySlug, { slug: serverId })
@@ -154,7 +159,7 @@ function RealPalette({
       group: 'Threads',
       label: thread.name,
       sublabel: `#${thread.channelName} · ${plural(thread.replyCount, 'reply', 'replies')}`,
-      icon: <ChatsCircle className="size-4" />,
+      icon: <Scribble className="size-4" />,
       run: () => {
         navigate({
           to: '/w/$workspaceId/$channelSlug',
@@ -169,12 +174,13 @@ function RealPalette({
   for (const { membership, user } of members ?? []) {
     const name = membership.displayName?.trim() || user.name
     const status = normalizeStatus(user.presence)
+    const isMe = user._id === me?._id
     items.push({
       key: `mb-${user._id}`,
       group: 'People',
       label: name,
       // The status they set, else the presence label — never the raw user id.
-      sublabel: user.statusText?.trim() || STATUS_LABEL[status],
+      sublabel: isMe ? 'You' : user.statusText?.trim() || STATUS_LABEL[status],
       icon: (
         <Avatar
           initials={initialsOf(name)}
@@ -185,10 +191,26 @@ function RealPalette({
           ringClassName="ring-2 ring-popover"
         />
       ),
-      // There is no DM or profile route yet, so the honest action is to reveal
-      // them where they *are* addressable: the members panel.
+      // Message them — the reason you'd look someone up in the first place. Opening
+      // a conversation is find-or-create, so this lands in the existing one if there
+      // is one. Yourself excepted: there's no note-to-self conversation, so the
+      // honest fallback is to reveal you where you *are* addressable.
       run: () => {
-        setMemberListOpen(true)
+        if (isMe) {
+          setMemberListOpen(true)
+          close()
+          return
+        }
+        void openDm({ workspaceId, userIds: [user._id] })
+          .then((channelId) =>
+            navigate({
+              to: '/w/$workspaceId/d/$channelId',
+              params: { workspaceId: serverId, channelId }
+            })
+          )
+          .catch((err: unknown) =>
+            toast.error(errorMessage(err, 'Could not open the conversation'))
+          )
         close()
       }
     })
@@ -222,7 +244,12 @@ function RealPalette({
       key: `msg-${hit._id}`,
       group: 'Messages',
       label: preview.isGif ? preview.text : preview.text || '(no text)',
-      sublabel: `#${hit.channelName} · ${hit.authorName}`,
+      // A DM hit is located by *who it's with*, not a `#channel` — and its channel
+      // name is an internal key that must never be shown. The server sends the
+      // participants as `channelName` for a DM, and flags it.
+      sublabel: hit.isDm
+        ? `${hit.channelName} · ${hit.authorName}`
+        : `#${hit.channelName} · ${hit.authorName}`,
       skipFilter: true,
       icon: (
         <Avatar
@@ -234,10 +261,17 @@ function RealPalette({
         />
       ),
       run: () => {
-        navigate({
-          to: '/w/$workspaceId/$channelSlug',
-          params: { workspaceId: serverId, channelSlug: hit.channelName }
-        })
+        if (hit.isDm) {
+          navigate({
+            to: '/w/$workspaceId/d/$channelId',
+            params: { workspaceId: serverId, channelId: hit.channelId }
+          })
+        } else {
+          navigate({
+            to: '/w/$workspaceId/$channelSlug',
+            params: { workspaceId: serverId, channelSlug: hit.channelName }
+          })
+        }
         close()
       }
     })
@@ -361,7 +395,7 @@ export function PaletteDialog({
                         onMouseMove={() => setActive(index)}
                         className={cn(
                           'flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors',
-                          index === activeIndex ? 'bg-accent text-foreground' : 'text-foreground/90'
+                          index === activeIndex ? 'bg-accent text-foreground' : 'text-foreground'
                         )}
                       >
                         <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground">

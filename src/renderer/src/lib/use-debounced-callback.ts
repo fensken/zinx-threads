@@ -1,4 +1,17 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+
+/** Trailing-edge debounce of a **value** — for search-as-you-type, where an effect should key on
+ *  a *settled* query rather than fire on every keystroke. (The callback variant, for autosave, is
+ *  `useDebouncedCallback` below.) Returns the input value, but only after it has stopped changing
+ *  for `delayMs`. */
+export function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delayMs)
+    return () => clearTimeout(timer)
+  }, [value, delayMs])
+  return debounced
+}
 
 /** Trailing-edge debounce that **flushes on unmount**.
  *

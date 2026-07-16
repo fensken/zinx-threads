@@ -8,8 +8,10 @@ import { RealChannelView } from '@renderer/components/chat/real-channel-view'
 import { RealChannelHeader } from '@renderer/components/chat/real-channel-header'
 import { ChannelDirectoryScope } from '@renderer/components/chat/channel-directory-scope'
 
-// Page editor + voice room are large chunks (BlockNote, LiveKit) — only load
-// them for the channel kinds that use them.
+// Page editor, voice room and whiteboard are large chunks (BlockNote ~900kB, LiveKit,
+// Excalidraw ~1MB) — only load them for the channel kinds that use them. A static import
+// of any of these puts it in the main bundle and every user pays for it, whether or not
+// they ever open that kind of channel.
 const RealPageEditor = lazy(() =>
   import('@renderer/components/page/real-page-editor').then((module) => ({
     default: module.RealPageEditor
@@ -18,6 +20,11 @@ const RealPageEditor = lazy(() =>
 const RealVoiceView = lazy(() =>
   import('@renderer/components/voice/voice-room').then((module) => ({
     default: module.RealVoiceView
+  }))
+)
+const RealWhiteboardView = lazy(() =>
+  import('@renderer/components/whiteboard/real-whiteboard-view').then((module) => ({
+    default: module.RealWhiteboardView
   }))
 )
 
@@ -75,6 +82,16 @@ export function RealChannelPage({
       </Suspense>
     ) : channel.kind === 'kanban' ? (
       <RealBoardView key={channel._id} channel={channel} />
+    ) : channel.kind === 'whiteboard' ? (
+      <Suspense
+        fallback={
+          <div className="flex flex-1 items-center justify-center">
+            <Spinner className="size-6 text-muted-foreground" />
+          </div>
+        }
+      >
+        <RealWhiteboardView key={channel._id} channelId={channel._id} />
+      </Suspense>
     ) : channel.kind === 'voice' ? (
       <Suspense
         fallback={
@@ -96,6 +113,9 @@ export function RealChannelPage({
           channel={channel}
           // Guests never moderate a shared channel — the host workspace is in charge.
           canModerate={!isGuest && (resolved?.role === 'owner' || resolved?.role === 'admin')}
+          // Resolved server-side (`getChannelAccess`) and shipped with the channel, so a
+          // read-only channel paints its lock on the first frame.
+          canPost={channel.canPost}
         />
       </ChannelDirectoryScope>
     )

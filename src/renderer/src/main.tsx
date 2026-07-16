@@ -9,9 +9,32 @@ import { RouterProvider } from '@tanstack/react-router'
 import { ConvexProvider, ConvexReactClient } from 'convex/react'
 import { ConvexQueryCacheProvider } from 'convex-helpers/react/cache'
 import { router } from './router'
-import { isElectron } from './lib/platform'
+import { isElectron, isPackagedDesktop } from './lib/platform'
 import { initDesktopAuth } from './lib/desktop-auth'
 import { AuthProviders } from './components/auth/auth-providers'
+
+/**
+ * Tell Excalidraw to load its fonts from **us**, not from unpkg.
+ *
+ * Unset, it fetches them from a CDN — which our CSP (`font-src 'self' data:`) blocks
+ * outright, so text rendering fails; and which would make a whiteboard need the network
+ * to draw, in an app whose whole point includes working offline. The files are copied into
+ * `public/fonts/` by `scripts/copy-excalidraw-assets.mjs` (run from `dev` / `build`).
+ *
+ * Must be set **before** Excalidraw's module is evaluated — hence here, at app boot, and
+ * not inside the lazy whiteboard chunk (an ES import would be hoisted above it anyway).
+ *
+ * A packaged build runs from `file://` with hash routing, so it needs a path relative to
+ * `index.html`; the web build and `pnpm dev` are served over http from the origin root,
+ * where a relative path would resolve against the current route (`/w/zinx/board/fonts/…`)
+ * and 404.
+ */
+declare global {
+  interface Window {
+    EXCALIDRAW_ASSET_PATH?: string
+  }
+}
+window.EXCALIDRAW_ASSET_PATH = isPackagedDesktop ? './' : '/'
 
 // Convex client, created once at module scope. Everything is env-guarded so the
 // app degrades gracefully:

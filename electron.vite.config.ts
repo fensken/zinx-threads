@@ -8,6 +8,10 @@ export default defineConfig({
   main: {},
   preload: {},
   renderer: {
+    // Excalidraw reads `process.env.IS_PREACT` at module scope; without this define it
+    // throws `process is not defined` in the browser. Its own docs prescribe exactly
+    // this for Vite.
+    define: { 'process.env.IS_PREACT': JSON.stringify('false') },
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer/src'),

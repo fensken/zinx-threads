@@ -5,9 +5,9 @@ import type { UserStatus } from '@renderer/lib/user-status'
 // Presence colours (categorical — the allowed hardcoded-colour exception, same
 // palette as `PresenceDot`).
 const COLOR: Record<UserStatus, string> = {
-  online: 'text-emerald-500',
-  away: 'text-amber-400',
-  dnd: 'text-red-500',
+  online: 'text-success',
+  away: 'text-warning',
+  dnd: 'text-destructive',
   invisible: 'text-muted-foreground'
 }
 

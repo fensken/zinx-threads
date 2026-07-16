@@ -12,6 +12,7 @@ import { Label } from '@renderer/components/ui/label'
 import { Button } from '@renderer/components/ui/button'
 import { Spinner } from '@renderer/components/ui/spinner'
 import { BusyLabel } from '@renderer/components/common/busy-label'
+import { TimezoneSelect } from '@renderer/components/common/timezone-select'
 import { toSlug } from '@renderer/lib/slug'
 import {
   Select,
@@ -22,16 +23,21 @@ import {
 } from '@renderer/components/ui/select'
 import { useUiStore } from '@renderer/store/ui-store'
 import { ConfirmDialog } from '@renderer/components/common/confirm-dialog'
-import { Avatar } from '@renderer/components/common/avatar'
+import { Avatar, FALLBACK_AVATAR_COLOR } from '@renderer/components/common/avatar'
 import { UploadableAvatar } from '@renderer/components/common/uploadable-avatar'
 import { IconPickerDialog } from '@renderer/components/pickers/icon-picker-dialog'
 import { WorkspaceGlyph } from '@renderer/components/workspace/workspace-glyph'
 import { errorMessage } from '@renderer/lib/convex-error'
+import { detectTimeZone, localTimeLabel } from '@renderer/lib/timezone'
 
 // The four workspace-settings panels. They're hosted as sections of the unified
 // Settings modal (`settings-dialog.tsx`); each resolves real Convex data.
 
-export type Role = 'owner' | 'admin' | 'member'
+export type Role = 'owner' | 'admin' | 'member' | 'guest'
+
+/** The roles an owner/admin can assign, and what they're **called**. The key is the
+ *  stored value; the value is the only thing a user ever sees. */
+const ROLE_LABELS: Record<string, string> = { member: 'Member', admin: 'Admin' }
 
 function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -94,7 +100,7 @@ export function ProfileTab({
         <UploadableAvatar size="size-14" onFile={uploadAvatar}>
           <Avatar
             initials={initialsOf(effective)}
-            color={me?.color ?? '#5865f2'}
+            color={me?.color ?? FALLBACK_AVATAR_COLOR}
             image={me?.avatarUrl}
             className="size-full text-base"
           />
@@ -149,6 +155,9 @@ export function GeneralTab({
   const [name, setName] = useState(workspace.name)
   const [slug, setSlug] = useState(workspace.slug)
   const [icon, setIcon] = useState(workspace.icon ?? '')
+  // Workspaces created before zones existed have none — seed the field from the
+  // viewer's own so it shows a real value rather than a blank that saves as blank.
+  const [timezone, setTimezone] = useState(workspace.timezone ?? detectTimeZone())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -158,13 +167,17 @@ export function GeneralTab({
     slugChanged && slug.length >= 2 ? { slug } : 'skip'
   )
   const slugOk = !slugChanged || availability?.available === true
-  const dirty = name !== workspace.name || icon !== (workspace.icon ?? '') || slugChanged
+  const dirty =
+    name !== workspace.name ||
+    icon !== (workspace.icon ?? '') ||
+    slugChanged ||
+    timezone !== (workspace.timezone ?? detectTimeZone())
 
   const save = async (): Promise<void> => {
     setBusy(true)
     setError(null)
     try {
-      const result = await update({ workspaceId: workspace._id, name, slug, icon })
+      const result = await update({ workspaceId: workspace._id, name, slug, icon, timezone })
       // Changing the address changes the workspace URL — move there so the current
       // route (still on the old slug) doesn't fall through to "not found".
       if (result.slug !== workspace.slug) {
@@ -188,7 +201,7 @@ export function GeneralTab({
     }
     if (availability.available) {
       return (
-        <p className="flex items-center gap-1 text-xs text-emerald-500">
+        <p className="flex items-center gap-1 text-xs text-success">
           <Check className="size-3.5" weight="bold" /> Available
         </p>
       )
@@ -296,6 +309,15 @@ export function GeneralTab({
         </span>
       </div>
 
+      <div className="grid gap-2">
+        <Label>Time zone</Label>
+        <TimezoneSelect value={timezone} onChange={setTimezone} disabled={!canManage} />
+        <span className="text-xs text-muted-foreground">
+          The team&apos;s working clock — it&apos;s {localTimeLabel(timezone)} here. Events are
+          scheduled in this zone; each member also sees them in their own.
+        </span>
+      </div>
+
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {canManage ? (
         <div>
@@ -334,7 +356,7 @@ export function MembersTab({
           <li key={membership._id} className="flex items-center gap-3 rounded-lg px-1 py-1.5">
             <Avatar
               initials={initialsOf(shownName)}
-              color={user.color ?? '#5865f2'}
+              color={user.color ?? FALLBACK_AVATAR_COLOR}
               image={user.avatarUrl}
               className="size-8"
             />
@@ -348,7 +370,11 @@ export function MembersTab({
               </span>
             ) : canManage ? (
               <>
+                {/* `items`: without it the trigger prints the raw value — a lowercase
+                    `member` rather than "Member". Base UI's `Select.Value` has no other
+                    way to know the label. */}
                 <Select
+                  items={ROLE_LABELS}
                   value={membership.role}
                   onValueChange={(value) =>
                     updateRole({
@@ -361,8 +387,11 @@ export function MembersTab({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="member">Member</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
+                    {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <Button

@@ -3,6 +3,7 @@ import { useAction } from 'convex/react'
 import { MagnifyingGlass } from '@phosphor-icons/react'
 import { api } from '@convex/_generated/api'
 import { Spinner } from '@renderer/components/ui/spinner'
+import { useDebouncedValue } from '@renderer/lib/use-debounced-callback'
 import { cn } from '@renderer/lib/utils'
 
 type UnsplashPhoto = {
@@ -30,32 +31,32 @@ export function UnsplashPicker({
   const trackDownload = useAction(api.unsplash.trackDownload)
   const [query, setQuery] = useState('')
   const [photos, setPhotos] = useState<UnsplashPhoto[]>([])
-  const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  // `loading` is DERIVED from whether the current photos/error reflect the settled query — no
+  // synchronous setState in the effect, and the spinner can't drift out of sync with the results.
+  const [loadedQuery, setLoadedQuery] = useState<string | null>(null)
 
+  const debouncedQuery = useDebouncedValue(query, 250)
+  const loading = loadedQuery !== debouncedQuery
   useEffect(() => {
+    // `active` guards a stale response from a prior query.
     let active = true
-    const timer = setTimeout(() => {
-      if (!active) return
-      setLoading(true)
-      setError(false)
-      searchPhotos({ query })
-        .then((results) => {
-          if (!active) return
-          setPhotos(results)
-          setLoading(false)
-        })
-        .catch(() => {
-          if (!active) return
-          setError(true)
-          setLoading(false)
-        })
-    }, 250)
+    searchPhotos({ query: debouncedQuery })
+      .then((results) => {
+        if (!active) return
+        setPhotos(results)
+        setError(false)
+        setLoadedQuery(debouncedQuery)
+      })
+      .catch(() => {
+        if (!active) return
+        setError(true)
+        setLoadedQuery(debouncedQuery)
+      })
     return () => {
       active = false
-      clearTimeout(timer)
     }
-  }, [query, searchPhotos])
+  }, [debouncedQuery, searchPhotos])
 
   const pick = (photo: UnsplashPhoto): void => {
     void trackDownload({ downloadLocation: photo.downloadLocation })

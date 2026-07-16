@@ -22,27 +22,37 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  CaretRight,
   Check,
-  ChatsCircle,
   Copy,
   FileText,
   FolderOpen,
   Hash,
   Kanban,
+  LockSimple,
+  PenNib,
   MicrophoneSlash,
   PlugsConnected,
   PencilSimple,
   Plus,
+  Scribble,
+  Sliders,
   SpeakerHigh,
   Trash,
   VideoCamera
 } from '@phosphor-icons/react'
 import { api } from '@convex/_generated/api'
 import type { Doc, Id } from '@convex/_generated/dataModel'
-import { Avatar } from '@renderer/components/common/avatar'
+import { Avatar, FALLBACK_AVATAR_COLOR } from '@renderer/components/common/avatar'
+import { Button } from '@renderer/components/ui/button'
 import { DeafenGlyph } from '@renderer/components/voice/deafen-glyph'
 import { ConfirmDialog } from '@renderer/components/common/confirm-dialog'
+import { ChannelSettingsDialog } from '@renderer/components/chat/channel-settings-dialog'
+import { PostingPolicyIcon } from '@renderer/components/chat/channel-policy-icon'
+import {
+  RowActionButton,
+  SidebarGroup,
+  SidebarRow
+} from '@renderer/components/chat/sidebar-primitives'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -57,10 +67,10 @@ import { WorkspaceSwitcher } from '@renderer/components/workspace/workspace-swit
 import { SidebarQuickNav } from '@renderer/components/chat/sidebar-quick-nav'
 import { PendingChannelInvites } from '@renderer/components/chat/pending-channel-invites'
 import { SharedChannelsSection } from '@renderer/components/chat/shared-channels-section'
+import { DmSection } from '@renderer/components/chat/dm-section'
 import { CreateChannelDialog } from '@renderer/components/chat/create-channel-dialog'
 import { RenameField } from '@renderer/components/chat/rename-field'
 import { UserPanel } from '@renderer/components/common/user-panel'
-import { useUiStore } from '@renderer/store/ui-store'
 import { useVoiceStore } from '@renderer/store/voice-store'
 import { toSlug } from '@renderer/lib/slug'
 import { copyToClipboard } from '@renderer/lib/clipboard'
@@ -69,12 +79,10 @@ import { toast } from 'sonner'
 
 const UNGROUPED = '__ungrouped__'
 
-type SidebarThread = FunctionReturnType<typeof api.threads.listByChannelForSidebar>[number]
 type ChannelUnread = FunctionReturnType<typeof api.unread.listByWorkspace>[number]
 type VoicePresence = FunctionReturnType<typeof api.voice.listByWorkspace>[number]
 type SharedOut = FunctionReturnType<typeof api.sharedChannels.sharedFromWorkspace>[number]
 
-const NO_THREADS: SidebarThread[] = []
 const NO_PRESENCE: VoicePresence[] = []
 
 function initialsOf(name: string): string {
@@ -88,17 +96,8 @@ function channelIcon(kind: string, className: string): React.JSX.Element {
   if (kind === 'voice') return <SpeakerHigh className={className} />
   if (kind === 'page') return <FileText className={className} />
   if (kind === 'kanban') return <Kanban className={className} />
+  if (kind === 'whiteboard') return <PenNib className={className} />
   return <Hash className={className} />
-}
-
-/** Right padding on a channel's `<Link>`, so its name truncates before it reaches
- *  the overlaid affordances. The hover actions reserve their width whether or not
- *  they're visible (they fade, they don't unmount), so only the always-visible
- *  badges change this. */
-function trailingPad(threadBadge: boolean, mentionBadge: boolean): string {
-  if (threadBadge && mentionBadge) return 'pr-28'
-  if (threadBadge || mentionBadge) return 'pr-20'
-  return 'pr-12'
 }
 
 /** Convex-backed sidebar for real workspaces: switcher + grouped channel list
@@ -124,22 +123,17 @@ export function RealChannelSidebar({ serverId }: { serverId: string }): React.JS
   const channelMap = useMemo(() => new Map(channels.map((c) => [c._id as string, c])), [channels])
   const groupMap = useMemo(() => new Map(groups.map((g) => [g._id as string, g])), [groups])
 
-  // Threads nest under their channel (as the demo sidebar does). One
-  // workspace-wide subscription rather than one per channel — every row renders
-  // at once, and they all invalidate together anyway.
-  const threadsData = useQuery(
-    api.threads.listByChannelForSidebar,
+  // Threads are NOT listed in the sidebar — the channel header's Threads button
+  // (→ `ThreadsDialog`) is their only entry point. The row still *says how many* a
+  // channel has, so counts (not rows) are all this needs.
+  const threadCountData = useQuery(
+    api.threads.countsByChannel,
     workspaceId ? { workspaceId } : 'skip'
   )
-  const threadsByChannel = useMemo(() => {
-    const map = new Map<string, SidebarThread[]>()
-    for (const thread of threadsData ?? []) {
-      const bucket = map.get(thread.channelId)
-      if (bucket) bucket.push(thread)
-      else map.set(thread.channelId, [thread])
-    }
-    return map
-  }, [threadsData])
+  const threadCounts = useMemo(
+    () => new Map((threadCountData ?? []).map((entry) => [entry.channelId as string, entry.count])),
+    [threadCountData]
+  )
 
   // Unread state for the whole workspace in one subscription. `listByWorkspace`
   // omits channels with nothing unread, so a missing entry means "read".
@@ -327,11 +321,15 @@ export function RealChannelSidebar({ serverId }: { serverId: string }): React.JS
 
   return (
     <div className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground">
-      <div className="p-2">
-        <WorkspaceSwitcher serverId={serverId} />
+      {/* Fixed h-14 + border-b so the sidebar header lines up with the content and
+          right-panel headers (all 3.5rem tall). */}
+      <div className="flex h-14 shrink-0 items-center border-b px-2">
+        <div className="min-w-0 flex-1">
+          <WorkspaceSwitcher serverId={serverId} />
+        </div>
       </div>
 
-      <SidebarQuickNav />
+      <SidebarQuickNav serverId={serverId} />
 
       {/* Channel-share invites for THIS workspace (in-app accept/decline). */}
       <PendingChannelInvites workspaceId={workspaceId} />
@@ -343,9 +341,10 @@ export function RealChannelSidebar({ serverId }: { serverId: string }): React.JS
             channel={defaultChannel}
             serverId={serverId}
             groups={groups}
-            threads={threadsByChannel.get(defaultChannel._id) ?? NO_THREADS}
+            canManage={canManage}
             voice={presenceByChannel.get(defaultChannel._id) ?? NO_PRESENCE}
             unread={unreadByChannel.get(defaultChannel._id)}
+            threadCount={threadCounts.get(defaultChannel._id)}
             shared={sharedByChannel.get(defaultChannel._id)}
             locked
             onCreateChannel={(groupId) => setCreateIn({ groupId })}
@@ -369,9 +368,10 @@ export function RealChannelSidebar({ serverId }: { serverId: string }): React.JS
                     channel={ch}
                     serverId={serverId}
                     groups={groups}
-                    threads={threadsByChannel.get(id) ?? NO_THREADS}
+                    canManage={canManage}
                     voice={presenceByChannel.get(id) ?? NO_PRESENCE}
                     unread={unreadByChannel.get(id)}
+                    threadCount={threadCounts.get(id)}
                     shared={sharedByChannel.get(id)}
                     onCreateChannel={(groupId) => setCreateIn({ groupId })}
                   />
@@ -399,9 +399,10 @@ export function RealChannelSidebar({ serverId }: { serverId: string }): React.JS
                               channel={ch}
                               serverId={serverId}
                               groups={groups}
-                              threads={threadsByChannel.get(id) ?? NO_THREADS}
+                              canManage={canManage}
                               voice={presenceByChannel.get(id) ?? NO_PRESENCE}
                               unread={unreadByChannel.get(id)}
+                              threadCount={threadCounts.get(id)}
                               shared={sharedByChannel.get(id)}
                               nested
                               onCreateChannel={(groupId) => setCreateIn({ groupId })}
@@ -423,7 +424,7 @@ export function RealChannelSidebar({ serverId }: { serverId: string }): React.JS
                 <span className="truncate">{activeChannel.name}</span>
               </div>
             ) : activeGroup ? (
-              <div className="rounded-md bg-sidebar-accent px-2 py-1 text-[11px] font-semibold tracking-wide text-foreground uppercase shadow-lg">
+              <div className="rounded-md bg-sidebar-accent px-2 py-1 text-[11px] font-semibold tracking-wide text-sidebar-foreground uppercase shadow-lg">
                 {activeGroup.name}
               </div>
             ) : null}
@@ -444,14 +445,15 @@ export function RealChannelSidebar({ serverId }: { serverId: string }): React.JS
             className="mt-2 h-7 w-full rounded-md border border-input bg-transparent px-2 text-xs outline-none focus:border-ring"
           />
         ) : (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setNewGroup('')}
-            className="mt-2 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+            className="mt-2 w-full justify-start gap-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
           >
             <Plus className="size-3.5" weight="bold" />
             New group
-          </button>
+          </Button>
         )}
 
         {channels.length === 0 ? (
@@ -460,18 +462,31 @@ export function RealChannelSidebar({ serverId }: { serverId: string }): React.JS
           </p>
         ) : null}
 
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => setCreateIn({})}
-          className="mt-1 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+          className="mt-1 w-full justify-start gap-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
         >
           <Plus className="size-3.5" weight="bold" />
           Add a channel
-        </button>
+        </Button>
 
         {/* Channels another workspace shared into this one (guest side). */}
         {workspaceId ? (
           <SharedChannelsSection serverId={serverId} workspaceId={workspaceId} />
+        ) : null}
+
+        {/* Conversations, below the channel tree (Slack/Discord both put them last).
+            They aren't channels — no group, no drag, no rename — so they're a section
+            of their own rather than a bucket in the DnD tree. Unread comes from the
+            `unread` subscription above; the DM list is its own. */}
+        {workspaceId ? (
+          <DmSection
+            serverId={serverId}
+            workspaceId={workspaceId}
+            unreadByChannel={unreadByChannel}
+          />
         ) : null}
       </div>
 
@@ -545,55 +560,35 @@ function SortableGroup({
   )
 }
 
-function RowActionButton({
-  label,
-  onClick,
-  children
-}: {
-  label: string
-  onClick: () => void
-  children: React.ReactNode
-}): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      onPointerDown={(e) => e.stopPropagation()}
-      className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-background/40 hover:text-foreground"
-    >
-      {children}
-    </button>
-  )
-}
-
 function ChannelRow({
   channel,
   serverId,
   groups,
-  threads,
   voice,
   unread,
+  threadCount = 0,
   shared,
   nested,
   locked,
+  canManage,
   onCreateChannel
 }: {
   channel: Doc<'channels'>
   serverId: string
   groups: Doc<'channelGroups'>[]
-  /** This channel's threads — expanded under the active row, badged otherwise. */
-  threads: SidebarThread[]
   /** Members currently connected to this voice channel's call (empty otherwise). */
   voice: VoicePresence[]
   /** Absent when the channel is fully read (`unread.listByWorkspace` omits it). */
   unread?: ChannelUnread
+  /** How many threads this channel has — a count badge, not a list. */
+  threadCount?: number
   /** Set when this channel is shared out to another workspace (host side). */
   shared?: SharedOut
   nested?: boolean
   /** The workspace's home channel: rename only, no move / delete. */
   locked?: boolean
+  /** Workspace owner/admin — may open the channel's settings (visibility + posting). */
+  canManage?: boolean
   onCreateChannel: (groupId?: Id<'channelGroups'>) => void
 }): React.JSX.Element {
   const rename = useMutation(api.channels.rename)
@@ -606,12 +601,12 @@ function ChannelRow({
   // Active on either URL form: the readable slug (`channelSlug` = name) or the by-id
   // permalink (`channelId`).
   const isActive = params.channelSlug === channel.name || params.channelId === channel._id
-  const showBadge = !isActive && threads.length > 0
   // Reading the channel clears it, so the active row never advertises unread.
   const hasUnread = !isActive && Boolean(unread?.hasUnread)
   const mentions = isActive ? 0 : (unread?.mentionCount ?? 0)
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   // Slug URL: grouped → /w/<ws>/g/<group>/<name>, ungrouped → /w/<ws>/<name>.
   const group = channel.groupId ? groups.find((g) => g._id === channel.groupId) : undefined
@@ -645,51 +640,57 @@ function ChannelRow({
     <>
       <ContextMenu>
         <ContextMenuTrigger>
-          <div className="group/ch relative flex items-center">
-            <Link
-              {...linkProps}
-              className={cn(
-                'flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-1 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground',
-                nested ? 'pl-5' : 'pl-2',
-                // Reserve room for the overlaid affordances on the right. The
-                // hover actions always occupy their width (they only fade in), so
-                // this only grows with the always-visible badges.
-                trailingPad(showBadge, mentions > 0),
-                // Active/unread styling is computed from the params (not the Link's
-                // own active state) so it holds for either URL form. Unread reads as
-                // weight + full-contrast text; colour is reserved for the mention pill.
-                isActive
-                  ? 'bg-sidebar-accent font-medium text-sidebar-foreground'
-                  : hasUnread
-                    ? 'font-medium text-sidebar-foreground'
-                    : 'text-sidebar-foreground/80'
-              )}
-            >
-              {channelIcon(channel.kind, 'size-4 shrink-0 opacity-60')}
-              {channel.emoji ? (
-                <span className="shrink-0 text-sm leading-none">{channel.emoji}</span>
-              ) : null}
-              <span className="truncate">{channel.name}</span>
-              {/* Connected glyph — this channel is shared out to another workspace
-                  (primary once accepted, muted while an invite is pending). */}
-              {shared && (shared.accepted > 0 || shared.pending > 0) ? (
-                <PlugsConnected
-                  className={cn(
-                    'size-3 shrink-0',
-                    shared.accepted > 0 ? 'text-primary' : 'text-muted-foreground'
-                  )}
-                  weight="bold"
-                  aria-label={shared.accepted > 0 ? 'Shared channel' : 'Share pending'}
-                />
-              ) : null}
-            </Link>
-
-            {/* One right-anchored cluster: the always-visible badges sit at the very
-                end of the row and the hover-only actions fade in to their left, so
-                nothing the reader can normally see ever moves or gets covered. The
-                active channel lists its threads below instead of counting them. */}
-            <div className="pointer-events-none absolute right-1 flex items-center gap-1">
-              <div className="pointer-events-auto flex items-center gap-0.5 opacity-0 transition-opacity group-hover/ch:opacity-100">
+          <SidebarRow
+            active={isActive}
+            emphasized={hasUnread}
+            nested={nested}
+            reserve={(mentions > 0 ? 1 : 0) + (threadCount > 0 ? 1 : 0)}
+            surface={(className) => (
+              <Link {...linkProps} className={className}>
+                {channelIcon(channel.kind, 'size-4 shrink-0 opacity-60')}
+                {channel.emoji ? (
+                  <span className="shrink-0 text-sm leading-none">{channel.emoji}</span>
+                ) : null}
+                <span className="truncate">{channel.name}</span>
+                {/* Private: not everyone in the workspace can see this. The leading glyph is
+                    the channel's KIND, so access lives here, beside the shared-out plug. */}
+                {channel.visibility === 'private' ? (
+                  <LockSimple
+                    className="size-3 shrink-0 text-muted-foreground"
+                    weight="fill"
+                    aria-label="Private channel"
+                  />
+                ) : null}
+                {/* Read-only for someone. The glyph must MATCH the policy — a megaphone on a
+                    "specific people" channel says "announcement", which is the wrong answer
+                    confidently. Both this and the settings dialog render it from one place. */}
+                {channel.postingPolicy && channel.postingPolicy !== 'everyone' ? (
+                  <PostingPolicyIcon
+                    policy={channel.postingPolicy}
+                    className="size-3 shrink-0 text-muted-foreground"
+                    aria-label={
+                      channel.postingPolicy === 'admins'
+                        ? 'Only owners and admins can post'
+                        : 'Only certain people can post'
+                    }
+                  />
+                ) : null}
+                {/* Connected glyph — this channel is shared out to another workspace
+                    (primary once accepted, muted while an invite is pending). */}
+                {shared && (shared.accepted > 0 || shared.pending > 0) ? (
+                  <PlugsConnected
+                    className={cn(
+                      'size-3 shrink-0',
+                      shared.accepted > 0 ? 'text-primary' : 'text-muted-foreground'
+                    )}
+                    weight="bold"
+                    aria-label={shared.accepted > 0 ? 'Shared channel' : 'Share pending'}
+                  />
+                ) : null}
+              </Link>
+            )}
+            hoverActions={
+              <>
                 <RowActionButton label="Rename channel" onClick={() => setEditing(true)}>
                   <PencilSimple className="size-3.5" />
                 </RowActionButton>
@@ -698,29 +699,34 @@ function ChannelRow({
                     <Trash className="size-3.5" />
                   </RowActionButton>
                 ) : null}
-              </div>
-
-              {showBadge ? (
-                <span
-                  className="flex shrink-0 items-center gap-0.5 text-[10px] tabular-nums text-muted-foreground"
-                  title={`${threads.length} thread${threads.length === 1 ? '' : 's'}`}
-                >
-                  <ChatsCircle className="size-3.5" />
-                  {threads.length}
-                </span>
-              ) : null}
-
-              {mentions > 0 ? (
-                <span
-                  className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground"
-                  title={`${mentions}${unread?.mentionsOverflow ? ' or more' : ''} mention${mentions === 1 && !unread?.mentionsOverflow ? '' : 's'}`}
-                >
-                  {mentions}
-                  {unread?.mentionsOverflow ? '+' : ''}
-                </span>
-              ) : null}
-            </div>
-          </div>
+              </>
+            }
+            badges={
+              <>
+                {/* How many threads this channel has. Purely informational — the sidebar
+                    doesn't list them (the header's Threads dialog does), so this is a
+                    count, not a disclosure. Muted, since colour is the mention pill's. */}
+                {threadCount > 0 ? (
+                  <span
+                    className="flex shrink-0 items-center gap-0.5 text-[10px] font-medium text-muted-foreground"
+                    title={`${threadCount} thread${threadCount === 1 ? '' : 's'}`}
+                  >
+                    <Scribble className="size-3" />
+                    {threadCount}
+                  </span>
+                ) : null}
+                {mentions > 0 ? (
+                  <span
+                    className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground"
+                    title={`${mentions}${unread?.mentionsOverflow ? ' or more' : ''} mention${mentions === 1 && !unread?.mentionsOverflow ? '' : 's'}`}
+                  >
+                    {mentions}
+                    {unread?.mentionsOverflow ? '+' : ''}
+                  </span>
+                ) : null}
+              </>
+            }
+          />
         </ContextMenuTrigger>
         <ContextMenuContent className="w-52">
           {/* Discord's first item on an unread channel, and hidden once it's read
@@ -775,6 +781,12 @@ function ChannelRow({
               </ContextMenuSubContent>
             </ContextMenuSub>
           ) : null}
+          {canManage ? (
+            <ContextMenuItem onClick={() => setSettingsOpen(true)}>
+              <Sliders className="text-muted-foreground" />
+              Channel settings
+            </ContextMenuItem>
+          ) : null}
           <ContextMenuItem
             onClick={() =>
               void copyToClipboard(channel._id).then((ok) => {
@@ -797,13 +809,17 @@ function ChannelRow({
         </ContextMenuContent>
       </ContextMenu>
 
-      {isActive && threads.length > 0 ? (
-        <ThreadTree threads={threads} indent={nested ? 28 : 16} />
-      ) : null}
-
       {/* Discord-style: everyone connected to this voice channel, shown under it. */}
       {channel.kind === 'voice' && voice.length > 0 ? (
         <VoiceParticipants participants={voice} indent={nested ? 28 : 16} />
+      ) : null}
+
+      {canManage ? (
+        <ChannelSettingsDialog
+          channel={channel}
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+        />
       ) : null}
 
       <ConfirmDialog
@@ -813,12 +829,9 @@ function ChannelRow({
         description={
           <>
             This permanently deletes the channel and all its messages
-            {threads.length > 0 ? (
-              <span className="font-medium text-foreground">
-                , including its {threads.length} thread{threads.length === 1 ? '' : 's'} and their
-                replies
-              </span>
-            ) : null}
+            <span className="font-medium text-sidebar-foreground">
+              , including any threads and their replies
+            </span>
             . This can&apos;t be undone.
           </>
         }
@@ -851,22 +864,19 @@ function VoiceParticipants({
         return (
           <div
             key={person.userId}
-            className="flex items-center gap-2 rounded-md px-2 py-0.5 text-sidebar-foreground/80"
+            className="flex items-center gap-2 rounded-md px-2 py-0.5 text-sidebar-foreground"
           >
             <span
-              className={cn(
-                'shrink-0 rounded-full transition-shadow',
-                speaking && 'shadow-[0_0_0_2px_#10b981]'
-              )}
+              className={cn('shrink-0 rounded-full transition-shadow', speaking && 'speaking-ring')}
             >
               <Avatar
                 initials={initialsOf(person.name)}
-                color={person.color ?? '#5865f2'}
+                color={person.color ?? FALLBACK_AVATAR_COLOR}
                 image={person.avatarUrl}
                 className="size-5"
               />
             </span>
-            <span className={cn('min-w-0 flex-1 truncate text-xs', speaking && 'text-emerald-500')}>
+            <span className={cn('min-w-0 flex-1 truncate text-xs', speaking && 'text-success')}>
               {person.name}
             </span>
             <div className="flex shrink-0 items-center gap-1">
@@ -891,43 +901,6 @@ function VoiceParticipants({
   )
 }
 
-/** The active channel's threads, nested beneath it — ported 1:1 from the demo
- *  sidebar's `ThreadTree`. Clicking one opens it in the right panel. */
-function ThreadTree({
-  threads,
-  indent
-}: {
-  threads: SidebarThread[]
-  indent: number
-}): React.JSX.Element {
-  const openThread = useUiStore((state) => state.openThread)
-  const activeThreadId = useUiStore((state) => state.activeThreadId)
-
-  return (
-    <div
-      className="my-0.5 flex flex-col border-l border-sidebar-foreground/20"
-      style={{ marginLeft: indent }}
-    >
-      {threads.map((thread) => (
-        <button
-          key={thread._id}
-          type="button"
-          onClick={() => openThread(thread._id)}
-          className={cn(
-            'group/th flex items-center rounded-r-lg py-1 pr-2 text-[13px] transition-colors',
-            activeThreadId === thread._id
-              ? 'bg-sidebar-accent font-medium text-foreground'
-              : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
-          )}
-        >
-          <span className="h-px w-2.5 shrink-0 bg-sidebar-foreground/30 transition-colors group-hover/th:bg-foreground/40" />
-          <span className="ml-2 truncate">{thread.name}</span>
-        </button>
-      ))}
-    </div>
-  )
-}
-
 function ChannelGroup({
   group,
   onAddChannel,
@@ -939,86 +912,18 @@ function ChannelGroup({
 }): React.JSX.Element {
   const rename = useMutation(api.groups.rename)
   const remove = useMutation(api.groups.remove)
-  const [collapsed, setCollapsed] = useState(false)
-  const [editing, setEditing] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
-
   return (
-    <div className="mt-2">
-      {editing ? (
-        <RenameField
-          initial={group.name}
-          className="bg-sidebar-accent"
-          onCancel={() => setEditing(false)}
-          onSubmit={(name) => {
-            const clean = name.trim()
-            if (clean && clean !== group.name) void rename({ groupId: group._id, name: clean })
-            setEditing(false)
-          }}
-        />
-      ) : (
-        <ContextMenu>
-          <ContextMenuTrigger>
-            <div className="group/grp flex items-center gap-0.5 px-1">
-              <button
-                type="button"
-                onClick={() => setCollapsed((c) => !c)}
-                className="flex min-w-0 flex-1 items-center gap-1 rounded py-1 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <CaretRight
-                  className={cn(
-                    'size-3.5 shrink-0 transition-transform',
-                    !collapsed && 'rotate-90'
-                  )}
-                />
-                <span className="truncate">{group.name}</span>
-              </button>
-              <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover/grp:opacity-100">
-                <RowActionButton label="Rename group" onClick={() => setEditing(true)}>
-                  <PencilSimple className="size-3.5" />
-                </RowActionButton>
-                <RowActionButton label="Delete group" onClick={() => setConfirmDelete(true)}>
-                  <Trash className="size-3.5" />
-                </RowActionButton>
-                <RowActionButton label={`Add channel to ${group.name}`} onClick={onAddChannel}>
-                  <Plus className="size-3.5" weight="bold" />
-                </RowActionButton>
-              </div>
-            </div>
-          </ContextMenuTrigger>
-          <ContextMenuContent className="w-52">
-            <ContextMenuItem onClick={onAddChannel}>
-              <Plus className="text-muted-foreground" weight="bold" />
-              Create channel
-            </ContextMenuItem>
-            <ContextMenuItem onClick={() => setEditing(true)}>
-              <PencilSimple className="text-muted-foreground" />
-              Rename group
-            </ContextMenuItem>
-            <ContextMenuItem onClick={() => setCollapsed((c) => !c)}>
-              <CaretRight className={cn('text-muted-foreground', !collapsed && 'rotate-90')} />
-              {collapsed ? 'Expand group' : 'Collapse group'}
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem variant="destructive" onClick={() => setConfirmDelete(true)}>
-              <Trash />
-              Delete group
-            </ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
-      )}
-      <div className={collapsed ? 'hidden' : undefined}>{children}</div>
-
-      <ConfirmDialog
-        open={confirmDelete}
-        onOpenChange={setConfirmDelete}
-        title={`Delete the "${group.name}" group?`}
-        description="The group is removed, but its channels are kept — they move to the top, ungrouped."
-        confirmLabel="Delete group"
-        onConfirm={async () => {
-          await remove({ groupId: group._id })
-        }}
-      />
-    </div>
+    <SidebarGroup
+      name={group.name}
+      addLabel="Create channel"
+      deleteDescription="The group is removed, but its channels are kept — they move to the top, ungrouped."
+      onRename={(name) => void rename({ groupId: group._id, name })}
+      onDelete={async () => {
+        await remove({ groupId: group._id })
+      }}
+      onAddChannel={onAddChannel}
+    >
+      {children}
+    </SidebarGroup>
   )
 }

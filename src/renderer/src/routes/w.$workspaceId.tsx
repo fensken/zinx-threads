@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Navigate, Outlet, createFileRoute } from '@tanstack/react-router'
 import { useQuery } from 'convex-helpers/react/cache/hooks'
 import { api } from '@convex/_generated/api'
@@ -10,6 +10,7 @@ import { CommandPalette } from '@renderer/components/layout/command-palette'
 import { WorkspaceDirectoryProvider } from '@renderer/components/chat/workspace-directory'
 import { WorkspaceRightPanel } from '@renderer/components/chat/workspace-right-panel'
 import { VoiceCallProvider } from '@renderer/components/voice/voice-call-provider'
+import { EventReminderBanner } from '@renderer/components/events/event-reminder-banner'
 import { Spinner } from '@renderer/components/ui/spinner'
 import { useUiStore } from '@renderer/store/ui-store'
 import { useMediaQuery } from '@renderer/lib/use-media-query'
@@ -26,7 +27,7 @@ function ServerLayout(): React.JSX.Element {
 
   if (workspace === undefined) {
     return (
-      <div className="flex h-dvh items-center justify-center bg-sidebar">
+      <div className="flex h-full items-center justify-center bg-sidebar">
         <Spinner className="size-6 text-muted-foreground" />
       </div>
     )
@@ -55,9 +56,18 @@ function Shell({
   // collapse doesn't apply there — the hamburger opens/closes it instead.
   const sidebarHidden = sidebarCollapsed && isMdUp
 
-  // A thread belongs to one workspace. Carrying `activeThreadId` across a switch
-  // would query a thread you can't see.
+  // A thread belongs to one workspace. Carrying `activeThreadId` across a switch would
+  // query a thread you can't see.
+  //
+  // **On an actual change, not on mount.** Opening a thread notification from another
+  // workspace sets `activeThreadId` and *then* navigates; the shell re-resolves the new
+  // slug, remounts, and a mount-time `closeThread()` would wipe the id that was just
+  // set — you'd land in the right channel with no thread panel, and only for
+  // cross-workspace rows, which is what made it look intermittent.
+  const previousWorkspace = useRef(workspaceId)
   useEffect(() => {
+    if (previousWorkspace.current === workspaceId) return
+    previousWorkspace.current = workspaceId
     useUiStore.getState().closeThread()
   }, [workspaceId])
 
@@ -80,7 +90,7 @@ function Shell({
 
   return (
     <VoiceCallProvider>
-      <div className="relative flex h-dvh overflow-hidden bg-card">
+      <div className="relative flex h-full overflow-hidden bg-card">
         {/* Sidebar: a persistent resizable column on desktop; below md it becomes a
             slide-in drawer over the content (Slack/Notion-style), toggled from the
             header hamburger. Hidden entirely when collapsed (desktop). */}
@@ -116,7 +126,15 @@ function Shell({
             and backs the author profile card. It sits above BOTH the Outlet and the
             right panel — a thread's replies render in the panel and need it too. */}
         <WorkspaceDirectoryProvider slug={workspaceId} workspaceId={workspaceDocId}>
-          <Outlet />
+          {/* The content column: an event reminder sits ABOVE whatever you're looking
+              at (channel, board, calendar), because it's about to happen wherever you
+              are. A sibling of the Outlet, so navigating never remounts it. */}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <EventReminderBanner workspaceId={workspaceDocId} workspaceSlug={workspaceId} />
+            <div className="flex min-h-0 min-w-0 flex-1">
+              <Outlet />
+            </div>
+          </div>
           {/* Workspace-level right panel: a sibling of the Outlet, so channel
               navigation never tears it down. */}
           <WorkspaceRightPanel workspaceId={workspaceDocId} workspaceSlug={workspaceId} />

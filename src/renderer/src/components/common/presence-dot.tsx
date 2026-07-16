@@ -2,9 +2,9 @@ import { cn } from '@renderer/lib/utils'
 import type { Presence } from '@renderer/lib/user-status'
 
 const COLORS: Record<Presence, string> = {
-  online: 'bg-emerald-500',
-  idle: 'bg-amber-400',
-  dnd: 'bg-red-500',
+  online: 'bg-success',
+  idle: 'bg-warning',
+  dnd: 'bg-destructive',
   offline: 'bg-muted-foreground/60'
 }
 

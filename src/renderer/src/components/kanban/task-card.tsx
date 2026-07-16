@@ -18,12 +18,7 @@ function dueInfo(dueDate: string): { label: string; cls: string } {
   const now = new Date()
   const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
   const diff = Math.round((date.getTime() - startToday) / 86_400_000)
-  const cls =
-    diff < 0
-      ? 'text-red-600 dark:text-red-400'
-      : diff <= 1
-        ? 'text-amber-600 dark:text-amber-400'
-        : 'text-muted-foreground'
+  const cls = diff < 0 ? 'text-destructive' : diff <= 1 ? 'text-warning' : 'text-muted-foreground'
   return { label: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), cls }
 }
 
@@ -163,7 +158,7 @@ export function TaskCard({
                 <span
                   className={cn(
                     'flex items-center gap-1 tabular-nums',
-                    checklistDone === checklistTotal && 'text-emerald-600 dark:text-emerald-400'
+                    checklistDone === checklistTotal && 'text-success'
                   )}
                 >
                   <ListChecks

@@ -1,0 +1,60 @@
+name: Release
+
+# Push a tag that matches the package.json version (e.g. bump to 1.0.0-beta.1, then
+# `git tag v1.0.0-beta.1 && git push --tags`) to build installers for all three OSes and
+# upload them to a GitHub Release. `workflow_dispatch` lets you run it by hand from the Actions
+# tab too. macOS must build on a Mac runner — you can't cross-build a .dmg from Windows/Linux.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write # electron-builder creates/updates the GitHub Release
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # BETA: the app runs against the DEV backend, so we bake the DEV deployment's PUBLIC client
+      # config in at build time. These `VITE_*` values are NOT secrets — they ship inside the
+      # renderer of every build anyway — so set them as repo **Variables**
+      # (Settings → Secrets and variables → Actions → Variables), not Secrets.
+      - name: Write .env.local (dev/beta client config)
+        shell: bash
+        run: |
+          cat > .env.local <<EOF
+          VITE_CONVEX_URL=${{ vars.VITE_CONVEX_URL }}
+          VITE_CONVEX_SITE_URL=${{ vars.VITE_CONVEX_SITE_URL }}
+          VITE_WORKOS_CLIENT_ID=${{ vars.VITE_WORKOS_CLIENT_ID }}
+          VITE_WORKOS_REDIRECT_URI=${{ vars.VITE_WORKOS_REDIRECT_URI }}
+          VITE_LIVEKIT_URL=${{ vars.VITE_LIVEKIT_URL }}
+          VITE_APP_URL=${{ vars.VITE_APP_URL }}
+          EOF
+
+      # One command per OS: build the renderer/main/preload, then package + upload to the Release.
+      # `GH_TOKEN` is the automatic token; `--publish always` uploads the installers + the
+      # `latest*.yml` update manifests that electron-updater reads. Builds are UNSIGNED (beta).
+      - name: Build & publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: pnpm run build && pnpm exec electron-builder --publish always

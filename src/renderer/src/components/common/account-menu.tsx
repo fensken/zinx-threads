@@ -7,7 +7,7 @@ import { api } from '@convex/_generated/api'
 import { useAppAuth } from '@renderer/lib/use-app-auth'
 import { useUiStore } from '@renderer/store/ui-store'
 import { STATUS_LABEL, normalizeStatus, presenceForStatus } from '@renderer/lib/user-status'
-import { Avatar } from '@renderer/components/common/avatar'
+import { Avatar, FALLBACK_AVATAR_COLOR } from '@renderer/components/common/avatar'
 import { UserMenu } from '@renderer/components/common/user-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@renderer/components/ui/popover'
 
@@ -55,7 +55,7 @@ export function AccountMenu(): React.JSX.Element {
       <PopoverTrigger className="flex items-center gap-2 rounded-lg py-1 pr-2 pl-1 text-left transition-colors hover:bg-accent">
         <Avatar
           initials={initials}
-          color={me?.color ?? '#5865f2'}
+          color={me?.color ?? FALLBACK_AVATAR_COLOR}
           image={me?.avatarUrl ?? user?.profilePictureUrl}
           presence={presenceForStatus(status)}
           ringClassName="ring-[3px] ring-sidebar"
@@ -72,7 +72,7 @@ export function AccountMenu(): React.JSX.Element {
           name={name}
           subtitle={email}
           initials={initials}
-          color={me?.color ?? '#5865f2'}
+          color={me?.color ?? FALLBACK_AVATAR_COLOR}
           image={me?.avatarUrl ?? user?.profilePictureUrl}
           userId={me?._id ?? ''}
           status={status}
@@ -87,6 +87,9 @@ export function AccountMenu(): React.JSX.Element {
           onEmojiOpenChange={(open) => {
             emojiGuard.current = open
           }}
+          // This menu is anchored to the right edge of the header, so the presence
+          // submenu must open leftward or it runs off the screen.
+          submenuSide="left"
         />
       </PopoverContent>
     </Popover>

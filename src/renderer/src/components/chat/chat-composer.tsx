@@ -6,6 +6,7 @@ import Image from '@tiptap/extension-image'
 import { Placeholder } from '@tiptap/extensions'
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion'
 import {
+  BellSlash,
   Code,
   CodeBlock,
   LinkSimple,
@@ -668,6 +669,9 @@ function SuggestionGlyph({ entry }: { entry: SuggestionEntry }): React.JSX.Eleme
   }
   if (entry.icon === 'group') {
     return <ShieldStar className="size-5 shrink-0 text-muted-foreground" weight="fill" />
+  }
+  if (entry.icon === 'silent') {
+    return <BellSlash className="size-5 shrink-0 text-muted-foreground" weight="fill" />
   }
   if (entry.icon) {
     return <ChannelKindIcon kind={entry.icon} className="size-5 shrink-0 text-muted-foreground" />

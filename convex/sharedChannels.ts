@@ -46,6 +46,12 @@ export const invite = mutation({
     if (!channel) throw new ConvexError('Channel not found')
     // Only chat channels are shareable for now.
     if (channel.kind !== 'chat') throw new ConvexError('Only chat channels can be shared')
+    // A private channel is a room with a member list. Sharing it would grant access to an
+    // entire *foreign workspace's* roster — people our own admins can't even enumerate —
+    // which is the opposite of what "private" means. Make it public first, deliberately.
+    if (channel.visibility === 'private') {
+      throw new ConvexError('A private channel cannot be shared with another workspace')
+    }
     if (channel.isDefault) throw new ConvexError('The home channel cannot be shared')
 
     const membership = await getMembership(ctx, channel.workspaceId, user._id)
@@ -420,8 +426,7 @@ export const listForWorkspace = query({
           name: channel.name,
           kind: channel.kind,
           topic: channel.topic,
-          ownerWorkspaceName: owner?.name ?? 'another workspace',
-          lastMessageAt: channel.lastMessageAt
+          ownerWorkspaceName: owner?.name ?? 'another workspace'
         }
       })
     )

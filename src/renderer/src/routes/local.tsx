@@ -1,15 +1,22 @@
 import { useEffect } from 'react'
-import { Outlet, createFileRoute } from '@tanstack/react-router'
+import { Outlet, createFileRoute, redirect } from '@tanstack/react-router'
 import { LocalSidebar } from '@renderer/components/local/local-sidebar'
 import { LocalSettingsDialog } from '@renderer/components/local/local-settings-dialog'
 import { LocalCommandPalette } from '@renderer/components/local/local-command-palette'
 import { ResizeHandle } from '@renderer/components/layout/resize-handle'
 import { LoadingBlock } from '@renderer/components/common/loading-block'
 import { ensureLocalDataLoaded } from '@renderer/lib/local-data'
+import { isElectron } from '@renderer/lib/platform'
 import { useLocalStore } from '@renderer/store/local-store'
 import { useUiStore } from '@renderer/store/ui-store'
 
 export const Route = createFileRoute('/local')({
+  // Offline mode is DESKTOP ONLY — it persists to a folder on disk, which a browser
+  // tab can't do. A web visit (even a direct /local URL) bounces home so the feature
+  // isn't exposed there.
+  beforeLoad: () => {
+    if (!isElectron) throw redirect({ to: '/' })
+  },
   component: LocalLayout
 })
 
@@ -31,14 +38,14 @@ function LocalLayout(): React.JSX.Element {
 
   if (!hydrated) {
     return (
-      <div className="flex h-dvh overflow-hidden bg-card">
+      <div className="flex h-full overflow-hidden bg-card">
         <LoadingBlock />
       </div>
     )
   }
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-card">
+    <div className="flex h-full overflow-hidden bg-card">
       {!sidebarCollapsed ? (
         <>
           <div

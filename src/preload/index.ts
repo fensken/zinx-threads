@@ -79,7 +79,47 @@ const api = {
     const listener = (_event: IpcRendererEvent, url: string): void => handler(url)
     ipcRenderer.on('deep-link', listener)
     return () => ipcRenderer.removeListener('deep-link', listener)
-  }
+  },
+
+  /** The window controls we draw ourselves (Windows/Linux; macOS keeps its native
+   *  traffic lights). Only the OS can actually perform these, so each is a plain
+   *  argument-free command — nothing to validate in main. */
+  windowControls: {
+    minimize: (): Promise<void> => ipcRenderer.invoke('window:minimize'),
+    /** Returns the maximised state AFTER the toggle. */
+    toggleMaximize: (): Promise<boolean> => ipcRenderer.invoke('window:toggle-maximize'),
+    close: (): Promise<void> => ipcRenderer.invoke('window:close'),
+    isMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:is-maximized'),
+    /** The window is also maximised by double-click, Win+Up, snapping and the WM — so
+     *  the button's glyph has to follow main, not just its own clicks. */
+    onMaximizeChange: (handler: (maximized: boolean) => void): (() => void) => {
+      const listener = (_e: unknown, maximized: boolean): void => handler(maximized)
+      ipcRenderer.on('window-maximize-changed', listener)
+      return () => ipcRenderer.removeListener('window-maximize-changed', listener)
+    }
+  },
+
+  /** Show an OS notification. The renderer decides *whether* (it knows what arrived
+   *  and whether the window was focused); main only shows it. `route` is opaque to
+   *  main and handed straight back on click. */
+  notify: (payload: {
+    title: string
+    body: string
+    route?: string
+    silent?: boolean
+    tag?: string
+  }): Promise<boolean> => ipcRenderer.invoke('notify', payload),
+
+  /** The user clicked a notification — main has already focused the window; this is
+   *  the `route` it carried, so the renderer can navigate. */
+  onNotificationClick: (handler: (route: string) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, route: string): void => handler(route)
+    ipcRenderer.on('notification:click', listener)
+    return () => ipcRenderer.removeListener('notification:click', listener)
+  },
+
+  /** Unread count on the dock (macOS) / taskbar (Linux). A no-op on Windows. */
+  setBadgeCount: (count: number): Promise<void> => ipcRenderer.invoke('set-badge-count', count)
 }
 
 /** A shareable screen or window (thumbnail is a data URL). */

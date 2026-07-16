@@ -33,7 +33,16 @@ function persistMemberListOpen(open: boolean): void {
 
 /** Sections of the unified Settings modal (user + workspace). */
 export type SettingsSection =
-  'account' | 'appearance' | 'ws-profile' | 'ws-general' | 'ws-members' | 'ws-danger'
+  | 'account'
+  | 'appearance'
+  | 'notifications'
+  | 'developers'
+  | 'advanced'
+  | 'ws-profile'
+  | 'ws-general'
+  | 'ws-members'
+  | 'ws-bots'
+  | 'ws-danger'
 
 interface UiState {
   sidebarCollapsed: boolean

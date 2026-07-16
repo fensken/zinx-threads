@@ -1,11 +1,17 @@
 import { toast } from 'sonner'
-import { platform, type OfflineSavePayload, type OfflineSnapshot } from '@renderer/lib/platform'
+import {
+  isElectron,
+  platform,
+  type OfflineSavePayload,
+  type OfflineSnapshot
+} from '@renderer/lib/platform'
 import {
   useLocalStore,
   type LocalBoard,
   type LocalChannel,
   type LocalData,
   type LocalGroup,
+  type LocalWhiteboard,
   type LocalPage,
   type LocalWorkspace
 } from '@renderer/store/local-store'
@@ -40,7 +46,8 @@ function emptyData(): LocalData {
     channels: [],
     groups: [],
     pages: {},
-    boards: {}
+    boards: {},
+    whiteboards: {}
   }
 }
 
@@ -53,7 +60,8 @@ function dataOf(): LocalData {
     channels: s.channels,
     groups: s.groups,
     pages: s.pages,
-    boards: s.boards
+    boards: s.boards,
+    whiteboards: s.whiteboards
   }
 }
 
@@ -100,7 +108,9 @@ function readLegacy(): LocalData | null {
     channels: (state.channels ?? []).map((channel) => ({ ...channel, workspaceId })),
     groups: (state.groups ?? []).map((group) => ({ ...group, workspaceId })),
     pages: state.pages ?? {},
-    boards: state.boards ?? {}
+    boards: state.boards ?? {},
+    // v0 predates whiteboards entirely — there are none to carry over.
+    whiteboards: {}
   }
 }
 
@@ -161,14 +171,16 @@ function parseSnapshot(snapshot: OfflineSnapshot): LocalData {
       data.groups.push({ ...group, workspaceId: ws.id })
     }
     for (const [rel, content] of Object.entries(ws.files)) {
-      const match = rel.match(/^(pages|boards)\/(.+)\.json$/)
+      const match = rel.match(/^(pages|boards|whiteboards)\/(.+)\.json$/)
       if (!match) continue
-      const parsed = tryParse<LocalPage & LocalBoard>(content)
+      const parsed = tryParse<LocalPage & LocalBoard & LocalWhiteboard>(content)
       if (!parsed) {
         console.error(`[offline] skipping corrupt file ${ws.id}/${rel}`)
         continue
       }
+      // All three are keyed by the CHANNEL's id — the file name IS the channel id.
       if (match[1] === 'pages') data.pages[match[2]] = parsed
+      else if (match[1] === 'whiteboards') data.whiteboards[match[2]] = parsed
       else data.boards[match[2]] = parsed
     }
   }
@@ -216,6 +228,10 @@ function buildFileMap(data: LocalData): Map<string, string> {
       if (page) map.set(`${ws.id}/pages/${channel.id}.json`, JSON.stringify(page, null, 2))
       const board = data.boards[channel.id]
       if (board) map.set(`${ws.id}/boards/${channel.id}.json`, JSON.stringify(board, null, 2))
+      const whiteboard = data.whiteboards[channel.id]
+      if (whiteboard) {
+        map.set(`${ws.id}/whiteboards/${channel.id}.json`, JSON.stringify(whiteboard, null, 2))
+      }
     }
   }
   return map
@@ -273,19 +289,21 @@ async function flushToDisk(): Promise<void> {
 
 // One flush at a time; a change arriving mid-flush queues exactly one more.
 let flushTimer: ReturnType<typeof setTimeout> | undefined
-let flushing = false
+let flushing: Promise<void> | null = null
 let flushQueued = false
 
 async function runFlush(): Promise<void> {
   if (flushing) {
     flushQueued = true
+    await flushing
     return
   }
-  flushing = true
+  const run = flushToDisk()
+  flushing = run
   try {
-    await flushToDisk()
+    await run
   } finally {
-    flushing = false
+    flushing = null
     if (flushQueued) {
       flushQueued = false
       scheduleFlush()
@@ -296,6 +314,44 @@ async function runFlush(): Promise<void> {
 function scheduleFlush(): void {
   clearTimeout(flushTimer)
   flushTimer = setTimeout(() => void runFlush(), FLUSH_DELAY)
+}
+
+/**
+ * Everything with an unflushed debounce that must reach the store before we save.
+ *
+ * The editors debounce their writes to the *store* (600ms for a page's content), and
+ * a debounce only flushes on unmount — but closing a window fires `pagehide` and
+ * **never unmounts React**. So the newest keystrokes were sitting in a timer that was
+ * about to be destroyed with the window, while the "flush on quit" path dutifully
+ * persisted the older state and reported success. Anything that debounces into the
+ * offline store registers here so `flushOfflineNow` can drain it first.
+ */
+const pendingWrites = new Set<() => void>()
+
+export function registerOfflineFlush(flush: () => void): () => void {
+  pendingWrites.add(flush)
+  return () => pendingWrites.delete(flush)
+}
+
+/**
+ * Save everything, now — the on-the-way-out path.
+ *
+ * Three things had to be true and weren't: the editors' debounces must be drained
+ * into the store first; a flush already in flight must be **awaited** rather than
+ * re-queued behind a 400ms timer that a closing window will never fire; and the disk
+ * write must run **inline** rather than being scheduled.
+ */
+export async function flushOfflineNow(): Promise<void> {
+  clearTimeout(flushTimer)
+  for (const write of pendingWrites) {
+    try {
+      write()
+    } catch {
+      // One editor failing to flush must not stop the others from saving.
+    }
+  }
+  if (flushing) await flushing
+  await runFlush()
 }
 
 // ---------------------------------------------------------------------------
@@ -310,11 +366,28 @@ let started = false
 export function ensureLocalDataLoaded(): void {
   if (started) return
   started = true
+
   if (platform.offlineData.isFileBacked()) {
     void initDesktop()
-  } else {
-    initWeb()
+    return
   }
+
+  // **On desktop, never fall back to localStorage.** The route lets `/local` through
+  // on a UA check (`isElectron`), but the storage check is `Boolean(window.api)` — and
+  // a preload that throws exposes nothing (a real, previously-shipped failure mode; see
+  // CLAUDE.md). Falling back would hydrate an EMPTY store, show the user zero
+  // workspaces while their folders sit intact on disk, and then quietly write their
+  // re-done work to localStorage where the next healthy launch would never look for it.
+  // Refusing to hydrate is the honest failure: the data stays where it is.
+  if (isElectron) {
+    toast.error('Offline storage is unavailable — restart the app.', {
+      id: 'offline-bridge-missing',
+      duration: Infinity
+    })
+    return
+  }
+
+  initWeb()
 }
 
 function initWeb(): void {
@@ -361,10 +434,10 @@ async function initDesktop(): Promise<void> {
   }
 
   useLocalStore.subscribe(scheduleFlush)
-  // Fire-and-forget on the way out — main outlives the renderer, so the IPC write
-  // still lands even as the window closes.
+  // On the way out: drain the editors' debounces into the store, then write inline.
+  // Main holds the quit until the write lands (`before-quit` in src/main/local-data.ts)
+  // — without that, `app.quit()` raced the very write it had just been handed.
   window.addEventListener('pagehide', () => {
-    clearTimeout(flushTimer)
-    void runFlush()
+    void flushOfflineNow()
   })
 }

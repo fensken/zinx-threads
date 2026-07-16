@@ -35,7 +35,9 @@ export const listByWorkspace = query({
                 avatarUrl: u.avatarUrl,
                 presence: u.presence,
                 statusEmoji: u.statusEmoji,
-                statusText: u.statusText
+                statusText: u.statusText,
+                timezone: u.timezone,
+                isBot: u.provider === 'bot'
               }
             }
           : null
@@ -70,7 +72,7 @@ export const listChannelMembers = query({
       email: string
       /** `member` for guests — they hold no host role, so never show a crown/admin
        *  badge or count toward `@admins` in someone else's workspace. */
-      role: 'owner' | 'admin' | 'member'
+      role: 'owner' | 'admin' | 'member' | 'guest'
       color?: string
       avatarUrl?: string | null
       presence?: string | null
@@ -118,7 +120,9 @@ export const listChannelMembers = query({
 export const updateRole = mutation({
   args: {
     memberId: v.id('workspaceMembers'),
-    role: v.union(v.literal('admin'), v.literal('member'))
+    // `owner` is absent on purpose: transferring ownership is a different, scarier action
+    // than changing a role, and it deserves its own confirmed mutation.
+    role: v.union(v.literal('admin'), v.literal('member'), v.literal('guest'))
   },
   handler: async (ctx, { memberId, role }) => {
     const user = await requireUser(ctx)
@@ -129,6 +133,10 @@ export const updateRole = mutation({
       throw new ConvexError('Only owners and admins can change roles')
     }
     if (target.role === 'owner') throw new ConvexError("You can't change the owner's role")
+    // Demoting someone to guest revokes their access to every channel they weren't
+    // explicitly added to — which is the point, and the UI warns. Their `channelMembers`
+    // rows survive, so a guest keeps the rooms they were named in; promoting them back
+    // restores the rest.
     await ctx.db.patch(memberId, { role })
   }
 })

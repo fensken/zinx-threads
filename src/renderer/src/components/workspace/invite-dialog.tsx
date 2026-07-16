@@ -36,6 +36,11 @@ const EXPIRY_OPTIONS = [
   { value: '30', label: '30 days' }
 ] as const
 
+/** value → label for the Select trigger (Base UI renders the raw value without it). */
+const EXPIRY_LABELS: Record<string, string> = Object.fromEntries(
+  EXPIRY_OPTIONS.map((option) => [option.value, option.label])
+)
+
 /** Create + manage **reusable invite links** (Discord-style) for a workspace. Anyone
  *  who opens a link joins; a link can be permanent or expiring, and open to anyone or
  *  restricted to a whitelist of emails. No email is sent — you copy the link and share
@@ -110,7 +115,13 @@ export function InviteDialog({
         <div className="grid gap-3 py-1">
           <div className="grid gap-1.5">
             <Label htmlFor="invite-expiry">Expire after</Label>
-            <Select value={expiry} onValueChange={(value) => setExpiry(value ?? '7')}>
+            {/* `items`: without it the trigger prints the raw value — a bare `7`
+                rather than "7 days". */}
+            <Select
+              items={EXPIRY_LABELS}
+              value={expiry}
+              onValueChange={(value) => setExpiry(value ?? '7')}
+            >
               <SelectTrigger id="invite-expiry" className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -171,7 +182,7 @@ export function InviteDialog({
                       aria-label="Copy link"
                     >
                       {copied === link.code ? (
-                        <Check className="size-3.5 text-emerald-500" />
+                        <Check className="size-3.5 text-success" />
                       ) : (
                         <Copy className="size-3.5" />
                       )}

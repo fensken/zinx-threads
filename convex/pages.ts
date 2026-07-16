@@ -137,7 +137,7 @@ export const setCoverUpload = mutation({
   args: { channelId: v.id('channels'), key: v.string() },
   handler: async (ctx, { channelId, key }): Promise<string> => {
     const { channel, page, userId } = await requirePageAccess(ctx, channelId)
-    await markUploadUsed(ctx, key)
+    await markUploadUsed(ctx, userId, key)
     const url = await objectUrl(key)
 
     if (page) {

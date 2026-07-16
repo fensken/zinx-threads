@@ -26,8 +26,15 @@ const ROOT_DIR_NAME = 'offline-workspaces'
 /** Workspace/channel ids are `crypto.randomUUID()`s — enforce that shape (plus a
  *  little slack) so a crafted id can't traverse the filesystem. */
 const ID_RE = /^[a-zA-Z0-9-]{1,64}$/
-/** The only files a workspace folder may contain. */
-const REL_PATH_RE = /^(workspace\.json|(?:pages|boards)\/[a-zA-Z0-9-]{1,64}\.json)$/
+/** The subfolders a workspace may contain. **Adding a new kind of offline document
+ *  means adding it HERE** — the renderer writing a path this doesn't know about used
+ *  to be silently dropped (see `applySave`), which is exactly how offline diagrams
+ *  shipped writing to a path main refused, losing every drawing on quit. */
+const SUB_DIRS = ['pages', 'boards', 'whiteboards'] as const
+
+/** The only files a workspace folder may contain. Also the path-traversal guard:
+ *  no `.` or `/` is allowed inside a name, so a crafted id can't escape the root. */
+const REL_PATH_RE = /^(workspace\.json|(?:pages|boards|whiteboards)\/[a-zA-Z0-9-]{1,64}\.json)$/
 
 function rootDir(): string {
   return path.join(app.getPath('userData'), ROOT_DIR_NAME)
@@ -74,7 +81,7 @@ async function loadSnapshot(): Promise<OfflineSnapshot> {
     if (workspaceJson === null) continue // not a workspace folder
     const files: Record<string, string> = { 'workspace.json': workspaceJson }
 
-    for (const sub of ['pages', 'boards'] as const) {
+    for (const sub of SUB_DIRS) {
       let names: string[] = []
       try {
         names = await fs.readdir(path.join(wsDir, sub))
@@ -102,6 +109,32 @@ interface OfflineSavePayload {
   workspaces?: Record<string, Record<string, string | null> | null>
 }
 
+/**
+ * Write a file so that a crash can never leave a **half-written** one.
+ *
+ * `fs.writeFile` opens with `O_TRUNC`: it empties the existing file and then streams
+ * the new bytes. Interrupt it — the process is quitting, the machine loses power —
+ * and the user's page is now 0 bytes or half a JSON document. Their old, good copy is
+ * already gone.
+ *
+ * So: write a temp file beside it, `fsync` it (the bytes are actually on the platter,
+ * not just in the OS cache), then **rename over the target** — an atomic operation on
+ * NTFS and POSIX alike. At every instant the real file is either entirely the old
+ * content or entirely the new one.
+ */
+async function writeFileAtomic(filePath: string, content: string): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true })
+  const tmp = `${filePath}.tmp`
+  const handle = await fs.open(tmp, 'w')
+  try {
+    await handle.writeFile(content, 'utf8')
+    await handle.sync()
+  } finally {
+    await handle.close()
+  }
+  await fs.rename(tmp, filePath)
+}
+
 async function applySave(payload: OfflineSavePayload): Promise<void> {
   const root = rootDir()
   await fs.mkdir(root, { recursive: true })
@@ -109,11 +142,11 @@ async function applySave(payload: OfflineSavePayload): Promise<void> {
   if (payload.root !== undefined) {
     const profilePath = path.join(root, 'profile.json')
     if (payload.root === null) await fs.rm(profilePath, { force: true })
-    else await fs.writeFile(profilePath, payload.root, 'utf8')
+    else await writeFileAtomic(profilePath, payload.root)
   }
 
   for (const [id, files] of Object.entries(payload.workspaces ?? {})) {
-    if (!ID_RE.test(id)) continue
+    if (!ID_RE.test(id)) throw new Error(`offline save: bad workspace id ${id}`)
     const wsDir = path.join(root, id)
 
     if (files === null) {
@@ -122,30 +155,56 @@ async function applySave(payload: OfflineSavePayload): Promise<void> {
     }
 
     for (const [rel, content] of Object.entries(files)) {
-      if (!REL_PATH_RE.test(rel)) continue
+      // **Throw, don't skip.** A silently-ignored path is how offline diagrams once shipped
+      // writing to `diagrams/…` while this regex only knew `pages|boards`: every save
+      // reported success, the renderer committed its "already saved" baseline, and
+      // every drawing was lost on quit with nothing in the logs. A path we don't
+      // recognise is a bug in *us*, and it must be loud.
+      if (!REL_PATH_RE.test(rel)) throw new Error(`offline save: unknown path ${rel}`)
       const filePath = path.join(wsDir, ...rel.split('/'))
-      if (content === null) {
-        await fs.rm(filePath, { force: true })
-      } else {
-        await fs.mkdir(path.dirname(filePath), { recursive: true })
-        await fs.writeFile(filePath, content, 'utf8')
-      }
+      if (content === null) await fs.rm(filePath, { force: true })
+      else await writeFileAtomic(filePath, content)
     }
   }
 }
+
+/** In-flight save, so quitting can wait for it (see `registerLocalDataIpc`). */
+let pendingSave: Promise<void> | null = null
 
 export function registerLocalDataIpc(): void {
   ipcMain.handle('offline-data:load', () => loadSnapshot())
 
   ipcMain.handle('offline-data:save', async (_event, payload: unknown) => {
     if (typeof payload !== 'object' || payload === null) return false
+    const save = applySave(payload as OfflineSavePayload)
+    pendingSave = save.then(
+      () => undefined,
+      () => undefined
+    )
     try {
-      await applySave(payload as OfflineSavePayload)
+      await save
       return true
     } catch (error) {
       console.error('[main] offline-data save failed:', error)
       return false
+    } finally {
+      pendingSave = null
     }
+  })
+
+  // **Hold the quit for an in-flight save.** The renderer's last-chance flush fires
+  // from `pagehide` and is fire-and-forget — it relies on main outliving the window.
+  // But `window-all-closed` calls `app.quit()` on the very next tick, so without this
+  // the process can exit *mid-write* of the file it was asked to save on the way out:
+  // the last thing you typed before closing is the thing most likely to be lost, and
+  // (before `writeFileAtomic`) it took the previous good copy with it.
+  app.on('before-quit', (event) => {
+    if (!pendingSave) return
+    event.preventDefault()
+    void pendingSave.finally(() => {
+      pendingSave = null
+      app.quit()
+    })
   })
 
   // Reveal a workspace's folder (or the offline root) in the OS file manager. The

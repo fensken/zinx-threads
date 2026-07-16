@@ -21,7 +21,7 @@ export const Route = createFileRoute('/invite/$code')({
 function InvitePage(): React.JSX.Element {
   if (!authEnabled) {
     return (
-      <div className="flex h-dvh w-full flex-col items-center justify-center gap-3 bg-sidebar p-6 text-center">
+      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-sidebar p-6 text-center">
         <Logo className="size-14 rounded-2xl shadow-lg" />
         <p className="text-sm text-muted-foreground">Invites aren’t available in this build.</p>
       </div>
@@ -53,7 +53,7 @@ function InvitePageInner(): React.JSX.Element {
   }
 
   return (
-    <div className="flex h-dvh w-full flex-col items-center justify-center gap-6 bg-sidebar p-6">
+    <div className="flex h-full w-full flex-col items-center justify-center gap-6 bg-sidebar p-6">
       <Logo className="size-14 rounded-2xl shadow-lg" />
       {preview === undefined ? (
         <Spinner className="size-6 text-muted-foreground" />

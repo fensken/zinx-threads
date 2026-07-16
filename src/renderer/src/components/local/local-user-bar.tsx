@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Gear, PencilSimple, SignIn } from '@phosphor-icons/react'
 import { useLocalStore } from '@renderer/store/local-store'
@@ -6,102 +6,79 @@ import { useLocalUiStore } from '@renderer/store/local-ui-store'
 import { initialsOf } from '@renderer/lib/initials'
 import { Avatar } from '@renderer/components/common/avatar'
 import { IconButton } from '@renderer/components/common/icon-button'
-import { Popover, PopoverContent, PopoverTrigger } from '@renderer/components/ui/popover'
+import { UserBarShell } from '@renderer/components/common/user-bar-shell'
 import { cn } from '@renderer/lib/utils'
 
-/** The floating user bar for offline mode — the SAME shape and behaviour as the
- *  online `UserPanel`/`UserMenu` (width-tracked popover, identity header, menu
- *  rows), showing the purely-local offline profile. No mic/deafen or presence
- *  (voice + status need an account/server). */
+/** The floating user bar for offline mode — the SAME shell as the online `UserPanel`
+ *  (`UserBarShell`: width-tracked popover, identity trigger), showing the purely-local
+ *  offline profile. No presence / voice / custom status (those need an account + server),
+ *  so the menu is just Edit profile + Sign in. */
 export function LocalUserBar(): React.JSX.Element {
   const profile = useLocalStore((state) => state.profile)
   const openSettings = useLocalUiStore((state) => state.openSettings)
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
 
-  // The dropdown always matches the floating bar's width (tracks sidebar resize) —
-  // exactly as the online UserPanel does.
-  const barRef = useRef<HTMLDivElement>(null)
-  const [barWidth, setBarWidth] = useState<number>()
-
-  useEffect(() => {
-    const el = barRef.current
-    if (!el) return
-    const observer = new ResizeObserver(() => setBarWidth(el.offsetWidth))
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
-
   return (
-    <div
-      ref={barRef}
-      className="mx-2 mt-1 mb-2 flex items-center gap-0.5 rounded-lg bg-sidebar-accent/60 px-1.5 py-1.5 shadow-sm"
-    >
-      <Popover open={menuOpen} onOpenChange={setMenuOpen}>
-        <PopoverTrigger className="flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 text-left transition-colors hover:bg-sidebar-accent">
-          <Avatar
-            initials={initialsOf(profile.name)}
-            color="#f59e0b"
-            image={profile.avatar}
-            ringClassName="ring-[3px] ring-sidebar"
-            className="size-8"
-          />
-          <div className="min-w-0 leading-tight">
-            <div className="truncate text-sm font-semibold text-foreground">{profile.name}</div>
-            <div className="truncate text-xs text-muted-foreground">Offline</div>
-          </div>
-        </PopoverTrigger>
-        <PopoverContent
-          side="top"
-          align="start"
-          alignOffset={-6}
-          sideOffset={8}
-          style={{ width: barWidth ?? '16rem' }}
-        >
-          <div className="flex w-full flex-col">
-            {/* Identity — same shape as the online UserMenu. */}
-            <div className="flex items-center gap-3 px-1.5 pt-1 pb-2">
-              <Avatar
-                initials={initialsOf(profile.name)}
-                color="#f59e0b"
-                image={profile.avatar}
-                ringClassName="ring-2 ring-popover"
-                className="size-11"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold">{profile.name}</div>
-                <div className="truncate text-xs text-muted-foreground">Offline · this device</div>
-              </div>
+    <UserBarShell
+      name={profile.name}
+      subtitle="Offline"
+      menuOpen={menuOpen}
+      onMenuOpenChange={setMenuOpen}
+      avatar={
+        <Avatar
+          initials={initialsOf(profile.name)}
+          color="#f59e0b"
+          image={profile.avatar}
+          ringClassName="ring-[3px] ring-sidebar"
+          className="size-8"
+        />
+      }
+      trailing={
+        <IconButton label="Offline settings" onClick={() => openSettings('profile')}>
+          <Gear className="size-4" />
+        </IconButton>
+      }
+      menu={
+        <div className="flex w-full flex-col">
+          {/* Identity — same shape as the online UserMenu. */}
+          <div className="flex items-center gap-3 px-1.5 pt-1 pb-2">
+            <Avatar
+              initials={initialsOf(profile.name)}
+              color="#f59e0b"
+              image={profile.avatar}
+              ringClassName="ring-2 ring-popover"
+              className="size-11"
+            />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold">{profile.name}</div>
+              <div className="truncate text-xs text-muted-foreground">Offline · this device</div>
             </div>
-
-            <Divider />
-
-            <Row
-              onClick={() => {
-                setMenuOpen(false)
-                openSettings('profile')
-              }}
-            >
-              <PencilSimple className="size-4 text-muted-foreground" />
-              <span className="flex-1">Edit profile</span>
-            </Row>
-            <Row
-              onClick={() => {
-                setMenuOpen(false)
-                void navigate({ to: '/' })
-              }}
-            >
-              <SignIn className="size-4 text-muted-foreground" />
-              <span className="flex-1">Sign in to the online app</span>
-            </Row>
           </div>
-        </PopoverContent>
-      </Popover>
 
-      <IconButton label="Offline settings" onClick={() => openSettings('profile')}>
-        <Gear className="size-4" />
-      </IconButton>
-    </div>
+          <Divider />
+
+          <Row
+            onClick={() => {
+              setMenuOpen(false)
+              openSettings('profile')
+            }}
+          >
+            <PencilSimple className="size-4 text-muted-foreground" />
+            <span className="flex-1">Edit profile</span>
+          </Row>
+          <Row
+            onClick={() => {
+              setMenuOpen(false)
+              void navigate({ to: '/' })
+            }}
+          >
+            <SignIn className="size-4 text-muted-foreground" />
+            <span className="flex-1">Sign in to the online app</span>
+          </Row>
+        </div>
+      }
+    />
   )
 }
 

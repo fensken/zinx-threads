@@ -1,7 +1,15 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation } from 'convex/react'
-import { FileText, Hash, Kanban, SpeakerHigh } from '@phosphor-icons/react'
+import {
+  Check,
+  FileText,
+  Hash,
+  Kanban,
+  LockSimple,
+  PenNib,
+  SpeakerHigh
+} from '@phosphor-icons/react'
 import { api } from '@convex/_generated/api'
 import type { Id } from '@convex/_generated/dataModel'
 import {
@@ -19,12 +27,13 @@ import { BusyLabel } from '@renderer/components/common/busy-label'
 import { cn } from '@renderer/lib/utils'
 import { errorMessage } from '@renderer/lib/convex-error'
 
-type Kind = 'chat' | 'voice' | 'page' | 'kanban'
+type Kind = 'chat' | 'voice' | 'page' | 'kanban' | 'whiteboard'
 const KINDS: { value: Kind; label: string; Icon: typeof Hash }[] = [
   { value: 'chat', label: 'Text', Icon: Hash },
   { value: 'voice', label: 'Voice', Icon: SpeakerHigh },
   { value: 'page', label: 'Page', Icon: FileText },
-  { value: 'kanban', label: 'Board', Icon: Kanban }
+  { value: 'kanban', label: 'Board', Icon: Kanban },
+  { value: 'whiteboard', label: 'Whiteboard', Icon: PenNib }
 ]
 
 /** Create a channel (optionally inside a group), then jump into it. */
@@ -43,6 +52,7 @@ export function CreateChannelDialog({
 }): React.JSX.Element {
   const [name, setName] = useState('')
   const [kind, setKind] = useState<Kind>('chat')
+  const [isPrivate, setPrivate] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const create = useMutation(api.channels.create)
@@ -54,10 +64,17 @@ export function CreateChannelDialog({
     setBusy(true)
     setError(null)
     try {
-      const channelId = await create({ workspaceId, groupId, name: name.trim(), kind })
+      const channelId = await create({
+        workspaceId,
+        groupId,
+        name: name.trim(),
+        kind,
+        ...(isPrivate ? { visibility: 'private' as const } : {})
+      })
       onOpenChange(false)
       setName('')
       setKind('chat')
+      setPrivate(false)
       await navigate({
         to: '/w/$workspaceId/c/$channelId',
         params: { workspaceId: workspaceSlug, channelId }
@@ -109,6 +126,39 @@ export function CreateChannelDialog({
               maxLength={60}
             />
           </div>
+          {/* Private is decided at creation because converting later exposes (or hides) the
+              history that's already there — the one moment it costs nothing is now. */}
+          <button
+            type="button"
+            onClick={() => setPrivate((current) => !current)}
+            className={cn(
+              'flex items-start gap-3 rounded-lg border-2 px-3 py-2.5 text-left transition-colors',
+              isPrivate
+                ? 'border-primary bg-primary/10'
+                : 'border-border hover:border-muted-foreground/40 hover:bg-accent'
+            )}
+          >
+            <LockSimple
+              className={cn(
+                'mt-0.5 size-4 shrink-0',
+                isPrivate ? 'text-primary' : 'text-muted-foreground'
+              )}
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-medium">Make private</span>
+              <span className="block text-xs text-muted-foreground">
+                Only people you add can see it — admins included.
+              </span>
+            </span>
+            <span
+              className={cn(
+                'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border',
+                isPrivate ? 'border-primary bg-primary text-primary-foreground' : 'border-border'
+              )}
+            >
+              {isPrivate ? <Check weight="bold" className="size-3" /> : null}
+            </span>
+          </button>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
         </form>
         <DialogFooter>

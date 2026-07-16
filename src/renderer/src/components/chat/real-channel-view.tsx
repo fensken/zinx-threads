@@ -9,6 +9,7 @@ import { ConfirmDialog } from '@renderer/components/common/confirm-dialog'
 import { Spinner } from '@renderer/components/ui/spinner'
 import { ChannelIntro } from '@renderer/components/chat/channel-intro'
 import { ChannelComposer } from '@renderer/components/chat/channel-composer'
+import { ReadOnlyNotice } from '@renderer/components/chat/read-only-notice'
 import {
   Conversation,
   ConversationContent,
@@ -42,11 +43,29 @@ const NOOP = (): void => {}
  *  pinned to the bottom. */
 export function RealChannelView({
   channel,
-  canModerate
+  canModerate,
+  canPost = true,
+  allowThreads = true,
+  displayName
 }: {
   channel: Doc<'channels'>
   /** Workspace owner/admin — may delete anyone's message and pin. */
   canModerate: boolean
+  /** May the reader WRITE here? False in an announcement channel, and in a
+   *  `postingPolicy: 'selected'` channel for anyone who isn't a named talker. The server
+   *  decides this (`getChannelAccess`); we only render it — so the composer, the reply
+   *  button and the start-a-thread button all disappear together rather than offering
+   *  three routes to the same rejection. */
+  canPost?: boolean
+  /** False in a DM: a thread is visible to the whole workspace (the header dialog,
+   *  the palette, the sidebar counts all query threads workspace-wide), so one
+   *  inside a private conversation would leak it. `threads.create` refuses a DM for
+   *  the same reason — this just hides the affordance rather than offering a button
+   *  that always errors. */
+  allowThreads?: boolean
+  /** What the composer calls this conversation ("Message Alice"). Defaults to the
+   *  channel name; a DM passes the participants, since its name is an internal key. */
+  displayName?: string
 }): React.JSX.Element {
   const id = channel._id
 
@@ -277,18 +296,33 @@ export function RealChannelView({
                   onPin={() =>
                     void guard(togglePin({ messageId: row.message._id }), 'Could not pin')
                   }
-                  onReply={() =>
-                    setReplyTarget({
-                      _id: row.message._id,
-                      body: row.message.body,
-                      authorName: row.message.author?.name ?? 'Unknown'
-                    })
+                  onReply={
+                    canPost
+                      ? () =>
+                          setReplyTarget({
+                            _id: row.message._id,
+                            body: row.message.body,
+                            authorName: row.message.author?.name ?? 'Unknown'
+                          })
+                      : undefined
                   }
                   onJump={jumpToMessage}
-                  onOpenThread={openThread}
-                  onCreateThread={() =>
-                    setThreadSeed({ messageId: row.message._id, body: row.message.body })
-                  }
+                  {...(allowThreads
+                    ? {
+                        // Opening an existing thread is *reading* — always allowed.
+                        // Starting one is writing, so it goes with the composer.
+                        onOpenThread: openThread,
+                        ...(canPost
+                          ? {
+                              onCreateThread: () =>
+                                setThreadSeed({
+                                  messageId: row.message._id,
+                                  body: row.message.body
+                                })
+                            }
+                          : {})
+                      }
+                    : {})}
                 />
               )
             })}
@@ -301,15 +335,21 @@ export function RealChannelView({
         </Conversation>
       )}
 
-      <ChannelComposer
-        key={id}
-        channelName={channel.name}
-        onSend={submit}
-        onUpload={uploadFile}
-        onRemoveUpload={(key) => void deleteUpload({ key })}
-        replyTo={replyTarget}
-        onCancelReply={() => setReplyTarget(null)}
-      />
+      {!canPost ? (
+        <ReadOnlyNotice postingPolicy={channel.postingPolicy} />
+      ) : (
+        <ChannelComposer
+          key={id}
+          channelName={channel.name}
+          // A DM has no `#name` — it's people. "Message Alice", not "Message #dm-…".
+          placeholder={displayName ? `Message ${displayName}` : undefined}
+          onSend={submit}
+          onUpload={uploadFile}
+          onRemoveUpload={(key) => void deleteUpload({ key })}
+          replyTo={replyTarget}
+          onCancelReply={() => setReplyTarget(null)}
+        />
+      )}
 
       <CreateThreadDialog
         seed={threadSeed}

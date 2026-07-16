@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   CaretRight,
   Check,
@@ -39,6 +39,10 @@ export interface UserMenuProps {
   onClose: () => void
   /** Lets the parent popover stay open while the emoji picker overlay is up. */
   onEmojiOpenChange?: (open: boolean) => void
+  /** Which side the presence submenu flies out to. Defaults to `right` (the sidebar user
+   *  panel, anchored bottom-left, has room there); pass `left` when the menu itself is
+   *  anchored to the right edge (the `/workspaces` header), or the submenu runs off-screen. */
+  submenuSide?: 'left' | 'right'
 }
 
 export function UserMenu(props: UserMenuProps): React.JSX.Element {
@@ -58,7 +62,8 @@ export function UserMenu(props: UserMenuProps): React.JSX.Element {
     onSignOut,
     onOfflineWorkspaces,
     onClose,
-    onEmojiOpenChange
+    onEmojiOpenChange,
+    submenuSide = 'right'
   } = props
 
   const [editing, setEditing] = useState(false)
@@ -67,6 +72,21 @@ export function UserMenu(props: UserMenuProps): React.JSX.Element {
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [statusOpen, setStatusOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+
+  // The presence submenu opens on HOVER (Discord-style), with a short close delay so
+  // moving the cursor across the small gap into the flyout doesn't dismiss it.
+  const statusTimer = useRef<number | null>(null)
+  const openStatus = (): void => {
+    if (statusTimer.current) {
+      window.clearTimeout(statusTimer.current)
+      statusTimer.current = null
+    }
+    setStatusOpen(true)
+  }
+  const closeStatusSoon = (): void => {
+    if (statusTimer.current) window.clearTimeout(statusTimer.current)
+    statusTimer.current = window.setTimeout(() => setStatusOpen(false), 160)
+  }
 
   const openEmoji = (): void => {
     setEmojiOpen(true)
@@ -187,7 +207,7 @@ export function UserMenu(props: UserMenuProps): React.JSX.Element {
       {/* Presence — a single row showing the current (static) status; the full
           set opens as a side flyout submenu (kept inside the popover DOM so
           clicks don't dismiss the outer popover). */}
-      <div className="relative">
+      <div className="relative" onMouseEnter={openStatus} onMouseLeave={closeStatusSoon}>
         <button
           type="button"
           onClick={() => setStatusOpen((open) => !open)}
@@ -202,7 +222,14 @@ export function UserMenu(props: UserMenuProps): React.JSX.Element {
         </button>
 
         {statusOpen ? (
-          <div className="absolute top-0 left-full z-50 ml-1 w-60 rounded-lg border bg-popover p-1 shadow-xl">
+          <div
+            className={cn(
+              'absolute top-0 z-50 w-60 rounded-lg border bg-popover p-1 shadow-xl',
+              submenuSide === 'left' ? 'right-full mr-1' : 'left-full ml-1'
+            )}
+            onMouseEnter={openStatus}
+            onMouseLeave={closeStatusSoon}
+          >
             {USER_STATUSES.map((option) => {
               const active = status === option.id
               return (

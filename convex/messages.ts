@@ -12,11 +12,15 @@ import {
   CHANNEL_PAGE,
   CHANNEL_PAGE_MAX,
   MAX_UNIQUE_REACTIONS,
+  bodyIsSilent,
   enrichMessages,
-  resolveAuthors
+  resolveAuthors,
+  searchMessagesForUser
 } from './lib/messages'
 import { addThreadReply, removeThreadReply } from './lib/threads'
 import { markChannelRead } from './lib/unread'
+import { bumpChannelActivity } from './lib/activity'
+import { applyReaction, summarizeReactionRows } from './lib/reactions'
 import { fanOutNotifications, removeNotificationsForMessage } from './lib/notifications'
 import { markUploadUsed, objectUrl, r2 } from './files'
 import { rateLimiter } from './rateLimiter'
@@ -119,50 +123,9 @@ export const searchInWorkspace = query({
     const user = await getCurrentUser(ctx)
     if (!user) return []
     if (!(await getMembership(ctx, workspaceId, user._id))) return []
-    const trimmed = term.trim()
-    if (!trimmed) return []
-
-    const hits = await ctx.db
-      .query('messages')
-      .withSearchIndex('search_body', (q) =>
-        q.search('body', trimmed).eq('workspaceId', workspaceId).eq('threadId', undefined)
-      )
-      .take(20)
-
-    const authors = await resolveAuthors(
-      ctx,
-      workspaceId,
-      hits.map((m) => m.authorId)
-    )
-    const channelCache = new Map<string, string>()
-    const results: Array<{
-      _id: (typeof hits)[number]['_id']
-      channelId: (typeof hits)[number]['channelId']
-      channelName: string
-      body: string
-      createdAt: number
-      authorName: string
-      authorColor: string | undefined
-      authorAvatarUrl: string | undefined
-    }> = []
-    for (const message of hits) {
-      const key = message.channelId as string
-      if (!channelCache.has(key)) {
-        const channel = await ctx.db.get(message.channelId)
-        channelCache.set(key, channel?.name ?? 'unknown')
-      }
-      results.push({
-        _id: message._id,
-        channelId: message.channelId,
-        channelName: channelCache.get(key) ?? 'unknown',
-        body: message.body,
-        createdAt: message.createdAt,
-        authorName: authors.get(message.authorId)?.name ?? 'Unknown',
-        authorColor: authors.get(message.authorId)?.color,
-        authorAvatarUrl: authors.get(message.authorId)?.avatarUrl
-      })
-    }
-    return results
+    // The whole ranking-then-filtering rule lives in `searchMessagesForUser` so the MCP
+    // `search_messages` tool applies the identical visibility check — see lib/messages.ts.
+    return searchMessagesForUser(ctx, user, workspaceId, term)
   }
 })
 
@@ -251,9 +214,22 @@ export const send = mutation({
     // member — the owner workspace only holds moderation authority.
     const access = await requireChannelAccess(ctx, channelId, user._id)
     const { channel } = access
-    // Only `chat` channels hold messages. Without this a crafted call could bury
-    // rows in a page/kanban/voice channel that no view ever surfaces.
-    if (channel.kind !== 'chat') throw new ConvexError('That channel is not a chat channel')
+    // Only `chat` channels and DMs hold messages. Without this a crafted call could
+    // bury rows in a page/kanban/voice channel that no view ever surfaces.
+    // An announcement channel (`postingPolicy: 'admins'`) is READABLE by everyone with
+    // access and writable only by the host's owner/admins. `canPost` is resolved once, in
+    // `getChannelAccess`, precisely so a write path can't forget to ask — and this is the
+    // write path that would have forgotten. (Caught by the test, not by review.)
+    if (!access.canPost) {
+      throw new ConvexError(
+        channel.postingPolicy === 'selected'
+          ? 'This channel is read-only for you'
+          : 'Only owners and admins can post in this channel'
+      )
+    }
+    if (channel.kind !== 'chat' && channel.kind !== 'dm') {
+      throw new ConvexError('That channel is not a chat channel')
+    }
     const trimmed = body.trim()
     // A message needs *something* — text or at least one attachment.
     const files = attachments ?? []
@@ -267,7 +243,7 @@ export const send = mutation({
     // the orphan sweep leaves it alone.
     const resolvedAttachments = await Promise.all(
       files.map(async (file) => {
-        await markUploadUsed(ctx, file.key)
+        await markUploadUsed(ctx, user._id, file.key)
         return { ...file, url: await objectUrl(file.key) }
       })
     )
@@ -300,7 +276,10 @@ export const send = mutation({
       replyToId,
       threadId,
       clientId,
-      attachments: resolvedAttachments.length > 0 ? resolvedAttachments : undefined
+      attachments: resolvedAttachments.length > 0 ? resolvedAttachments : undefined,
+      // Born with an (empty) summary, so rendering it never falls back to reading the
+      // `messageReactions` table — see the `reactions` note in `schema.ts`.
+      reactions: []
     })
     const message = (await ctx.db.get(messageId))!
 
@@ -311,7 +290,7 @@ export const send = mutation({
       // its parent channel. Bump the watermark every reader compares against, and
       // move the *sender's* marker past it: you have by definition read what you
       // just wrote, and everything above it you were looking at while typing.
-      await ctx.db.patch(channelId, { lastMessageAt: createdAt })
+      await bumpChannelActivity(ctx, channel, createdAt)
       // Stamp the read marker with the sender's ACCESS workspace (their guest
       // workspace for a shared channel), so it clears unread in the sidebar they
       // see the channel in.
@@ -322,13 +301,20 @@ export const send = mutation({
     // thread). `thread` is re-read fresh so its `participantIds` already include
     // whoever just replied (added by `addThreadReply` above) — harmless, they're
     // the actor and excluded anyway.
-    await fanOutNotifications(ctx, {
-      message,
-      channel,
-      actorId: user._id,
-      replyTarget,
-      thread: threadId ? await ctx.db.get(threadId) : null
-    })
+    //
+    // A **silent message** (`@silent`) skips fan-out entirely — no inbox rows, no reply/thread
+    // pings, no OS notification (the NotificationBridge keys off the inbox). It still lands in the
+    // channel and bolds it via unread; it just doesn't ping. `bodyIsSilent` is the same directive
+    // reader that suppresses the mention pill + highlight (see `mentionsUser`).
+    if (!bodyIsSilent(trimmed)) {
+      await fanOutNotifications(ctx, {
+        message,
+        channel,
+        actorId: user._id,
+        replyTarget,
+        thread: threadId ? await ctx.db.get(threadId) : null
+      })
+    }
 
     return messageId
   }
@@ -439,6 +425,19 @@ export const toggleReaction = mutation({
 
     if (existing) {
       await ctx.db.delete(existing._id)
+      // An old message may have no summary yet — rebuild it from the (now-current)
+      // rows rather than inventing one, so nobody else's reactions are lost.
+      const summary =
+        message.reactions ??
+        summarizeReactionRows(
+          await ctx.db
+            .query('messageReactions')
+            .withIndex('by_message', (q) => q.eq('messageId', messageId))
+            .collect()
+        )
+      await ctx.db.patch(messageId, {
+        reactions: message.reactions ? applyReaction(summary, clean, user._id, 'remove') : summary
+      })
       return
     }
 
@@ -455,5 +454,17 @@ export const toggleReaction = mutation({
     }
 
     await ctx.db.insert('messageReactions', { messageId, userId: user._id, emoji: clean })
+    // Keep the denormalised summary in step. `message.reactions` may be absent (a
+    // message written before the field existed) — rebuild it from the rows we just
+    // read rather than starting from an empty summary, which would drop everyone
+    // else's reactions the first time anyone touched an old message.
+    await ctx.db.patch(messageId, {
+      reactions: applyReaction(
+        message.reactions ?? summarizeReactionRows(all),
+        clean,
+        user._id,
+        'add'
+      )
+    })
   }
 })

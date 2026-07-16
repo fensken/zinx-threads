@@ -13,17 +13,26 @@
  *  *current* name at render time, so renaming a user or channel updates old
  *  messages. The id is never displayed. */
 
-export type MentionKind = 'user' | 'channel' | 'group'
+// `directive` is a non-mention token that carries an instruction rather than pinging someone —
+// currently just `@silent` (`zinx://directive/silent`), which sends a message without notifying
+// anyone. It rides the same link scheme so every consumer (preview, copy, edit round-trip, render)
+// keeps working, and the server reads it the same way it reads a mention.
+export type MentionKind = 'user' | 'channel' | 'group' | 'directive'
 
 const SCHEME = 'zinx://'
-// Convex ids are URL-safe base32-ish; group ids are our own literals.
-const HREF_RE = /^zinx:\/\/(user|channel|group)\/([A-Za-z0-9_-]+)$/
+// Convex ids are URL-safe base32-ish; group + directive ids are our own literals.
+const HREF_RE = /^zinx:\/\/(user|channel|group|directive)\/([A-Za-z0-9_-]+)$/
 
 export const MENTION_PREFIX: Record<MentionKind, string> = {
   user: '@',
   channel: '#',
-  group: '@'
+  group: '@',
+  directive: '@'
 }
+
+/** The one directive we have: mark the message silent (no notifications). */
+export const SILENT_DIRECTIVE_ID = 'silent'
+export const SILENT_DIRECTIVE_HREF = `${SCHEME}directive/${SILENT_DIRECTIVE_ID}`
 
 export function mentionHref(kind: MentionKind, id: string): string {
   return `${SCHEME}${kind}/${id}`
@@ -41,7 +50,7 @@ export function isMentionHref(href: string | null | undefined): boolean {
   return parseMentionHref(href) !== null
 }
 
-const MENTION_LINK_RE = /\[([^\]]+)\]\(zinx:\/\/(?:user|channel|group)\/[A-Za-z0-9_-]+\)/g
+const MENTION_LINK_RE = /\[([^\]]+)\]\(zinx:\/\/(?:user|channel|group|directive)\/[A-Za-z0-9_-]+\)/g
 
 /** Collapse mention links back to their labels (`[@Alice](zinx://user/x)` →
  *  `@Alice`). Used when copying a message: the clipboard should carry what the

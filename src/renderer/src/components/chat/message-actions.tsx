@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import {
   ArrowBendUpLeft,
-  ChatsCircle,
   Check,
   Copy,
   DotsThreeOutline,
   PencilSimple,
   PushPin,
+  Scribble,
   Smiley,
   Trash
 } from '@phosphor-icons/react'
@@ -45,7 +45,9 @@ export function MessageActions({
   hasThread?: boolean
   onCopy: () => void
   onReact: (emoji: string) => void
-  onReply: () => void
+  /** Absent in a read-only channel — the reply composer is the same composer, so a
+   *  Reply button there would open a box that can't send. Same rule as `onThread`. */
+  onReply?: () => void
   onEdit: () => void
   onPin: () => void
   onDelete: () => void
@@ -106,13 +108,17 @@ export function MessageActions({
         </PopoverContent>
       </Popover>
 
-      <ActionButton label="Reply" onClick={onReply}>
-        <ArrowBendUpLeft className="size-4" />
-      </ActionButton>
+      {onReply ? (
+        <ActionButton label="Reply" onClick={onReply}>
+          <ArrowBendUpLeft className="size-4" />
+        </ActionButton>
+      ) : null}
 
       {onThread ? (
         <ActionButton label={hasThread ? 'Open thread' : 'Start a thread'} onClick={onThread}>
-          <ChatsCircle className="size-4" weight={hasThread ? 'fill' : 'regular'} />
+          {/* `bold`, not `fill`: Scribble is a line glyph, so a fill weight barely
+              differs from regular — weight is what reads as "this already has one". */}
+          <Scribble className="size-4" weight={hasThread ? 'bold' : 'regular'} />
         </ActionButton>
       ) : null}
 

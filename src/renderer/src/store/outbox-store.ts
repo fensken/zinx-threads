@@ -54,10 +54,39 @@ function read(): OutboxEntry[] {
 
 function write(entries: OutboxEntry[]): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(entries.slice(-MAX_ENTRIES)))
+    // **`previewUrl` is never persisted.** It's a `blob:` URL — a handle into *this*
+    // window's memory. Written to localStorage it survives the window that gave it
+    // meaning, so a message still pending at quit would come back with a preview that
+    // resolves to nothing: a broken image in the restored row. Dropped here, the
+    // restored row simply shows the attachment without a thumbnail until the real URL
+    // lands, which is honest.
+    const persistable = entries.slice(-MAX_ENTRIES).map((entry) => ({
+      ...entry,
+      attachments: entry.attachments?.map((file) => ({
+        key: file.key,
+        name: file.name,
+        contentType: file.contentType,
+        size: file.size
+      }))
+    }))
+    localStorage.setItem(KEY, JSON.stringify(persistable))
   } catch {
     // Quota exceeded — the in-memory copy still works for this session.
   }
+}
+
+/** Release an entry's `blob:` previews. Each one pins its File in memory until it is
+ *  revoked, so an entry that leaves the outbox — delivered or discarded — has to give
+ *  them back; otherwise every attachment you send leaks for the life of the window. */
+function releasePreviews(entry: OutboxEntry | undefined): void {
+  for (const file of entry?.attachments ?? []) {
+    if (file.previewUrl) URL.revokeObjectURL(file.previewUrl)
+  }
+}
+
+function without(entries: OutboxEntry[], clientId: string): OutboxEntry[] {
+  releasePreviews(entries.find((e) => e.clientId === clientId))
+  return entries.filter((e) => e.clientId !== clientId)
 }
 
 interface OutboxState {
@@ -79,8 +108,7 @@ export const useOutboxStore = create<OutboxState>((set) => {
   return {
     entries: read(),
     enqueue: (entry) => set((state) => commit([...state.entries, entry])),
-    settle: (clientId) =>
-      set((state) => commit(state.entries.filter((e) => e.clientId !== clientId))),
+    settle: (clientId) => set((state) => commit(without(state.entries, clientId))),
     markFailed: (clientId, error) =>
       set((state) =>
         commit(state.entries.map((e) => (e.clientId === clientId ? { ...e, error } : e)))
@@ -89,7 +117,6 @@ export const useOutboxStore = create<OutboxState>((set) => {
       set((state) =>
         commit(state.entries.map((e) => (e.clientId === clientId ? { ...e, error: undefined } : e)))
       ),
-    discard: (clientId) =>
-      set((state) => commit(state.entries.filter((e) => e.clientId !== clientId)))
+    discard: (clientId) => set((state) => commit(without(state.entries, clientId)))
   }
 })

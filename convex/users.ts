@@ -15,7 +15,7 @@ const AVATAR_COLORS = [
   '#8b5cf6',
   '#e74c3c'
 ]
-function colorFor(id: string): string {
+export function colorFor(id: string): string {
   let hash = 0
   for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
@@ -23,7 +23,7 @@ function colorFor(id: string): string {
 
 /** A readable fallback name from an email when the IdP gives no first/last name:
  *  the local part, split on separators and title-cased (jane.doe → "Jane Doe"). */
-function nameFromEmail(email: string): string {
+export function nameFromEmail(email: string): string {
   const local = email.split('@')[0] ?? email
   const words = local
     .split(/[._\-+]+/)
@@ -44,16 +44,21 @@ export const me = query({
 export const updateProfile = mutation({
   args: {
     name: v.optional(v.string()),
-    color: v.optional(v.string())
+    color: v.optional(v.string()),
+    /** IANA zone. Validated by `Intl` on the client (the picker only offers zones
+     *  the runtime knows) and stored as-is; a bad value here would only ever break
+     *  the sender's own "local time" line. */
+    timezone: v.optional(v.string())
   },
-  handler: async (ctx, { name, color }) => {
+  handler: async (ctx, { name, color, timezone }) => {
     const user = await requireUser(ctx)
-    const patch: { name?: string; color?: string } = {}
+    const patch: { name?: string; color?: string; timezone?: string } = {}
     if (name !== undefined) {
       const trimmed = name.trim().slice(0, 60)
       if (trimmed.length) patch.name = trimmed
     }
     if (color !== undefined) patch.color = color
+    if (timezone !== undefined) patch.timezone = timezone.trim().slice(0, 64)
     await ctx.db.patch(user._id, patch)
   }
 })
@@ -72,7 +77,7 @@ export const setUploadedAvatar = mutation({
   handler: async (ctx, { key }) => {
     const user = await requireUser(ctx)
     const previousKey = user.avatarKey
-    await markUploadUsed(ctx, key)
+    await markUploadUsed(ctx, user._id, key)
     await ctx.db.patch(user._id, { avatarKey: key, avatarUrl: await objectUrl(key) })
     if (previousKey && previousKey !== key) {
       try {
@@ -155,7 +160,12 @@ export const store = mutation({
   args: {
     email: v.string(),
     name: v.optional(v.string()),
-    avatarUrl: v.optional(v.string())
+    avatarUrl: v.optional(v.string()),
+    /** The browser's IANA zone, sent on sign-in. Only ever fills an EMPTY one — it
+     *  never overwrites a stored zone, or opening the app from a hotel in another
+     *  country would silently rewrite the profile everyone reads your local time
+     *  from. Changing it is a deliberate act, in Settings → Account. */
+    timezone: v.optional(v.string())
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity()
@@ -177,7 +187,9 @@ export const store = mutation({
         // A user-uploaded avatar (`avatarKey` set) wins over the IdP photo — sign-in
         // must not clobber it. Only fall back to the WorkOS photo when there's no
         // upload.
-        avatarUrl: existing.avatarKey ? existing.avatarUrl : (args.avatarUrl ?? existing.avatarUrl)
+        avatarUrl: existing.avatarKey ? existing.avatarUrl : (args.avatarUrl ?? existing.avatarUrl),
+        // Backfill only — see the arg's note.
+        ...(existing.timezone || !args.timezone ? {} : { timezone: args.timezone })
       })
       return existing._id
     }
@@ -191,7 +203,8 @@ export const store = mutation({
       emailVerified: Boolean(verifiedEmail),
       name: args.name ?? nameFromEmail(email),
       avatarUrl: args.avatarUrl,
-      color: colorFor(identity.subject)
+      color: colorFor(identity.subject),
+      timezone: args.timezone
     })
   }
 })

@@ -12,7 +12,7 @@ import {
   playScreenShareStopSound,
   playUndeafenSound,
   playUnmuteSound
-} from '@renderer/lib/call-sounds'
+} from '@renderer/lib/sounds'
 
 export interface CallControls {
   micOn: boolean

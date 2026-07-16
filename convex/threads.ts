@@ -1,5 +1,5 @@
 import { ConvexError, v } from 'convex/values'
-import { query, mutation, type MutationCtx } from './_generated/server'
+import { query, mutation, type MutationCtx, type QueryCtx } from './_generated/server'
 import type { Doc, Id } from './_generated/dataModel'
 import {
   getChannelAccess,
@@ -9,10 +9,14 @@ import {
   requireUser
 } from './lib/auth'
 import { MESSAGE_PAGE, enrichMessages, resolveAuthors } from './lib/messages'
+import { getMyChannelIds } from './lib/channelMembers'
 import { internal } from './_generated/api'
 
 /** Threads shown in the workspace-wide flyout / per channel. */
 const THREAD_PAGE = 50
+
+/** How far `countsByChannel` scans to build the sidebar's per-channel badges. */
+const THREAD_COUNT_SCAN = 500
 
 const MAX_NAME = 80
 
@@ -26,7 +30,21 @@ export const create = mutation({
     const message = await ctx.db.get(messageId)
     if (!message) throw new ConvexError('Message not found')
     // Any member with access can branch a thread — including guests of a shared channel.
-    await requireChannelAccess(ctx, message.channelId, user._id)
+    const access = await requireChannelAccess(ctx, message.channelId, user._id)
+    const { channel } = access
+    // …but not someone who can only READ here. A thread they can't reply in is a room with
+    // no door: `messages.send` would refuse every reply, including their own first one.
+    if (!access.canPost) {
+      throw new ConvexError("You don't have permission to post in this channel")
+    }
+    // Not in a DM. `threads` is queried workspace-wide (the header dialog, the ⌘K
+    // palette, the sidebar's count badges) and those queries gate on workspace
+    // membership — so a thread inside a DM would put its name and its root message
+    // in front of the whole workspace. The UI hides the affordance; this is the
+    // guarantee behind it.
+    if (channel.kind === 'dm') {
+      throw new ConvexError("You can't start a thread in a direct message")
+    }
     if (message.threadRootId) throw new ConvexError('This message already has a thread')
     if (message.threadId) throw new ConvexError("You can't start a thread inside a thread")
 
@@ -59,13 +77,20 @@ export const listByWorkspace = query({
   handler: async (ctx, { workspaceId }) => {
     const user = await getCurrentUser(ctx)
     if (!user) return []
-    if (!(await getMembership(ctx, workspaceId, user._id))) return []
+    const membership = await getMembership(ctx, workspaceId, user._id)
+    if (!membership) return []
 
-    const threads = await ctx.db
-      .query('threads')
-      .withIndex('by_workspace_last_reply', (q) => q.eq('workspaceId', workspaceId))
-      .order('desc')
-      .take(THREAD_PAGE)
+    // A thread's NAME is a preview of its root message — so listing threads from a private
+    // channel leaks the content, not merely the existence, of a room the caller was kept
+    // out of. Drop them before anything is enriched or returned.
+    const visible = await visibleChannelFilter(ctx, workspaceId, user._id, membership.role)
+    const threads = (
+      await ctx.db
+        .query('threads')
+        .withIndex('by_workspace_last_reply', (q) => q.eq('workspaceId', workspaceId))
+        .order('desc')
+        .take(THREAD_PAGE)
+    ).filter((thread) => visible(thread.channelId))
 
     const roots = await Promise.all(threads.map((thread) => ctx.db.get(thread.rootMessageId)))
     const channels = await Promise.all(threads.map((thread) => ctx.db.get(thread.channelId)))
@@ -94,31 +119,42 @@ export const listByWorkspace = query({
   }
 })
 
-/** Every thread in the workspace, grouped by channel — the sidebar nests a
- *  channel's threads underneath it (and badges a count when it's collapsed),
- *  exactly as the demo sidebar's `ThreadTree` does.
+/** How many threads each channel has — the sidebar's `ChatsCircle` count badge.
+ *  The sidebar does NOT list threads (the channel header's dialog does); it just
+ *  says how many are there, so this returns counts, not rows.
  *
- *  One workspace-wide query rather than one per channel: the sidebar renders
- *  every channel at once, so per-channel queries would be a fan-out of
- *  subscriptions that all change together. */
-export const listByChannelForSidebar = query({
+ *  One workspace-wide subscription grouped client-side, not one query per channel
+ *  row: the sidebar renders every channel at once, so per-channel queries would be
+ *  a fan-out of subscriptions that all invalidate together. Bounded by
+ *  `THREAD_COUNT_SCAN` — past that the badges under-count rather than the query
+ *  scanning an unbounded table. */
+export const countsByChannel = query({
   args: { workspaceId: v.id('workspaces') },
   handler: async (ctx, { workspaceId }) => {
     const user = await getCurrentUser(ctx)
     if (!user) return []
-    if (!(await getMembership(ctx, workspaceId, user._id))) return []
+    const membership = await getMembership(ctx, workspaceId, user._id)
+    if (!membership) return []
 
-    const threads = await ctx.db
-      .query('threads')
-      .withIndex('by_workspace_last_reply', (q) => q.eq('workspaceId', workspaceId))
-      .order('desc')
-      .take(THREAD_PAGE)
+    // Even a COUNT leaks: a badge on a channel row you can't open tells you a private
+    // conversation is happening. (The sidebar wouldn't render the row anyway, but the query
+    // must not be the thing relied on for that.)
+    const visible = await visibleChannelFilter(ctx, workspaceId, user._id, membership.role)
+    const threads = (
+      await ctx.db
+        .query('threads')
+        .withIndex('by_workspace_last_reply', (q) => q.eq('workspaceId', workspaceId))
+        .order('desc')
+        .take(THREAD_COUNT_SCAN)
+    ).filter((thread) => visible(thread.channelId))
 
-    return threads.map((thread) => ({
-      _id: thread._id,
-      name: thread.name,
-      channelId: thread.channelId,
-      replyCount: thread.replyCount
+    const counts = new Map<string, number>()
+    for (const thread of threads) {
+      counts.set(thread.channelId, (counts.get(thread.channelId) ?? 0) + 1)
+    }
+    return [...counts].map(([channelId, count]) => ({
+      channelId: channelId as Id<'channels'>,
+      count
     }))
   }
 })
@@ -157,7 +193,12 @@ export const get = query({
       /** Pin / delete **anyone's message**: owner or admin only. Distinct from
        *  `canManage` — a plain member who started a thread doesn't get to
        *  moderate the replies inside it. */
-      canModerate: isModerator
+      canModerate: isModerator,
+      /** May the reader REPLY? A thread inherits its channel's posting policy — a
+       *  read-only channel is read-only all the way down, or a thread would be the
+       *  hole in it. `messages.send` gates on the same value. */
+      canPost: access.canPost,
+      postingPolicy: channel?.postingPolicy
     }
   }
 })
@@ -237,4 +278,36 @@ async function requireManage(
     throw new ConvexError("You don't have permission to manage this thread")
   }
   return { thread }
+}
+
+/**
+ * "Can this caller see channel X?" — resolved once, for the workspace-wide thread queries.
+ *
+ * Both of them enumerate threads across every channel, so both must drop the ones in
+ * private channels the caller isn't in. This reads the caller's channel memberships once
+ * and the private-channel set once, then answers from memory.
+ */
+async function visibleChannelFilter(
+  ctx: QueryCtx,
+  workspaceId: Id<'workspaces'>,
+  userId: Id<'users'>,
+  role: Doc<'workspaceMembers'>['role']
+): Promise<(channelId: Id<'channels'>) => boolean> {
+  const mine = await getMyChannelIds(ctx, workspaceId, userId)
+  // Only PRIVATE channels need a membership check — but a guest needs one for every
+  // channel, so for them the "restricted" set is everything.
+  const restricted = new Set<string>()
+  const channels = await ctx.db
+    .query('channels')
+    .withIndex('by_workspace', (q) => q.eq('workspaceId', workspaceId))
+    .collect()
+  for (const channel of channels) {
+    if (role === 'guest' || channel.visibility === 'private') {
+      restricted.add(channel._id as string)
+    }
+  }
+  return (channelId) => {
+    const key = channelId as string
+    return !restricted.has(key) || mine.has(key)
+  }
 }

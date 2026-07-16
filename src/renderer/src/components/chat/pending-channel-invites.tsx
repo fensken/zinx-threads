@@ -81,14 +81,15 @@ function InviteRow({
         <WorkspaceGlyph
           name={invite.ownerWorkspaceName}
           className={cn(
-            'shrink-0 rounded bg-muted text-foreground',
+            'shrink-0 rounded bg-muted text-sidebar-foreground',
             compact ? 'size-5 text-[9px]' : 'size-9 text-xs'
           )}
         />
         <p className="min-w-0 flex-1 leading-tight">
-          <span className="font-medium text-foreground">{invite.ownerWorkspaceName}</span> invited{' '}
-          <span className="font-medium text-foreground">{invite.guestWorkspaceName}</span> to{' '}
-          <span className="font-medium text-foreground">#{invite.channelName}</span>.
+          <span className="font-medium text-sidebar-foreground">{invite.ownerWorkspaceName}</span>{' '}
+          invited{' '}
+          <span className="font-medium text-sidebar-foreground">{invite.guestWorkspaceName}</span>{' '}
+          to <span className="font-medium text-sidebar-foreground">#{invite.channelName}</span>.
         </p>
       </div>
       <div className={cn('mt-1.5 flex items-center gap-1.5', !compact && 'justify-end')}>
@@ -105,7 +106,7 @@ function InviteRow({
           type="button"
           disabled={working}
           onClick={() => void run(invite._id, 'decline')}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground disabled:opacity-60"
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground disabled:opacity-60"
         >
           <X className="size-3" weight="bold" />
           Decline
@@ -223,7 +224,7 @@ export function PendingChannelInvites({
           onClick={() => setDialogOpen(true)}
           className="w-full rounded-md bg-sidebar px-2 py-1.5 text-left text-xs transition-colors hover:bg-sidebar-accent"
         >
-          <span className="text-foreground">
+          <span className="text-sidebar-foreground">
             You have <span className="font-semibold">{count}</span> channel invitations.
           </span>
           <span className="mt-0.5 block font-medium text-primary">Review all →</span>

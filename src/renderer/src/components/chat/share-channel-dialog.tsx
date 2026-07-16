@@ -149,7 +149,7 @@ function OwnerConnections({
                   <span
                     className={
                       guest.status === 'accepted'
-                        ? 'ml-2 text-xs text-emerald-500'
+                        ? 'ml-2 text-xs text-success'
                         : 'ml-2 text-xs text-muted-foreground'
                     }
                   >

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { FileText, FolderOpen, Gear, Kanban, Plus, SignIn } from '@phosphor-icons/react'
-import { useLocalStore } from '@renderer/store/local-store'
+import { FolderOpen, Gear, Plus, SignIn } from '@phosphor-icons/react'
+import { ChannelKindIcon } from '@renderer/components/chat/channel-kind-icon'
+import { useLocalStore, type LocalChannelKind } from '@renderer/store/local-store'
 import { useLocalUiStore } from '@renderer/store/local-ui-store'
 import { platform } from '@renderer/lib/platform'
 import { WorkspaceGlyph } from '@renderer/components/workspace/workspace-glyph'
@@ -10,6 +11,13 @@ import { PaletteDialog, type PaletteItem } from '@renderer/components/layout/com
 /** Offline ⌘K palette — the SAME modal the online app uses (`PaletteDialog`), fed by
  *  the local store instead of Convex. Jump to a page/board, switch offline workspace,
  *  or run an action. Nothing mounts while it's closed. */
+/** Kept beside the icon so the palette can't drift from the sidebar's labels. */
+const KIND_LABEL: Record<LocalChannelKind, string> = {
+  page: 'Page',
+  kanban: 'Board',
+  whiteboard: 'Whiteboard'
+}
+
 export function LocalCommandPalette(): React.JSX.Element | null {
   const open = useLocalUiStore((state) => state.paletteOpen)
   if (!open) return null
@@ -37,9 +45,8 @@ function LocalPalette(): React.JSX.Element {
       key: `ch-${channel.id}`,
       group: 'Channels',
       label: channel.name,
-      sublabel: channel.kind === 'kanban' ? 'Board' : 'Page',
-      icon:
-        channel.kind === 'kanban' ? <Kanban className="size-4" /> : <FileText className="size-4" />,
+      sublabel: KIND_LABEL[channel.kind],
+      icon: <ChannelKindIcon kind={channel.kind} className="size-4" />,
       run: () => {
         void navigate({ to: '/local/$channelId', params: { channelId: channel.id } })
         close()
@@ -59,7 +66,7 @@ function LocalPalette(): React.JSX.Element {
           image={workspace.image}
           icon={workspace.icon}
           name={workspace.name}
-          className="size-5 overflow-hidden rounded bg-amber-500/15 text-amber-600 dark:text-amber-400"
+          className="size-5 overflow-hidden rounded bg-warning/15 text-warning"
           iconClassName="size-3.5"
         />
       ),
@@ -71,8 +78,8 @@ function LocalPalette(): React.JSX.Element {
     })
   }
 
-  const createAndOpen = (kind: 'page' | 'kanban'): void => {
-    const id = createChannel(kind === 'kanban' ? 'New board' : 'New page', kind)
+  const createAndOpen = (kind: LocalChannelKind): void => {
+    const id = createChannel(`New ${KIND_LABEL[kind].toLowerCase()}`, kind)
     void navigate({ to: '/local/$channelId', params: { channelId: id } })
     close()
   }
@@ -91,6 +98,13 @@ function LocalPalette(): React.JSX.Element {
       label: 'New board',
       icon: <Plus className="size-4" weight="bold" />,
       run: () => createAndOpen('kanban')
+    },
+    {
+      key: 'a-new-whiteboard',
+      group: 'Actions',
+      label: 'New whiteboard',
+      icon: <Plus className="size-4" weight="bold" />,
+      run: () => createAndOpen('whiteboard')
     },
     {
       key: 'a-settings',

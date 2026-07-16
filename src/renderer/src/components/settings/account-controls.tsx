@@ -11,8 +11,10 @@ import { Button } from '@renderer/components/ui/button'
 import { Spinner } from '@renderer/components/ui/spinner'
 import { Avatar } from '@renderer/components/common/avatar'
 import { UploadableAvatar } from '@renderer/components/common/uploadable-avatar'
+import { TimezoneSelect } from '@renderer/components/common/timezone-select'
 import { AuthControls } from '@renderer/components/auth/auth-controls'
 import { errorMessage } from '@renderer/lib/convex-error'
+import { detectTimeZone, localTimeLabel } from '@renderer/lib/timezone'
 
 // Avatar palette (categorical colors — allowed hardcoded exception).
 const SWATCHES = [
@@ -61,18 +63,21 @@ function ProfileForm({ me }: { me: Doc<'users'> }): React.JSX.Element {
   const uploadFile = useUploadFile(api.files)
   const setUploadedAvatar = useMutation(api.users.setUploadedAvatar)
   const [name, setName] = useState(me.name ?? '')
+  // Seeded from the browser when the account has no stored zone (a row written
+  // before zones existed) — so the field always shows what others actually see.
+  const [timezone, setTimezone] = useState(me.timezone ?? detectTimeZone())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const color = me.color ?? SWATCHES[0]
   const preview = name.trim() || me.email
-  const dirty = name !== (me.name ?? '')
+  const dirty = name !== (me.name ?? '') || timezone !== (me.timezone ?? detectTimeZone())
 
   const save = async (): Promise<void> => {
     setBusy(true)
     setError(null)
     try {
-      await updateProfile({ name })
+      await updateProfile({ name, timezone })
     } catch (err) {
       setError(errorMessage(err, 'Could not save'))
     } finally {
@@ -115,6 +120,15 @@ function ProfileForm({ me }: { me: Doc<'users'> }): React.JSX.Element {
           placeholder={me.email}
           maxLength={60}
         />
+      </div>
+
+      <div className="grid gap-1.5">
+        <Label>Time zone</Label>
+        <TimezoneSelect value={timezone} onChange={setTimezone} />
+        <p className="text-xs text-muted-foreground">
+          Teammates see your local time ({localTimeLabel(timezone)}) on your profile, and events
+          show in your zone as well as the workspace&apos;s.
+        </p>
       </div>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}

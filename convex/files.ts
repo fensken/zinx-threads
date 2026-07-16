@@ -2,8 +2,9 @@ import { ConvexError, v } from 'convex/values'
 import { R2 } from '@convex-dev/r2'
 import { mutation, internalMutation, type MutationCtx } from './_generated/server'
 import { components } from './_generated/api'
-import type { DataModel } from './_generated/dataModel'
+import type { DataModel, Id } from './_generated/dataModel'
 import { getCurrentUser, requireUser } from './lib/auth'
+import { rateLimiter } from './rateLimiter'
 
 // Cloudflare R2 file uploads via the `@convex-dev/r2` component. The browser
 // uploads straight to R2 with a short-lived signed URL that `generateUploadUrl`
@@ -27,12 +28,20 @@ export const r2 = new R2(components.r2)
 // object as an *orphan candidate* until something references it (see `uploads`).
 export const { generateUploadUrl, syncMetadata } = r2.clientApi<DataModel>({
   checkUpload: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) throw new ConvexError('You must be signed in to upload')
+    const user = await getCurrentUser(ctx)
+    if (!user) throw new ConvexError('You must be signed in to upload')
+    // Every upload URL spends R2 quota, so it's rate-limited per user like the other
+    // endpoints that draw on a paid resource with our keys. `check` (read-only) rather
+    // than `limit` — the component hands `checkUpload` a *query* context, which cannot
+    // spend a token. The token is spent in `onUpload` below, once the object actually
+    // lands: check refuses the mint, consume records the cost, and a signed URL that
+    // was minted but never used costs us nothing anyway.
+    await rateLimiter.check(ctx, 'upload', { key: user._id, throws: true })
   },
   onUpload: async (ctx, _bucket, key) => {
     const user = await getCurrentUser(ctx)
     if (!user) return
+    await rateLimiter.limit(ctx, 'upload', { key: user._id })
     await ctx.db.insert('uploads', { key, userId: user._id, createdAt: Date.now() })
   }
 })
@@ -50,15 +59,30 @@ export async function objectUrl(key: string): Promise<string> {
   return r2.getUrl(key, { expiresIn: 60 * 60 * 24 * 7 })
 }
 
-/** Mark an uploaded object as **used** — a message/avatar/logo now references it,
- *  so drop its orphan-tracking row and the daily sweep will leave it alone.
- *  Call this from every mutation that adopts an uploaded `key`. */
-export async function markUploadUsed(ctx: MutationCtx, key: string): Promise<void> {
+/** Adopt an uploaded object — a message/avatar/logo/cover now references it, so drop
+ *  its orphan-tracking row and the daily sweep will leave it alone. Call this from
+ *  every mutation that takes an uploaded `key` from the client.
+ *
+ *  **The key must be an unattached upload of the caller's own.** An R2 key is not a
+ *  secret — it's visible in the URL of every attachment you can see — so without this
+ *  check any member could hand someone *else's* key to `messages.send`, attach their
+ *  file to a message of their own, and then delete that message: `messages.remove`
+ *  deletes its attachments' R2 objects, so the file would vanish from the original
+ *  message too. Requiring ownership of the (still-orphan) upload row makes the key a
+ *  capability rather than a guessable name. */
+export async function markUploadUsed(
+  ctx: MutationCtx,
+  userId: Id<'users'>,
+  key: string
+): Promise<void> {
   const row = await ctx.db
     .query('uploads')
     .withIndex('by_key', (q) => q.eq('key', key))
     .unique()
-  if (row) await ctx.db.delete(row._id)
+  if (!row || row.userId !== userId) {
+    throw new ConvexError('That file upload is no longer available — try uploading it again')
+  }
+  await ctx.db.delete(row._id)
 }
 
 /** Delete an uploaded object the caller **owns and hasn't attached yet** — the

@@ -18,25 +18,20 @@ import {
   verticalListSortingStrategy
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import {
-  CaretRight,
-  FileText,
-  FolderOpen,
-  Kanban,
-  MagnifyingGlass,
-  PencilSimple,
-  Plus,
-  Trash,
-  WifiSlash
-} from '@phosphor-icons/react'
+import { FolderOpen, MagnifyingGlass, PencilSimple, Plus, Trash } from '@phosphor-icons/react'
 import {
   LOCAL_UNGROUPED,
   useLocalStore,
   type LocalChannel,
-  type LocalChannelKind,
   type LocalGroup
 } from '@renderer/store/local-store'
 import { RenameField } from '@renderer/components/chat/rename-field'
+import { ChannelKindIcon } from '@renderer/components/chat/channel-kind-icon'
+import {
+  RowActionButton,
+  SidebarGroup,
+  SidebarRow
+} from '@renderer/components/chat/sidebar-primitives'
 import { QuickItem } from '@renderer/components/chat/sidebar-quick-nav'
 import { ConfirmDialog } from '@renderer/components/common/confirm-dialog'
 import {
@@ -53,15 +48,10 @@ import { LocalWorkspaceSwitcher } from '@renderer/components/local/local-workspa
 import { LocalUserBar } from '@renderer/components/local/local-user-bar'
 import { LocalCreateChannelDialog } from '@renderer/components/local/local-create-channel-dialog'
 import { useLocalUiStore } from '@renderer/store/local-ui-store'
-import { cn } from '@renderer/lib/utils'
 
 const IS_MAC =
   typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent)
 const SEARCH_SHORTCUT = IS_MAC ? '⌘ + K' : 'Ctrl + K'
-
-function kindIcon(kind: LocalChannelKind, className: string): React.JSX.Element {
-  return kind === 'kanban' ? <Kanban className={className} /> : <FileText className={className} />
-}
 
 /** Sidebar for the offline workspace — the SAME layout + behaviour as the live one
  *  (ungrouped channels + collapsible groups, drag-and-drop reorder/move, search,
@@ -229,22 +219,20 @@ export function LocalSidebar(): React.JSX.Element {
 
   return (
     <div className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground">
-      {/* Offline info strip — above the switcher, so it's clear you're local. */}
-      <div className="flex items-center gap-1.5 bg-amber-500/10 px-3 py-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-        <WifiSlash className="size-3" weight="bold" />
-        Offline — saved on this device
+      {/* Header — offline workspace switcher (same shape + h-14 as the live one). */}
+      <div className="flex h-14 shrink-0 items-center border-b px-2">
+        <div className="min-w-0 flex-1">
+          <LocalWorkspaceSwitcher />
+        </div>
       </div>
 
-      {/* Header — offline workspace switcher (same shape as the live one). */}
-      <div className="p-2">
-        <LocalWorkspaceSwitcher />
-      </div>
-
-      {/* Quick nav — Search only (Inbox / Threads / Events need a server). Opens the
-          command palette modal, exactly like the online sidebar. */}
-      <div className="space-y-0.5 px-2 pb-1">
+      {/* Quick nav — the SAME block as the online sidebar (`SidebarQuickNav`), down to the
+          container padding + the shared `QuickItem`. Offline only shows **Search**: Inbox and
+          Events need a server, so they're hidden — not restyled. Matching the online container
+          (`px-2 pb-1 py-2`) is what gives it the same breathing room. */}
+      <div className="relative space-y-0.5 px-2 py-2 pb-1">
         <QuickItem
-          icon={<MagnifyingGlass className="size-5" />}
+          icon={<MagnifyingGlass className="size-4" />}
           label="Search"
           hint={SEARCH_SHORTCUT}
           active={paletteOpen}
@@ -304,11 +292,14 @@ export function LocalSidebar(): React.JSX.Element {
           <DragOverlay>
             {activeChannel ? (
               <div className="flex items-center gap-1.5 rounded-md bg-sidebar-accent px-2 py-1.5 text-sm shadow-lg">
-                {kindIcon(activeChannel.kind, 'size-4 text-muted-foreground')}
+                <ChannelKindIcon
+                  kind={activeChannel.kind}
+                  className="size-4 text-muted-foreground"
+                />
                 <span className="truncate">{activeChannel.name}</span>
               </div>
             ) : activeGroup ? (
-              <div className="rounded-md bg-sidebar-accent px-2 py-1 text-[11px] font-semibold tracking-wide text-foreground uppercase shadow-lg">
+              <div className="rounded-md bg-sidebar-accent px-2 py-1 text-[11px] font-semibold tracking-wide text-sidebar-foreground uppercase shadow-lg">
                 {activeGroup.name}
               </div>
             ) : null}
@@ -332,7 +323,7 @@ export function LocalSidebar(): React.JSX.Element {
           <button
             type="button"
             onClick={() => setNewGroup('')}
-            className="mt-2 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+            className="mt-2 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
           >
             <Plus className="size-3.5" weight="bold" />
             New group
@@ -348,7 +339,7 @@ export function LocalSidebar(): React.JSX.Element {
         <button
           type="button"
           onClick={() => setCreateIn({})}
-          className="mt-1 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+          className="mt-1 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
         >
           <Plus className="size-3.5" weight="bold" />
           Add a page or board
@@ -395,29 +386,6 @@ function SortableItem({
   )
 }
 
-function RowActionButton({
-  label,
-  onClick,
-  children
-}: {
-  label: string
-  onClick: () => void
-  children: React.ReactNode
-}): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      onPointerDown={(e) => e.stopPropagation()}
-      className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-background/40 hover:text-foreground"
-    >
-      {children}
-    </button>
-  )
-}
-
 function ChannelRow({
   channel,
   groups,
@@ -441,7 +409,9 @@ function ChannelRow({
       <RenameField
         initial={channel.name}
         className="bg-sidebar-accent"
-        leading={kindIcon(channel.kind, 'size-4 shrink-0 text-muted-foreground')}
+        leading={
+          <ChannelKindIcon kind={channel.kind} className="size-4 shrink-0 text-muted-foreground" />
+        }
         onCancel={() => setEditing(false)}
         onSubmit={(name) => {
           const clean = name.trim()
@@ -456,31 +426,26 @@ function ChannelRow({
     <>
       <ContextMenu>
         <ContextMenuTrigger>
-          <div className="group/ch relative flex items-center">
-            <Link
-              to="/local/$channelId"
-              params={{ channelId: channel.id }}
-              className={cn(
-                'flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-1 pr-12 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground',
-                nested ? 'pl-5' : 'pl-2',
-                isActive
-                  ? 'bg-sidebar-accent font-medium text-sidebar-foreground'
-                  : 'text-sidebar-foreground/80'
-              )}
-            >
-              {kindIcon(channel.kind, 'size-4 shrink-0 opacity-60')}
-              <span className="truncate">{channel.name}</span>
-            </Link>
-
-            <div className="absolute right-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/ch:opacity-100">
-              <RowActionButton label="Rename" onClick={() => setEditing(true)}>
-                <PencilSimple className="size-3.5" />
-              </RowActionButton>
-              <RowActionButton label="Delete" onClick={() => setConfirmDelete(true)}>
-                <Trash className="size-3.5" />
-              </RowActionButton>
-            </div>
-          </div>
+          <SidebarRow
+            active={isActive}
+            nested={nested}
+            surface={(className) => (
+              <Link to="/local/$channelId" params={{ channelId: channel.id }} className={className}>
+                <ChannelKindIcon kind={channel.kind} className="size-4 shrink-0 opacity-60" />
+                <span className="truncate">{channel.name}</span>
+              </Link>
+            )}
+            hoverActions={
+              <>
+                <RowActionButton label="Rename" onClick={() => setEditing(true)}>
+                  <PencilSimple className="size-3.5" />
+                </RowActionButton>
+                <RowActionButton label="Delete" onClick={() => setConfirmDelete(true)}>
+                  <Trash className="size-3.5" />
+                </RowActionButton>
+              </>
+            }
+          />
         </ContextMenuTrigger>
         <ContextMenuContent className="w-52">
           <ContextMenuItem onClick={() => setEditing(true)}>
@@ -545,84 +510,16 @@ function ChannelGroup({
 }): React.JSX.Element {
   const rename = useLocalStore((state) => state.renameGroup)
   const remove = useLocalStore((state) => state.deleteGroup)
-  const [collapsed, setCollapsed] = useState(false)
-  const [editing, setEditing] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
-
   return (
-    <div className="mt-2">
-      {editing ? (
-        <RenameField
-          initial={group.name}
-          className="bg-sidebar-accent"
-          onCancel={() => setEditing(false)}
-          onSubmit={(name) => {
-            const clean = name.trim()
-            if (clean && clean !== group.name) rename(group.id, clean)
-            setEditing(false)
-          }}
-        />
-      ) : (
-        <ContextMenu>
-          <ContextMenuTrigger>
-            <div className="group/grp flex items-center gap-0.5 px-1">
-              <button
-                type="button"
-                onClick={() => setCollapsed((c) => !c)}
-                className="flex min-w-0 flex-1 items-center gap-1 rounded py-1 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <CaretRight
-                  className={cn(
-                    'size-3.5 shrink-0 transition-transform',
-                    !collapsed && 'rotate-90'
-                  )}
-                />
-                <span className="truncate">{group.name}</span>
-              </button>
-              <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover/grp:opacity-100">
-                <RowActionButton label="Rename group" onClick={() => setEditing(true)}>
-                  <PencilSimple className="size-3.5" />
-                </RowActionButton>
-                <RowActionButton label="Delete group" onClick={() => setConfirmDelete(true)}>
-                  <Trash className="size-3.5" />
-                </RowActionButton>
-                <RowActionButton label={`Add to ${group.name}`} onClick={onAddChannel}>
-                  <Plus className="size-3.5" weight="bold" />
-                </RowActionButton>
-              </div>
-            </div>
-          </ContextMenuTrigger>
-          <ContextMenuContent className="w-52">
-            <ContextMenuItem onClick={onAddChannel}>
-              <Plus className="text-muted-foreground" weight="bold" />
-              Add a page or board
-            </ContextMenuItem>
-            <ContextMenuItem onClick={() => setEditing(true)}>
-              <PencilSimple className="text-muted-foreground" />
-              Rename group
-            </ContextMenuItem>
-            <ContextMenuItem onClick={() => setCollapsed((c) => !c)}>
-              <CaretRight className={cn('text-muted-foreground', !collapsed && 'rotate-90')} />
-              {collapsed ? 'Expand group' : 'Collapse group'}
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem variant="destructive" onClick={() => setConfirmDelete(true)}>
-              <Trash />
-              Delete group
-            </ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
-      )}
-      <div className={collapsed ? 'hidden' : undefined}>{children}</div>
-
-      <ConfirmDialog
-        open={confirmDelete}
-        onOpenChange={setConfirmDelete}
-        title={`Delete the "${group.name}" group?`}
-        description="The group is removed, but its pages and boards are kept — they move to the top, ungrouped."
-        confirmLabel="Delete group"
-        onConfirm={() => remove(group.id)}
-      />
-    </div>
+    <SidebarGroup
+      name={group.name}
+      addLabel="Add a page or board"
+      deleteDescription="The group is removed, but its pages and boards are kept — they move to the top, ungrouped."
+      onRename={(name) => rename(group.id, name)}
+      onDelete={() => remove(group.id)}
+      onAddChannel={onAddChannel}
+    >
+      {children}
+    </SidebarGroup>
   )
 }

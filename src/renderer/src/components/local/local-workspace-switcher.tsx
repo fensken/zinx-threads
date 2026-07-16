@@ -41,7 +41,7 @@ export function LocalWorkspaceSwitcher(): React.JSX.Element {
           image={current?.image}
           icon={current?.icon}
           name={current?.name ?? 'Offline'}
-          className="size-8 shrink-0 overflow-hidden rounded-lg bg-amber-500/15 text-sm text-amber-600 dark:text-amber-400"
+          className="size-8 shrink-0 overflow-hidden rounded-lg bg-warning/15 text-sm text-warning"
           iconClassName="size-5"
         />
         <span className="grid min-w-0 flex-1 text-left leading-tight">
@@ -75,7 +75,7 @@ export function LocalWorkspaceSwitcher(): React.JSX.Element {
                     image={workspace.image}
                     icon={workspace.icon}
                     name={workspace.name}
-                    className="size-7 shrink-0 overflow-hidden rounded-md bg-amber-500/15 text-[11px] text-amber-600 dark:text-amber-400"
+                    className="size-7 shrink-0 overflow-hidden rounded-md bg-warning/15 text-[11px] text-warning"
                     iconClassName="size-4"
                   />
                   <span className="min-w-0 flex-1 truncate text-left">{workspace.name}</span>

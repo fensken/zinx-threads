@@ -6,12 +6,13 @@ import { useUploadFile } from '@convex-dev/r2/react'
 import type { FunctionReturnType } from 'convex/server'
 import { toast } from 'sonner'
 import type { StickToBottomContext } from 'use-stick-to-bottom'
-import { ChatsCircle, CornersOut, DotsThreeOutline, Trash, X } from '@phosphor-icons/react'
+import { Scribble, CornersOut, DotsThreeOutline, Trash, X } from '@phosphor-icons/react'
 import { api } from '@convex/_generated/api'
 import type { Id } from '@convex/_generated/dataModel'
 import { ConfirmDialog } from '@renderer/components/common/confirm-dialog'
 import { IconButton } from '@renderer/components/common/icon-button'
 import { ChannelComposer } from '@renderer/components/chat/channel-composer'
+import { ReadOnlyNotice } from '@renderer/components/chat/read-only-notice'
 import {
   Conversation,
   ConversationContent,
@@ -108,6 +109,8 @@ export function RealThreadPanel({
         name={thread.name}
         replyCount={thread.replyCount}
         canModerate={thread.canModerate}
+        canPost={thread.canPost}
+        postingPolicy={thread.postingPolicy}
       />
     </aside>
   )
@@ -134,7 +137,7 @@ function ThreadHeader({
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3 shadow-sm">
-      <ChatsCircle className="size-5 shrink-0 text-muted-foreground" />
+      <Scribble className="size-5 shrink-0 text-muted-foreground" />
       <div className="flex min-w-0 flex-col leading-tight">
         <span className="truncate text-sm font-semibold">{name}</span>
         <span className="truncate text-xs text-muted-foreground">in #{channelName}</span>
@@ -200,7 +203,9 @@ export function ThreadConversation({
   root,
   name,
   replyCount,
-  canModerate
+  canModerate,
+  canPost,
+  postingPolicy
 }: {
   threadId: Id<'threads'>
   channelId: Id<'channels'>
@@ -208,6 +213,9 @@ export function ThreadConversation({
   name: string
   replyCount: number
   canModerate: boolean
+  /** A thread inherits its channel's posting policy — see `threads.get`. */
+  canPost: boolean
+  postingPolicy?: 'everyone' | 'admins' | 'selected'
 }): React.JSX.Element {
   const replies = useQuery(api.threads.listMessages, { threadId })
   const editMessage = useMutation(api.messages.edit)
@@ -349,12 +357,15 @@ export function ThreadConversation({
               highlighted={highlightId === root._id}
               editing={editingId === root._id}
               {...handlers(root._id)}
-              onReply={() =>
-                setReplyTarget({
-                  _id: root._id,
-                  body: root.body,
-                  authorName: root.author?.name ?? 'Unknown'
-                })
+              onReply={
+                canPost
+                  ? () =>
+                      setReplyTarget({
+                        _id: root._id,
+                        body: root.body,
+                        authorName: root.author?.name ?? 'Unknown'
+                      })
+                  : undefined
               }
             />
 
@@ -408,12 +419,15 @@ export function ThreadConversation({
                   highlighted={highlightId === row.message._id}
                   editing={editingId === row.message._id}
                   {...handlers(row.message._id)}
-                  onReply={() =>
-                    setReplyTarget({
-                      _id: row.message._id,
-                      body: row.message.body,
-                      authorName: row.message.author?.name ?? 'Unknown'
-                    })
+                  onReply={
+                    canPost
+                      ? () =>
+                          setReplyTarget({
+                            _id: row.message._id,
+                            body: row.message.body,
+                            authorName: row.message.author?.name ?? 'Unknown'
+                          })
+                      : undefined
                   }
                 />
               )
@@ -423,16 +437,20 @@ export function ThreadConversation({
         </Conversation>
       )}
 
-      <ChannelComposer
-        key={threadId}
-        channelName={name}
-        placeholder={`Reply in ${name}`}
-        onSend={submit}
-        onUpload={uploadFile}
-        onRemoveUpload={(key) => void deleteUpload({ key })}
-        replyTo={replyTarget}
-        onCancelReply={() => setReplyTarget(null)}
-      />
+      {canPost ? (
+        <ChannelComposer
+          key={threadId}
+          channelName={name}
+          placeholder={`Reply in ${name}`}
+          onSend={submit}
+          onUpload={uploadFile}
+          onRemoveUpload={(key) => void deleteUpload({ key })}
+          replyTo={replyTarget}
+          onCancelReply={() => setReplyTarget(null)}
+        />
+      ) : (
+        <ReadOnlyNotice postingPolicy={postingPolicy} />
+      )}
 
       <ConfirmDialog
         open={deleteTarget !== null}

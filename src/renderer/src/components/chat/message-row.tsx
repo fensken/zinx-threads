@@ -117,7 +117,7 @@ export function MessageRow({
   onDelete: () => void
   onReact: (emoji: string) => void
   onPin: () => void
-  onReply: () => void
+  onReply?: () => void
   onJump: (messageId: string) => void
   onOpenThread?: (threadId: string) => void
   onCreateThread?: () => void
@@ -150,11 +150,9 @@ export function MessageRow({
             Pinned
           </span>
         ) : null}
-        {repliedToMe ? (
-          <span className="text-[11px] text-amber-600 dark:text-amber-400">Replied to you</span>
-        ) : null}
+        {repliedToMe ? <span className="text-[11px] text-warning">Replied to you</span> : null}
         {mentionsMe && !repliedToMe ? (
-          <span className="text-[11px] text-amber-600 dark:text-amber-400">Mentioned you</span>
+          <span className="text-[11px] text-warning">Mentioned you</span>
         ) : null}
       </>
     ) : null
@@ -209,7 +207,7 @@ export function MessageRow({
         grouped ? '' : 'mt-3',
         // Pin outranks "replied to you" / "mentioned you", which outrank the flash.
         isPinned && 'border-l-2 border-l-primary bg-primary/5',
-        !isPinned && pingsMe && 'border-l-2 border-l-amber-500 bg-amber-500/10',
+        !isPinned && pingsMe && 'border-l-2 border-l-warning bg-warning/10',
         highlighted && 'bg-primary/10 ring-1 ring-primary/40',
         // Unsent: dimmed like Discord/Slack. Nothing about it is actionable yet.
         pending && !failed && 'opacity-60'

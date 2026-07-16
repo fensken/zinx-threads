@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Gear } from '@phosphor-icons/react'
 import { useMutation } from 'convex/react'
@@ -13,14 +13,14 @@ import {
   presenceForStatus,
   type UserStatus
 } from '@renderer/lib/user-status'
-import { Avatar } from '@renderer/components/common/avatar'
+import { Avatar, FALLBACK_AVATAR_COLOR } from '@renderer/components/common/avatar'
 import { IconButton } from '@renderer/components/common/icon-button'
 import { UserMenu } from '@renderer/components/common/user-menu'
+import { UserBarShell } from '@renderer/components/common/user-bar-shell'
 import {
   UserBarMediaButtons,
   VoiceConnectedStrip
 } from '@renderer/components/voice/user-voice-controls'
-import { Popover, PopoverContent, PopoverTrigger } from '@renderer/components/ui/popover'
 import { cn } from '@renderer/lib/utils'
 
 function initialsOf(name: string): string {
@@ -47,7 +47,7 @@ export function UserPanel(): React.JSX.Element {
       name={name}
       email={email}
       initials={initialsOf(name || email || '?')}
-      color={me?.color ?? '#5865f2'}
+      color={me?.color ?? FALLBACK_AVATAR_COLOR}
       image={me?.avatarUrl ?? user?.profilePictureUrl}
       userId={me?._id ?? ''}
       status={normalizeStatus(me?.presence)}
@@ -94,95 +94,68 @@ function UserPanelView({
   const [menuOpen, setMenuOpen] = useState(false)
   // Lets the menu popover stay open while the (portaled) emoji picker is up.
   const emojiGuard = useRef(false)
-  // The dropdown always matches the floating bar's width (tracks sidebar resize).
-  const barRef = useRef<HTMLDivElement>(null)
-  const [barWidth, setBarWidth] = useState<number>()
-
-  useEffect(() => {
-    const el = barRef.current
-    if (!el) return
-    const observer = new ResizeObserver(() => setBarWidth(el.offsetWidth))
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
 
   const subtitle = statusText
     ? `${statusEmoji ? `${statusEmoji} ` : ''}${statusText}`
     : STATUS_LABEL[status]
 
   return (
-    <div>
-      {/* When in a voice call, a "Voice Connected" strip sits above the bar with
-          camera/screen toggles + disconnect (renders nothing otherwise). */}
-      <VoiceConnectedStrip />
-      <div
-        ref={barRef}
-        className="mx-2 mt-1 mb-2 flex items-center gap-0.5 rounded-lg bg-sidebar-accent/60 px-1.5 py-1.5 shadow-sm"
-      >
-        <Popover
-          open={menuOpen}
-          onOpenChange={(open) => {
-            if (!open && emojiGuard.current) return
-            setMenuOpen(open)
-          }}
+    <UserBarShell
+      name={name}
+      subtitle={subtitle}
+      menuOpen={menuOpen}
+      onMenuOpenChange={(open) => {
+        if (!open && emojiGuard.current) return
+        setMenuOpen(open)
+      }}
+      // A "Voice Connected" strip with camera/screen toggles + disconnect when you're in a
+      // call (renders nothing otherwise).
+      above={<VoiceConnectedStrip />}
+      avatar={
+        <span
+          className={cn('shrink-0 rounded-full transition-shadow', speaking && 'speaking-ring')}
         >
-          <PopoverTrigger className="flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 text-left transition-colors hover:bg-sidebar-accent">
-            <span
-              className={cn(
-                'shrink-0 rounded-full transition-shadow',
-                speaking && 'shadow-[0_0_0_2px_#10b981,0_0_10px_rgba(16,185,129,0.6)]'
-              )}
-            >
-              <Avatar
-                initials={initials}
-                color={color}
-                image={image}
-                presence={presenceForStatus(status)}
-                ringClassName="ring-[3px] ring-sidebar"
-                className="size-8"
-              />
-            </span>
-            <div className="min-w-0 leading-tight">
-              <div className="truncate text-sm font-semibold text-foreground">{name}</div>
-              <div className="truncate text-xs text-muted-foreground">{subtitle}</div>
-            </div>
-          </PopoverTrigger>
-          <PopoverContent
-            side="top"
-            align="start"
-            alignOffset={-6}
-            sideOffset={8}
-            style={{ width: barWidth ?? '16rem' }}
-          >
-            <UserMenu
-              name={name}
-              subtitle={email}
-              initials={initials}
-              color={color}
-              image={image}
-              userId={userId}
-              status={status}
-              statusEmoji={statusEmoji}
-              statusText={statusText}
-              onSetStatus={onSetStatus}
-              onSetCustomStatus={onSetCustomStatus}
-              onEditProfile={() => openSettings('account')}
-              onSignOut={onSignOut}
-              onOfflineWorkspaces={() => void navigate({ to: '/local' })}
-              onClose={() => setMenuOpen(false)}
-              onEmojiOpenChange={(open) => {
-                emojiGuard.current = open
-              }}
-            />
-          </PopoverContent>
-        </Popover>
-
-        {/* Mic + deafen — wired to the live call when you're in one, plain otherwise. */}
-        <UserBarMediaButtons />
-        <IconButton label="User settings" onClick={() => openSettings('account')}>
-          <Gear className="size-4" />
-        </IconButton>
-      </div>
-    </div>
+          <Avatar
+            initials={initials}
+            color={color}
+            image={image}
+            presence={presenceForStatus(status)}
+            ringClassName="ring-[3px] ring-sidebar"
+            className="size-8"
+          />
+        </span>
+      }
+      trailing={
+        <>
+          {/* Mic + deafen — wired to the live call when you're in one, plain otherwise. */}
+          <UserBarMediaButtons />
+          <IconButton label="User settings" onClick={() => openSettings('account')}>
+            <Gear className="size-4" />
+          </IconButton>
+        </>
+      }
+      menu={
+        <UserMenu
+          name={name}
+          subtitle={email}
+          initials={initials}
+          color={color}
+          image={image}
+          userId={userId}
+          status={status}
+          statusEmoji={statusEmoji}
+          statusText={statusText}
+          onSetStatus={onSetStatus}
+          onSetCustomStatus={onSetCustomStatus}
+          onEditProfile={() => openSettings('account')}
+          onSignOut={onSignOut}
+          onOfflineWorkspaces={() => void navigate({ to: '/local' })}
+          onClose={() => setMenuOpen(false)}
+          onEmojiOpenChange={(open) => {
+            emojiGuard.current = open
+          }}
+        />
+      }
+    />
   )
 }

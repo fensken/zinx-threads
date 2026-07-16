@@ -4,6 +4,8 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerAuthIpc } from './auth'
 import { registerLocalDataIpc } from './local-data'
+import { registerNotificationIpc } from './notifications'
+import { initAutoUpdater } from './updater'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -42,6 +44,54 @@ function dispatchDeepLink(url: string): void {
 let pendingScreenSourceId: string | null = null
 let pendingScreenShareAudio = false
 
+/**
+ * The app's own title bar (Slack/Discord/VS Code all do this) — and, on Windows/Linux,
+ * **our own window controls too**, which is the split Discord makes.
+ *
+ *  - **Windows/Linux**: `frame: false`. We draw minimise / maximise / close ourselves
+ *    (`layout/window-controls.tsx`) so they follow the app's theme exactly, and drive
+ *    them over IPC. This replaced `titleBarOverlay` (native buttons painted *over* our
+ *    bar), whose only styling handles were two colours and a height — not enough to
+ *    make them ours, and it left the buttons undimmable by a dialog scrim (the OS draws
+ *    them above the page) and with a hover Chromium derived at a fixed ~10% alpha that
+ *    was invisible on a light bar.
+ *  - **macOS**: `titleBarStyle: 'hidden'` — the traffic lights **stay native**, always.
+ *    Nobody redraws those: their look, position and behaviour (including the hover
+ *    glyphs and Option-click) are muscle memory, and an imitation reads as broken.
+ *    `trafficLightPosition` just centres them in our taller bar.
+ *
+ * **Known cost of `frame: false` on Windows 11: Snap Layouts.** Hovering the *native*
+ * maximise button opens the snap-layout flyout; a custom button can't declare itself as
+ * that hit-target, so the flyout is gone (Discord has the same gap). Dragging a window
+ * to a screen edge, and Win+Arrow, still snap normally.
+ */
+const TITLE_BAR_HEIGHT = 44
+
+/** Only `http(s)` may be handed to the OS. Everything else — `file:`, `smb:`,
+ *  `ms-msdt:`, any registered handler — is a way to make the OS do something on the
+ *  user's behalf, from a link a *different user* wrote. */
+function isWebUrl(url: string): boolean {
+  try {
+    const { protocol } = new URL(url)
+    return protocol === 'http:' || protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+/** The app's own origin: the dev server, or the packaged `file://` bundle. The main
+ *  window may never navigate anywhere else (see the `will-navigate` guard). */
+function isAppUrl(url: string): boolean {
+  try {
+    const target = new URL(url)
+    if (target.protocol === 'file:') return true
+    const dev = process.env['ELECTRON_RENDERER_URL']
+    return Boolean(dev) && target.origin === new URL(dev as string).origin
+  } catch {
+    return false
+  }
+}
+
 function createWindow(): void {
   // Create the browser window.
   mainWindow = new BrowserWindow({
@@ -52,7 +102,18 @@ function createWindow(): void {
     minWidth: 800,
     minHeight: 600,
     show: false,
+    // A dark app-background so there's no white paint before the renderer's first
+    // frame (the theme is resolved in-renderer; this is just the pre-paint canvas).
+    backgroundColor: '#0a0a0a',
     autoHideMenuBar: true,
+    // macOS keeps its native traffic lights (inset into our taller bar); Windows/Linux
+    // get no frame at all, because we draw those controls ourselves. See the note above.
+    ...(process.platform === 'darwin'
+      ? {
+          titleBarStyle: 'hidden' as const,
+          trafficLightPosition: { x: 12, y: (TITLE_BAR_HEIGHT - 16) / 2 }
+        }
+      : { frame: false }),
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -80,9 +141,40 @@ function createWindow(): void {
     mainWindow?.webContents.send('window-fullscreen-changed', false)
   })
 
+  // …and the maximised state, which our own maximise button has to reflect (it shows a
+  // *restore* glyph when maximised). It must be pushed, not just returned from the
+  // click: the window is also maximised by double-clicking the drag region, by Win+Up,
+  // by a snap gesture, or by the WM. A button that only tracked its own clicks would
+  // show the wrong icon within about ten seconds of real use.
+  const sendMaximized = (): void => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    mainWindow.webContents.send('window-maximize-changed', mainWindow.isMaximized())
+  }
+  mainWindow.on('maximize', sendMaximized)
+  mainWindow.on('unmaximize', sendMaximized)
+
+  // Deny every new window, and only hand the URL to the OS when it's **web**.
+  //
+  // `shell.openExternal` launches whatever handler the OS has registered for a
+  // scheme, so an unchecked call here is an arbitrary-protocol launcher. It is
+  // reachable member-to-member: `pages.saveContent` stores an opaque BlockNote
+  // document, so any member can plant a link with an `smb://` href (NTLM hash theft
+  // on Windows), `file://`, or `ms-msdt:` — and BlockNote's link handler calls
+  // `window.open`, which lands right here. One click by a teammate is the whole
+  // exploit. The `open-external` IPC already validated the scheme; this path didn't.
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    if (isWebUrl(details.url)) void shell.openExternal(details.url)
     return { action: 'deny' }
+  })
+
+  // The preload is attached to the **webContents**, not to a document — so any page
+  // navigated into this window inherits `window.api`, including `auth.getToken()`,
+  // which returns a live WorkOS access token. A single top-level navigation to a
+  // remote origin (a dropped URL, an anchor an embedded editor doesn't intercept)
+  // would hand that origin a working token; CSP does not stop navigation. So: the
+  // app's own origin is the only place this window may go.
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!isAppUrl(url)) event.preventDefault()
   })
 
   // HMR for renderer base on electron-vite cli.
@@ -194,6 +286,11 @@ app.whenReady().then(() => {
   // See src/main/local-data.ts.
   registerLocalDataIpc()
 
+  // OS notifications + the dock/taskbar badge. The renderer decides WHETHER to
+  // notify (it knows what arrived and whether the window was focused); main only
+  // shows it and routes the click back.
+  registerNotificationIpc(() => mainWindow)
+
   configureMediaPermissions()
 
   // Default open or close DevTools by F12 in development
@@ -287,7 +384,32 @@ app.whenReady().then(() => {
     }
   })
 
+  // The window controls we draw ourselves (Windows/Linux — macOS keeps its native
+  // traffic lights and needs none of this). The renderer owns the *look*; only the OS
+  // can perform the *action*, so each one is a plain, argument-free command.
+  ipcMain.handle('window:minimize', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.minimize()
+  })
+  ipcMain.handle('window:toggle-maximize', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return false
+    // Full-screen (the voice stage takes the window there) is not the same state as
+    // maximised, and un-maximising out of it would strand the window. Leave it be.
+    if (mainWindow.isFullScreen()) return mainWindow.isMaximized()
+    if (mainWindow.isMaximized()) mainWindow.unmaximize()
+    else mainWindow.maximize()
+    return mainWindow.isMaximized()
+  })
+  ipcMain.handle('window:close', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close()
+  })
+  ipcMain.handle('window:is-maximized', () =>
+    Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isMaximized())
+  )
+
   createWindow()
+
+  // Check GitHub Releases for a newer build (packaged builds only — a no-op in dev).
+  initAutoUpdater()
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the

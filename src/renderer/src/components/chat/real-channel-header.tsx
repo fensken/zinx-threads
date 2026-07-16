@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import {
-  ChatsCircle,
+  CalendarDots,
   List,
   MagnifyingGlass,
   PushPin,
-  SidebarSimple,
+  Scribble,
+  Sliders,
   Tray,
   Users
 } from '@phosphor-icons/react'
@@ -16,11 +17,14 @@ import type { Doc, Id } from '@convex/_generated/dataModel'
 import { errorMessage } from '@renderer/lib/convex-error'
 import { useUiStore } from '@renderer/store/ui-store'
 import { IconButton } from '@renderer/components/common/icon-button'
+import { SidebarToggle } from '@renderer/components/layout/sidebar-toggle'
 import { ChannelKindIcon } from '@renderer/components/chat/channel-kind-icon'
+import { ChannelSettingsDialog } from '@renderer/components/chat/channel-settings-dialog'
 import { EditableChannelName } from '@renderer/components/chat/editable-channel-name'
 import { NavFlyout } from '@renderer/components/chat/nav-flyout'
 import { RealInboxList } from '@renderer/components/chat/real-inbox-list'
-import { RealThreadsList } from '@renderer/components/chat/real-threads-list'
+import { UpcomingEventsList } from '@renderer/components/events/upcoming-events-list'
+import { ThreadsDialog } from '@renderer/components/chat/threads-dialog'
 import { ChannelConnectionsDialog } from '@renderer/components/chat/share-channel-dialog'
 import { ChannelConnectionPill } from '@renderer/components/chat/channel-connection-pill'
 
@@ -44,20 +48,33 @@ export function RealChannelHeader({
   canManage?: boolean
 }): React.JSX.Element {
   const [connectionsOpen, setConnectionsOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const memberListOpen = useUiStore((s) => s.memberListOpen)
   const toggleMemberList = useUiStore((s) => s.toggleMemberList)
-  const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed)
-  const toggleSidebar = useUiStore((s) => s.toggleSidebar)
   const threadsOpen = useUiStore((s) => s.threadsOpen)
   const setThreadsOpen = useUiStore((s) => s.setThreadsOpen)
   const inboxOpen = useUiStore((s) => s.inboxOpen)
   const setInboxOpen = useUiStore((s) => s.setInboxOpen)
+  const eventsOpen = useUiStore((s) => s.eventsOpen)
+  const setEventsOpen = useUiStore((s) => s.setEventsOpen)
   const togglePalette = useUiStore((s) => s.togglePalette)
   const setNavOpen = useUiStore((s) => s.setNavOpen)
   const pinnedOpen = useUiStore((s) => s.pinnedOpen)
   const setPinnedOpen = useUiStore((s) => s.setPinnedOpen)
   const rename = useMutation(api.channels.rename)
-  const inboxUnread = useQuery(api.inbox.unreadCount, { workspaceId: channel.workspaceId })
+  // User-wide, not this workspace's: the badge answers "does anyone need me?", and
+  // that question doesn't stop at a workspace boundary.
+  const inboxUnread = useQuery(api.inbox.unreadCountForMe, {})
+  // Threads are *browsed* from here, never started from here — you start one on a message.
+  // So the button is an entry to a list, and a button that always opens an empty list is a
+  // dead button. It appears only once this channel HAS threads. One workspace-wide
+  // subscription that the sidebar's count badges already hold, so it costs no extra socket
+  // work (Convex dedupes it).
+  const threadCounts = useQuery(
+    api.threads.countsByChannel,
+    channel.kind === 'chat' ? { workspaceId: channel.workspaceId } : 'skip'
+  )
+  const threadCount = threadCounts?.find((entry) => entry.channelId === channel._id)?.count ?? 0
   const inboxBadge = inboxUnread
     ? inboxUnread.overflow
       ? `${inboxUnread.count}+`
@@ -71,15 +88,7 @@ export function RealChannelHeader({
       <IconButton label="Open navigation" className="md:hidden" onClick={() => setNavOpen(true)}>
         <List className="size-5" />
       </IconButton>
-      {/* Desktop: collapse / show the channel sidebar (persisted). */}
-      <IconButton
-        label={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
-        active={sidebarCollapsed}
-        className="hidden md:flex"
-        onClick={toggleSidebar}
-      >
-        <SidebarSimple className="size-5" />
-      </IconButton>
+      <SidebarToggle />
       <EditableChannelName
         name={channel.name}
         icon={
@@ -124,24 +133,11 @@ export function RealChannelHeader({
             <PushPin className="size-5" />
           </IconButton>
         ) : null}
-        <div className="relative">
-          <IconButton
-            label="Threads"
-            active={threadsOpen}
-            onClick={() => setThreadsOpen(!threadsOpen)}
-          >
-            <ChatsCircle className="size-5" />
+        {threadCount > 0 ? (
+          <IconButton label="Threads" active={threadsOpen} onClick={() => setThreadsOpen(true)}>
+            <Scribble className="size-5" />
           </IconButton>
-          {threadsOpen ? (
-            <NavFlyout
-              title="Threads"
-              className="top-full right-0 mt-2"
-              onClose={() => setThreadsOpen(false)}
-            >
-              <RealThreadsList workspaceId={channel.workspaceId} />
-            </NavFlyout>
-          ) : null}
-        </div>
+        ) : null}
         <div className="relative">
           <IconButton
             label="Inbox"
@@ -162,18 +158,66 @@ export function RealChannelHeader({
               className="top-full right-0 mt-2"
               onClose={() => setInboxOpen(false)}
             >
-              <RealInboxList
+              <RealInboxList workspaceSlug={workspaceSlug} onNavigate={() => setInboxOpen(false)} />
+            </NavFlyout>
+          ) : null}
+        </div>
+
+        {/* Events: the header peeks at what's coming up; the sidebar's Events row goes
+            to the calendar. Same split as the Inbox. */}
+        <div className="relative">
+          <IconButton label="Events" active={eventsOpen} onClick={() => setEventsOpen(!eventsOpen)}>
+            <CalendarDots className="size-5" />
+          </IconButton>
+          {eventsOpen ? (
+            <NavFlyout
+              title="Upcoming"
+              className="top-full right-0 mt-2"
+              onClose={() => setEventsOpen(false)}
+            >
+              <UpcomingEventsList
                 workspaceId={channel.workspaceId}
                 workspaceSlug={workspaceSlug}
-                onNavigate={() => setInboxOpen(false)}
+                onNavigate={() => setEventsOpen(false)}
               />
             </NavFlyout>
           ) : null}
         </div>
+
         <IconButton label="Members" active={memberListOpen} onClick={toggleMemberList}>
           <Users className="size-5" />
         </IconButton>
+        {canManage && channel.kind !== 'dm' ? (
+          <IconButton
+            label="Channel settings"
+            active={settingsOpen}
+            onClick={() => setSettingsOpen(true)}
+          >
+            <Sliders className="size-5" />
+          </IconButton>
+        ) : null}
       </div>
+
+      {/* Threads for THIS channel — the only entry point (they're no longer listed in
+          the sidebar), shaped like the pinned-messages dialog. */}
+      {threadCount > 0 ? (
+        <ThreadsDialog
+          workspaceId={channel.workspaceId}
+          channelId={channel._id}
+          channelName={channel.name}
+          open={threadsOpen}
+          onOpenChange={setThreadsOpen}
+        />
+      ) : null}
+
+      {/* Who can see it, who can post in it, and the people list behind both. */}
+      {canManage && channel.kind !== 'dm' ? (
+        <ChannelSettingsDialog
+          channel={channel}
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+        />
+      ) : null}
 
       {/* One dialog for both roles: owner invites/removes guests; a guest views the
           connected workspaces and can leave. */}

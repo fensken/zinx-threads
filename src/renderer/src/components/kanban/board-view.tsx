@@ -4,6 +4,8 @@ import { Kanban as Kanban2, Plus } from '@phosphor-icons/react'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Kanban, KanbanBoard, KanbanOverlay } from '@renderer/components/ui/kanban'
+import { useDragPan } from '@renderer/lib/use-drag-pan'
+import { cn } from '@renderer/lib/utils'
 import type { KanbanTask } from '@renderer/components/kanban/board-types'
 import {
   DEFAULT_BOARD_COLUMNS,
@@ -69,6 +71,11 @@ export function BoardView({
   onUseDefaultColumns: () => void
 }): React.JSX.Element {
   const [dialog, setDialog] = useState<DialogState | null>(null)
+  /** Grab the board's background to pan it, instead of reaching for the scrollbar.
+   *  A pointerdown inside a **column** is left alone — that's dnd-kit's territory
+   *  (reorder a column, drag a card), and the buttons in the board's own chrome
+   *  (Add column) must stay clickable. */
+  const pan = useDragPan('[data-slot="kanban-column"], button, input, form')
   /** The optimistic layout, kept from the first drag move until the server echoes
    *  it back. Dropping it on `onDragEnd` would snap the board to stale data for
    *  the length of the round-trip. */
@@ -122,7 +129,16 @@ export function BoardView({
         getItemValue={(task: KanbanTask) => task.id}
         className="h-full"
       >
-        <KanbanBoard className="flex h-full items-start gap-4 overflow-x-auto overflow-y-hidden pb-1">
+        <KanbanBoard
+          onPointerDown={pan.onPointerDown}
+          className={cn(
+            'flex h-full items-start gap-4 overflow-x-auto overflow-y-hidden pb-1',
+            // Grab the board's empty background to pan it (Trello/Jira). The columns
+            // reset the cursor themselves, so the grab hand only appears where it
+            // actually does something.
+            pan.panning ? 'cursor-grabbing select-none' : 'cursor-grab'
+          )}
+        >
           {columnIds.map((columnId) => (
             <TaskBoard
               key={columnId}

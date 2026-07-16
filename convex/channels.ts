@@ -6,9 +6,12 @@ import {
   getCurrentUser,
   getMembership,
   getSharedChannelsInto,
-  requireUser
+  requireUser,
+  canPostIn
 } from './lib/auth'
 import { internal } from './_generated/api'
+import { listRealChannels } from './lib/channels'
+import { getMyChannelIds, visibleChannels } from './lib/channelMembers'
 import { DEFAULT_CHANNEL } from './lib/demoSeed'
 import { seedBoardColumns } from './lib/boardSeed'
 
@@ -32,7 +35,8 @@ const channelKind = v.union(
   v.literal('chat'),
   v.literal('voice'),
   v.literal('page'),
-  v.literal('kanban')
+  v.literal('kanban'),
+  v.literal('whiteboard')
 )
 
 /** Channels in a workspace (by slug), ordered. Null-safe: [] if not a member. */
@@ -46,12 +50,26 @@ export const listBySlug = query({
       .withIndex('by_slug', (q) => q.eq('slug', slug))
       .unique()
     if (!workspace) return []
-    if (!(await getMembership(ctx, workspace._id, user._id))) return []
-    const channels = await ctx.db
-      .query('channels')
-      .withIndex('by_workspace', (q) => q.eq('workspaceId', workspace._id))
-      .collect()
-    return channels.sort((a, b) => a.order - b.order)
+    const membership = await getMembership(ctx, workspace._id, user._id)
+    if (!membership) return []
+    // DMs are channels, but they are NOT the workspace's channels: they belong to
+    // their participants and are listed by `dms.listMine`. `listRealChannels` never
+    // *reads* them — see the note there on why this must not be a post-hoc filter.
+    const channels = await listRealChannels(ctx, workspace._id)
+    // …and private channels belong to their MEMBERS. This one query backs the sidebar,
+    // the ⌘K palette and the `#`-autocomplete, so filtering here closes three leak
+    // surfaces at once. (Unlike DMs, private channels ARE read and then dropped — a
+    // workspace has tens of channels, not thousands, so the read is cheap. That was the
+    // whole difference with DMs, which grow with the square of the member count.)
+    const mine = await getMyChannelIds(ctx, workspace._id, user._id)
+    const isModerator = membership.role === 'owner' || membership.role === 'admin'
+    // `canPost` rides along because the sidebar and the channel view both need it and the
+    // rows are already in hand — a read-only channel must render its lock the moment it
+    // paints, not after a second round-trip. Same rule as `getChannelAccess`, same function.
+    return visibleChannels(channels, membership.role, mine).map((channel) => ({
+      ...channel,
+      canPost: canPostIn(channel, isModerator, mine.get(channel._id as string) ?? null)
+    }))
   }
 })
 
@@ -63,7 +81,8 @@ export const get = query({
     const user = await getCurrentUser(ctx)
     if (!user) return null
     const access = await getChannelAccess(ctx, channelId, user._id)
-    return access?.channel ?? null
+    if (!access) return null
+    return { ...access.channel, canPost: access.canPost }
   }
 })
 
@@ -97,12 +116,18 @@ export const create = mutation({
     workspaceId: v.id('workspaces'),
     groupId: v.optional(v.id('channelGroups')),
     name: v.string(),
-    kind: channelKind
+    kind: channelKind,
+    visibility: v.optional(v.union(v.literal('public'), v.literal('private')))
   },
-  handler: async (ctx, { workspaceId, groupId, name, kind }) => {
+  handler: async (ctx, { workspaceId, groupId, name, kind, visibility }) => {
     const user = await requireUser(ctx)
-    if (!(await getMembership(ctx, workspaceId, user._id))) {
+    const membership = await getMembership(ctx, workspaceId, user._id)
+    if (!membership) {
       throw new ConvexError('Not a member of this workspace')
+    }
+    // A guest is a visitor, not a builder.
+    if (membership.role === 'guest') {
+      throw new ConvexError('Guests cannot create channels')
     }
     const clean = slugifyChannel(name)
     if (!clean) throw new ConvexError('Channel name is required')
@@ -117,9 +142,21 @@ export const create = mutation({
       groupId,
       name: uniqueName,
       kind,
+      visibility,
       order: existing.length,
       createdBy: user._id
     })
+    // A private channel needs at least one member — its creator — or they'd have made a
+    // room they cannot enter, and only the workspace owner could even delete it.
+    if (visibility === 'private') {
+      await ctx.db.insert('channelMembers', {
+        channelId,
+        workspaceId,
+        userId: user._id,
+        addedBy: user._id,
+        addedAt: Date.now()
+      })
+    }
     // A board opens with the default columns rather than a blank canvas.
     // (`page` channels need no seeding — the editor just opens empty.)
     if (kind === 'kanban') {
@@ -168,16 +205,24 @@ export const ensureDefault = mutation({
   }
 })
 
+/** A DM is a channel row, but it is not a *channel*: it has no name to rename, no
+ *  group to move to, no place in the sidebar's order, and it isn't deleted (you
+ *  leave the workspace, or the workspace goes). Every channel-management mutation
+ *  refuses one, so a crafted call can't drag a private conversation into the
+ *  sidebar or rename it into a slug. */
+const NOT_A_CHANNEL = "That's a direct message, not a channel"
+
 /** Rename a channel (member-only). */
 export const rename = mutation({
   args: { channelId: v.id('channels'), name: v.string() },
   handler: async (ctx, { channelId, name }) => {
     const user = await requireUser(ctx)
-    const channel = await ctx.db.get(channelId)
-    if (!channel) throw new ConvexError('Channel not found')
-    if (!(await getMembership(ctx, channel.workspaceId, user._id))) {
-      throw new ConvexError('Not a member of this workspace')
-    }
+    // Access, not just membership: you can't rename a private channel you're not in.
+    const access = await getChannelAccess(ctx, channelId, user._id)
+    if (!access || access.via !== 'owner') throw new ConvexError('Channel not found')
+    const { channel } = access
+    if (channel.kind === 'dm') throw new ConvexError(NOT_A_CHANNEL)
+    if (access.membership?.role === 'guest') throw new ConvexError('Guests cannot rename channels')
     const clean = slugifyChannel(name)
     if (!clean) throw new ConvexError('Channel name is required')
     const siblings = await ctx.db
@@ -207,10 +252,21 @@ export const resolveBySlug = query({
       .unique()
     if (!workspace) return null
 
-    const owned = await ctx.db
-      .query('channels')
-      .withIndex('by_workspace', (q) => q.eq('workspaceId', workspace._id))
-      .collect()
+    // `listRealChannels` excludes DMs (whose names are internal `dm-<key>` ids), and
+    // `visibleChannels` excludes private channels the caller isn't in — so a guessed URL
+    // can't even resolve one. `getChannelAccess` below would refuse it anyway; this just
+    // means we never read it.
+    //
+    // (This also fixes a scale miss: it used to `by_workspace`-scan every channel in the
+    // workspace, DMs included, on every route change.)
+    const membership = await getMembership(ctx, workspace._id, user._id)
+    const owned = membership
+      ? visibleChannels(
+          await listRealChannels(ctx, workspace._id),
+          membership.role,
+          await getMyChannelIds(ctx, workspace._id, user._id)
+        )
+      : []
     const match =
       owned.find((c) => c.name === channelSlug) ??
       (await getSharedChannelsInto(ctx, workspace._id)).find((c) => c.name === channelSlug)
@@ -235,11 +291,11 @@ export const move = mutation({
   },
   handler: async (ctx, { channelId, groupId, order }) => {
     const user = await requireUser(ctx)
-    const channel = await ctx.db.get(channelId)
-    if (!channel) throw new ConvexError('Channel not found')
-    if (!(await getMembership(ctx, channel.workspaceId, user._id))) {
-      throw new ConvexError('Not a member of this workspace')
-    }
+    const access = await getChannelAccess(ctx, channelId, user._id)
+    if (!access || access.via !== 'owner') throw new ConvexError('Channel not found')
+    const { channel } = access
+    if (channel.kind === 'dm') throw new ConvexError(NOT_A_CHANNEL)
+    if (access.membership?.role === 'guest') throw new ConvexError('Guests cannot move channels')
     if (channel.isDefault) throw new ConvexError(DEFAULT_CHANNEL_LOCKED)
     await assertGroupInWorkspace(ctx, channel.workspaceId, groupId)
     await ctx.db.patch(channelId, { groupId, order })
@@ -281,6 +337,7 @@ export const reorder = mutation({
         const channel = await ctx.db.get(bucket.channelIds[i])
         if (channel && channel.workspaceId === workspaceId) {
           if (channel.isDefault) throw new ConvexError(DEFAULT_CHANNEL_LOCKED)
+          if (channel.kind === 'dm') throw new ConvexError(NOT_A_CHANNEL)
           await ctx.db.patch(bucket.channelIds[i], { groupId: bucket.groupId, order: i })
         }
       }
@@ -298,10 +355,25 @@ export const remove = mutation({
     const user = await requireUser(ctx)
     const channel = await ctx.db.get(channelId)
     if (!channel) return
-    if (!(await getMembership(ctx, channel.workspaceId, user._id))) {
-      throw new ConvexError('Not a member of this workspace')
-    }
+    if (channel.kind === 'dm') throw new ConvexError(NOT_A_CHANNEL)
     if (channel.isDefault) throw new ConvexError(DEFAULT_CHANNEL_LOCKED)
+
+    const membership = await getMembership(ctx, channel.workspaceId, user._id)
+    if (!membership) throw new ConvexError('Not a member of this workspace')
+    if (membership.role === 'guest') throw new ConvexError('Guests cannot delete channels')
+
+    // **The workspace owner's one power over a private channel they can't see.**
+    // Without it, a private channel whose last member left would be unreachable AND
+    // undeletable — a permanent ghost in the workspace nobody can act on. The owner may
+    // delete it; they still cannot READ it, which is exactly Slack's admin-console
+    // behaviour. Everyone else must have access, which for a private channel means being
+    // in it.
+    const isWorkspaceOwner = membership.role === 'owner'
+    if (!isWorkspaceOwner) {
+      const access = await getChannelAccess(ctx, channelId, user._id)
+      if (!access || access.via !== 'owner') throw new ConvexError('Channel not found')
+    }
+
     await ctx.db.delete(channelId)
     await ctx.scheduler.runAfter(0, internal.cleanup.channel, { channelId })
   }

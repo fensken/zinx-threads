@@ -77,6 +77,31 @@ export const channel = internalMutation({
     for (const row of presence) await ctx.db.delete(row._id)
     if (presence.length === BATCH) more = true
 
+    // A DM's membership. Reached only via the workspace cascade (a DM has no delete
+    // of its own), but it's a child of the channel, so it drains with the channel.
+    const dmMembers = await ctx.db
+      .query('dmMembers')
+      .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+      .take(BATCH)
+    for (const row of dmMembers) await ctx.db.delete(row._id)
+    if (dmMembers.length === BATCH) more = true
+
+    // A private channel's membership — same shape, same reason.
+    const channelMembers = await ctx.db
+      .query('channelMembers')
+      .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+      .take(BATCH)
+    for (const row of channelMembers) await ctx.db.delete(row._id)
+    if (channelMembers.length === BATCH) more = true
+
+    // Incoming webhooks that post into this channel — dead once it's gone.
+    const webhooks = await ctx.db
+      .query('incomingWebhooks')
+      .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+      .take(BATCH)
+    for (const row of webhooks) await ctx.db.delete(row._id)
+    if (webhooks.length === BATCH) more = true
+
     const tasks = await ctx.db
       .query('kanbanTasks')
       .withIndex('by_channel', (q) => q.eq('channelId', channelId))
@@ -87,6 +112,14 @@ export const channel = internalMutation({
     // Small, bounded sets — drain them once the big ones are done so we don't keep
     // re-reading them every batch.
     if (!more) {
+      // The newest-message watermark (`lib/activity.ts`) — one row, and it outlives
+      // the channel if nothing deletes it.
+      const activity = await ctx.db
+        .query('channelActivity')
+        .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+        .unique()
+      if (activity) await ctx.db.delete(activity._id)
+
       const columns = await ctx.db
         .query('kanbanColumns')
         .withIndex('by_channel', (q) => q.eq('channelId', channelId))
@@ -108,6 +141,13 @@ export const channel = internalMutation({
         await ctx.db.delete(page._id)
       }
 
+      // The whiteboard canvas — one row, like the page.
+      const whiteboard = await ctx.db
+        .query('whiteboards')
+        .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+        .unique()
+      if (whiteboard) await ctx.db.delete(whiteboard._id)
+
       // Cross-workspace shares of this channel (bounded by MAX_SHARE_GUESTS) — the
       // guests lose access with the channel. Their per-channel reads/notifications
       // are tagged with the OWNER workspace here (deleted above), so no extra sweep.
@@ -119,6 +159,47 @@ export const channel = internalMutation({
     }
 
     if (more) await ctx.scheduler.runAfter(0, internal.cleanup.channel, { channelId })
+  }
+})
+
+/**
+ * One PERSON left (or was removed from) one channel: drop their read marker and their
+ * inbox notifications for it.
+ *
+ * Not cosmetic. Without it, someone removed from a private channel keeps receiving inbox
+ * rows for messages they can no longer read, and clicking one lands on a dead end — a
+ * notification that leaks the *existence* of a conversation they've been shut out of.
+ *
+ * The channel and its messages stay: they belong to the channel, not to the person.
+ */
+export const channelMember = internalMutation({
+  args: {
+    channelId: v.id('channels'),
+    userId: v.id('users'),
+    workspaceId: v.id('workspaces')
+  },
+  handler: async (ctx, { channelId, userId, workspaceId }) => {
+    // One row at most (unique per user+channel), so no batching needed here.
+    const read = await ctx.db
+      .query('channelReads')
+      .withIndex('by_user_channel', (q) => q.eq('userId', userId).eq('channelId', channelId))
+      .unique()
+    if (read) await ctx.db.delete(read._id)
+
+    // Notifications CAN be many — batch, and reschedule while a batch stays full.
+    const notifications = await ctx.db
+      .query('notifications')
+      .withIndex('by_user_channel', (q) => q.eq('userId', userId).eq('channelId', channelId))
+      .take(BATCH)
+    for (const row of notifications) await ctx.db.delete(row._id)
+
+    if (notifications.length === BATCH) {
+      await ctx.scheduler.runAfter(0, internal.cleanup.channelMember, {
+        channelId,
+        userId,
+        workspaceId
+      })
+    }
   }
 })
 
@@ -205,6 +286,17 @@ export const member = internalMutation({
     for (const row of notifications) await ctx.db.delete(row._id)
     if (notifications.length === BATCH) more = true
 
+    // Their private-channel memberships in this workspace. Leaving the workspace takes
+    // their access with it — otherwise a removed member's `channelMembers` rows would
+    // survive, and re-adding them to the workspace would silently restore access to every
+    // private channel they used to be in.
+    const channelMemberships = await ctx.db
+      .query('channelMembers')
+      .withIndex('by_user_workspace', (q) => q.eq('userId', userId).eq('workspaceId', workspaceId))
+      .take(BATCH)
+    for (const row of channelMemberships) await ctx.db.delete(row._id)
+    if (channelMemberships.length === BATCH) more = true
+
     // Voice presence is one row per user (upsert) — drop it if it's in this workspace.
     const presence = await ctx.db
       .query('voicePresence')
@@ -243,6 +335,25 @@ export const workspace = internalMutation({
       .collect()
     for (const group of groups) await ctx.db.delete(group._id)
 
+    // Calendar events + their RSVPs. Batched like channels: a long-lived workspace
+    // accumulates events without bound, so this must not be one `.collect()`.
+    const events = await ctx.db
+      .query('events')
+      .withIndex('by_workspace_start', (q) => q.eq('workspaceId', workspaceId))
+      .take(BATCH)
+    for (const event of events) {
+      const attendees = await ctx.db
+        .query('eventAttendees')
+        .withIndex('by_event', (q) => q.eq('eventId', event._id))
+        .collect()
+      for (const attendee of attendees) await ctx.db.delete(attendee._id)
+      await ctx.db.delete(event._id)
+    }
+    if (events.length === BATCH) {
+      await ctx.scheduler.runAfter(0, internal.cleanup.workspace, { workspaceId })
+      return
+    }
+
     // Members can be many in a large workspace — batch them like channels above, or a
     // single mutation could exceed its document limit (the exact failure the batching
     // guards against). Each batch also does a per-member `get` for the demo-user check.
@@ -252,12 +363,38 @@ export const workspace = internalMutation({
       .take(BATCH)
     for (const member of members) {
       const memberUser = await ctx.db.get(member.userId)
-      if (memberUser && memberUser.provider === 'demo') await ctx.db.delete(memberUser._id)
+      // A demo or bot principal belongs to this workspace alone, so its `users` row goes with
+      // it (a human's row stays — they may be in other workspaces).
+      if (memberUser && (memberUser.provider === 'demo' || memberUser.provider === 'bot')) {
+        await ctx.db.delete(memberUser._id)
+      }
       await ctx.db.delete(member._id)
     }
     if (members.length === BATCH) {
       await ctx.scheduler.runAfter(0, internal.cleanup.workspace, { workspaceId })
       return
+    }
+
+    // Bot registry rows + their tokens (their `users` rows + memberships drained above, their
+    // webhooks with their channels). Bounded by `MAX_BOTS`.
+    const bots = await ctx.db
+      .query('bots')
+      .withIndex('by_workspace', (q) => q.eq('workspaceId', workspaceId))
+      .collect()
+    for (const bot of bots) {
+      for (const token of await ctx.db
+        .query('apiTokens')
+        .withIndex('by_bot', (q) => q.eq('botId', bot._id))
+        .collect()) {
+        await ctx.db.delete(token._id)
+      }
+      for (const webhook of await ctx.db
+        .query('incomingWebhooks')
+        .withIndex('by_bot', (q) => q.eq('botId', bot._id))
+        .collect()) {
+        await ctx.db.delete(webhook._id)
+      }
+      await ctx.db.delete(bot._id)
     }
 
     const invitations = await ctx.db

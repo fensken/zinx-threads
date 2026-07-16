@@ -20,7 +20,7 @@ export const Route = createFileRoute('/connect/$token')({
 function ConnectPage(): React.JSX.Element {
   if (!authEnabled) {
     return (
-      <div className="flex h-dvh w-full flex-col items-center justify-center gap-3 bg-sidebar p-6 text-center">
+      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-sidebar p-6 text-center">
         <Logo className="size-14 rounded-2xl shadow-lg" />
         <p className="text-sm text-muted-foreground">Invites aren’t available in this build.</p>
       </div>
@@ -66,7 +66,7 @@ function ConnectPageInner(): React.JSX.Element {
   }
 
   return (
-    <div className="flex h-dvh w-full flex-col items-center justify-center gap-6 bg-sidebar p-6">
+    <div className="flex h-full w-full flex-col items-center justify-center gap-6 bg-sidebar p-6">
       <span className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-lg">
         <LinkSimple className="size-7" weight="bold" />
       </span>

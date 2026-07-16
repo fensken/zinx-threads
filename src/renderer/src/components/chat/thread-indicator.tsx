@@ -1,4 +1,4 @@
-import { CaretRight, ChatsCircle } from '@phosphor-icons/react'
+import { Scribble, CaretRight } from '@phosphor-icons/react'
 import { Avatar, FALLBACK_AVATAR_COLOR } from '@renderer/components/common/avatar'
 import { formatTimestamp } from '@renderer/lib/date-time'
 import { initialsOf } from '@renderer/lib/initials'
@@ -67,7 +67,7 @@ export function ThreadIndicator({
         <span className="truncate text-xs text-muted-foreground">{thread.name}</span>
       )}
 
-      <ChatsCircle className="size-4 shrink-0 text-muted-foreground" />
+      <Scribble className="size-4 shrink-0 text-muted-foreground" />
       <CaretRight className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
     </button>
   )

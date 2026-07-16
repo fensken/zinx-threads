@@ -242,3 +242,434 @@ describe('voice presence', () => {
     expect(await asAlice.query(api.voice.listByWorkspace, { workspaceId })).toHaveLength(0)
   })
 })
+
+describe('direct messages', () => {
+  /** Alice's workspace + two more members, Bob and Carol. */
+  async function setupThree() {
+    const base = await setupOwner()
+    const { t, asAlice, workspaceId } = base
+
+    const join = async (subject: string, email: string, name: string) => {
+      const as = t.withIdentity(identityOf(subject))
+      await as.mutation(api.users.store, { email, name })
+      return as
+    }
+    const asBob = await join('user-bob', 'bob@example.com', 'Bob')
+    const asCarol = await join('user-carol', 'carol@example.com', 'Carol')
+
+    const { code } = await asAlice.mutation(api.invitations.invite, { workspaceId })
+    await asBob.mutation(api.invitations.acceptByToken, { code })
+    await asCarol.mutation(api.invitations.acceptByToken, { code })
+
+    const idOf = async (email: string) =>
+      await t.run(async (ctx) => {
+        const user = await ctx.db
+          .query('users')
+          .withIndex('by_email', (q) => q.eq('email', email))
+          .unique()
+        return user!._id
+      })
+
+    return {
+      ...base,
+      asBob,
+      asCarol,
+      bobId: await idOf('bob@example.com'),
+      carolId: await idOf('carol@example.com')
+    }
+  }
+
+  it('opens the same conversation twice instead of making two', async () => {
+    const { asAlice, asBob, workspaceId, bobId, carolId } = await setupThree()
+
+    const first = await asAlice.mutation(api.dms.open, { workspaceId, userIds: [bobId] })
+    const again = await asAlice.mutation(api.dms.open, { workspaceId, userIds: [bobId] })
+    expect(again).toBe(first)
+
+    // Bob opening it from his side is the same conversation — the key is the set of
+    // people, not who clicked first.
+    const fromBob = await asBob.mutation(api.dms.open, {
+      workspaceId,
+      userIds: [await asAlice.query(api.users.me).then((me) => me!._id)]
+    })
+    expect(fromBob).toBe(first)
+
+    // A different set of people is a different conversation.
+    const group = await asAlice.mutation(api.dms.open, {
+      workspaceId,
+      userIds: [bobId, carolId]
+    })
+    expect(group).not.toBe(first)
+  })
+
+  it("does not let a workspace member read someone else's DM", async () => {
+    const { asAlice, asBob, asCarol, workspaceId, bobId } = await setupThree()
+
+    const dm = await asAlice.mutation(api.dms.open, { workspaceId, userIds: [bobId] })
+    await asAlice.mutation(api.messages.send, { channelId: dm, body: 'just between us' })
+
+    // Carol is a member of the workspace — that must grant her nothing here.
+    expect(await asCarol.query(api.messages.listByChannel, { channelId: dm })).toEqual([])
+    await expect(
+      asCarol.mutation(api.messages.send, { channelId: dm, body: 'butting in' })
+    ).rejects.toThrow()
+    expect(await asCarol.query(api.channels.get, { channelId: dm })).toBeNull()
+    expect(await asCarol.query(api.dms.listMine, { workspaceId })).toHaveLength(0)
+
+    // The participants can.
+    expect(await asBob.query(api.messages.listByChannel, { channelId: dm })).toHaveLength(1)
+    expect(await asBob.query(api.dms.listMine, { workspaceId })).toHaveLength(1)
+  })
+
+  it('keeps DMs out of the channel list and the sidebar tree', async () => {
+    const { asAlice, asCarol, workspaceId, slug, bobId } = await setupThree()
+    await asAlice.mutation(api.dms.open, { workspaceId, userIds: [bobId] })
+
+    // Neither a participant's channel list nor an outsider's contains it.
+    for (const as of [asAlice, asCarol]) {
+      const channels = await as.query(api.channels.listBySlug, { slug })
+      expect(channels.some((channel) => channel.kind === 'dm')).toBe(false)
+    }
+  })
+
+  it('refuses to message someone outside the workspace', async () => {
+    const { t, asAlice, workspaceId } = await setupThree()
+    const asMallory = t.withIdentity(identityOf('user-mallory'))
+    await asMallory.mutation(api.users.store, { email: 'mallory@example.com' })
+    const malloryId = await asMallory.query(api.users.me).then((me) => me!._id)
+
+    await expect(
+      asAlice.mutation(api.dms.open, { workspaceId, userIds: [malloryId] })
+    ).rejects.toThrow()
+  })
+
+  it('notifies the recipient of every DM message, with no @ needed', async () => {
+    const { asAlice, asBob, workspaceId, bobId } = await setupThree()
+    const dm = await asAlice.mutation(api.dms.open, { workspaceId, userIds: [bobId] })
+    await asAlice.mutation(api.messages.send, { channelId: dm, body: 'hello' })
+
+    // The inbox is the USER's — no workspace argument.
+    const inbox = await asBob.query(api.inbox.listForMe, {})
+    expect(inbox).toHaveLength(1)
+    expect(inbox[0].kind).toBe('dm')
+    expect(inbox[0].workspaceId).toBe(workspaceId)
+    // The DM's internal `dm-<ids>` name must never reach the client.
+    expect(inbox[0].channelName).toBe('')
+
+    // The sender doesn't notify themselves.
+    expect(await asAlice.query(api.inbox.listForMe, {})).toHaveLength(0)
+
+    // And it counts as unread for Bob — every message, not just mentions.
+    const unread = await asBob.query(api.unread.listByWorkspace, { workspaceId })
+    const entry = unread.find((row) => row.channelId === dm)
+    expect(entry?.hasUnread).toBe(true)
+    expect(entry?.mentionCount).toBe(1)
+  })
+
+  it('refuses a thread inside a DM', async () => {
+    const { asAlice, workspaceId, bobId } = await setupThree()
+    const dm = await asAlice.mutation(api.dms.open, { workspaceId, userIds: [bobId] })
+    const messageId = await asAlice.mutation(api.messages.send, {
+      channelId: dm,
+      body: 'no threads here'
+    })
+    await expect(
+      asAlice.mutation(api.threads.create, { messageId, name: 'side chat' })
+    ).rejects.toThrow()
+  })
+
+  it('refuses to rename, move or delete a DM as if it were a channel', async () => {
+    const { asAlice, workspaceId, bobId } = await setupThree()
+    const dm = await asAlice.mutation(api.dms.open, { workspaceId, userIds: [bobId] })
+
+    await expect(
+      asAlice.mutation(api.channels.rename, { channelId: dm, name: 'x' })
+    ).rejects.toThrow()
+    await expect(asAlice.mutation(api.channels.move, { channelId: dm, order: 0 })).rejects.toThrow()
+    await expect(asAlice.mutation(api.channels.remove, { channelId: dm })).rejects.toThrow()
+  })
+})
+
+describe('events', () => {
+  it('stores instants, not wall-clocks — and only the organiser may change one', async () => {
+    const { t, asAlice, workspaceId } = await setupOwner()
+
+    // 09:00 on 2026-07-20 in New York = 13:00 UTC (EDT, UTC-4). The CLIENT does this
+    // conversion (`lib/timezone.ts` `inputsToUtc`); the server stores the instant and
+    // the zone it was authored in, never a local string.
+    const startAt = Date.UTC(2026, 6, 20, 13, 0)
+    const endAt = Date.UTC(2026, 6, 20, 14, 0)
+    const eventId = await asAlice.mutation(api.events.create, {
+      workspaceId,
+      title: 'Standup',
+      startAt,
+      endAt,
+      timezone: 'America/New_York'
+    })
+
+    // A range that contains it, expressed in UTC.
+    const inRange = await asAlice.query(api.events.listRange, {
+      workspaceId,
+      from: Date.UTC(2026, 6, 1),
+      to: Date.UTC(2026, 7, 1)
+    })
+    expect(inRange).toHaveLength(1)
+    expect(inRange[0].startAt).toBe(startAt)
+    expect(inRange[0].timezone).toBe('America/New_York')
+    // The organiser is going by default — they scheduled it.
+    expect(inRange[0].myStatus).toBe('going')
+    expect(inRange[0].going).toBe(1)
+
+    // A range that doesn't.
+    expect(
+      await asAlice.query(api.events.listRange, {
+        workspaceId,
+        from: Date.UTC(2026, 7, 1),
+        to: Date.UTC(2026, 8, 1)
+      })
+    ).toHaveLength(0)
+
+    // An end before the start is refused.
+    await expect(
+      asAlice.mutation(api.events.create, {
+        workspaceId,
+        title: 'Backwards',
+        startAt: endAt,
+        endAt: startAt,
+        timezone: 'America/New_York'
+      })
+    ).rejects.toThrow()
+
+    // Bob joins, can RSVP, but can't edit or delete someone else's event.
+    const asBob = t.withIdentity(identityOf('user-bob'))
+    await asBob.mutation(api.users.store, { email: 'bob@example.com', name: 'Bob' })
+    const { code } = await asAlice.mutation(api.invitations.invite, { workspaceId })
+    await asBob.mutation(api.invitations.acceptByToken, { code })
+
+    await asBob.mutation(api.events.rsvp, { eventId, status: 'going' })
+    // RSVPing twice changes the answer; it doesn't add a second one.
+    await asBob.mutation(api.events.rsvp, { eventId, status: 'maybe' })
+    const detail = await asBob.query(api.events.get, { eventId })
+    expect(detail!.attendees).toHaveLength(2)
+    expect(detail!.event.going).toBe(1)
+    expect(detail!.event.maybe).toBe(1)
+    expect(detail!.canManage).toBe(false)
+
+    await expect(
+      asBob.mutation(api.events.update, { eventId, title: 'Hijacked' })
+    ).rejects.toThrow()
+    await expect(asBob.mutation(api.events.remove, { eventId })).rejects.toThrow()
+
+    // A non-member sees nothing at all.
+    const asMallory = t.withIdentity(identityOf('user-mallory'))
+    await asMallory.mutation(api.users.store, { email: 'mallory@example.com' })
+    expect(await asMallory.query(api.events.get, { eventId })).toBeNull()
+    expect(
+      await asMallory.query(api.events.listRange, {
+        workspaceId,
+        from: Date.UTC(2026, 6, 1),
+        to: Date.UTC(2026, 7, 1)
+      })
+    ).toEqual([])
+  })
+})
+
+describe('the inbox belongs to the user, not a workspace', () => {
+  it('spans every workspace, and filters by type and date', async () => {
+    const { t, asAlice, workspaceId } = await setupOwner()
+
+    // Bob joins Acme, and owns a second workspace that Alice also joins — so Alice
+    // has notifications in two places at once, which is the whole point.
+    const asBob = t.withIdentity(identityOf('user-bob'))
+    await asBob.mutation(api.users.store, { email: 'bob@example.com', name: 'Bob' })
+    const invite = await asAlice.mutation(api.invitations.invite, { workspaceId })
+    await asBob.mutation(api.invitations.acceptByToken, { code: invite.code })
+
+    const second = await asBob.mutation(api.workspaces.create, { name: 'Beta' })
+    const invite2 = await asBob.mutation(api.invitations.invite, {
+      workspaceId: second.workspaceId
+    })
+    await asAlice.mutation(api.invitations.acceptByToken, { code: invite2.code })
+
+    const aliceId = await asAlice.query(api.users.me).then((me) => me!._id)
+
+    // A DM in Acme, and a DM in Beta.
+    const dm1 = await asBob.mutation(api.dms.open, { workspaceId, userIds: [aliceId] })
+    await asBob.mutation(api.messages.send, { channelId: dm1, body: 'ping from acme' })
+    const dm2 = await asBob.mutation(api.dms.open, {
+      workspaceId: second.workspaceId,
+      userIds: [aliceId]
+    })
+    await asBob.mutation(api.messages.send, { channelId: dm2, body: 'ping from beta' })
+
+    // One list, both workspaces — no workspace argument anywhere.
+    const all = await asAlice.query(api.inbox.listForMe, {})
+    expect(all).toHaveLength(2)
+    expect(new Set(all.map((row) => row.workspaceName))).toEqual(new Set(['Acme', 'Beta']))
+
+    const count = await asAlice.query(api.inbox.unreadCountForMe, {})
+    expect(count.count).toBe(2)
+
+    // Type filter: these are DMs, so `mention` matches nothing.
+    expect(await asAlice.query(api.inbox.listForMe, { kind: 'dm' })).toHaveLength(2)
+    expect(await asAlice.query(api.inbox.listForMe, { kind: 'mention' })).toHaveLength(0)
+
+    // Date filter: everything is from just now, so a future `since` excludes it all.
+    expect(await asAlice.query(api.inbox.listForMe, { since: Date.now() + 60_000 })).toHaveLength(0)
+
+    // Mark-all clears across BOTH workspaces in one call.
+    await asAlice.mutation(api.inbox.markAllReadForMe, {})
+    expect((await asAlice.query(api.inbox.unreadCountForMe, {})).count).toBe(0)
+    expect((await asAlice.query(api.inbox.listForMe, {})).every((row) => row.read)).toBe(true)
+
+    // Bob's own inbox is untouched — he sent them.
+    expect(await asBob.query(api.inbox.listForMe, {})).toHaveLength(0)
+  })
+})
+
+describe('scale invariants', () => {
+  /** The default channel of Alice's workspace. */
+  async function firstChannel(t: ReturnType<typeof convexTest>, slug: string) {
+    const asAlice = t.withIdentity(identityOf('user-alice'))
+    const channels = await asAlice.query(api.channels.listBySlug, { slug })
+    return channels[0]
+  }
+
+  it('keeps the reaction summary on the message in step with the rows', async () => {
+    const { t, asAlice, slug } = await setupOwner()
+    const channel = await firstChannel(t, slug)
+    const messageId = await asAlice.mutation(api.messages.send, {
+      channelId: channel._id,
+      body: 'react to me'
+    })
+
+    // A message is born with an (empty) summary, so reading it never falls back to
+    // scanning `messageReactions`.
+    const born = await t.run(async (ctx) => await ctx.db.get(messageId))
+    expect(born?.reactions).toEqual([])
+
+    await asAlice.mutation(api.messages.toggleReaction, { messageId, emoji: '👍' })
+    const after = await t.run(async (ctx) => await ctx.db.get(messageId))
+    expect(after?.reactions).toEqual([{ emoji: '👍', count: 1, userIds: [expect.any(String)] }])
+
+    // The read path reports it, viewer-relative.
+    const [rendered] = await asAlice.query(api.messages.listByChannel, { channelId: channel._id })
+    expect(rendered.reactions).toEqual([{ emoji: '👍', count: 1, reacted: true }])
+
+    // Un-reacting removes the pill entirely rather than leaving a zero-count entry.
+    await asAlice.mutation(api.messages.toggleReaction, { messageId, emoji: '👍' })
+    const cleared = await t.run(async (ctx) => await ctx.db.get(messageId))
+    expect(cleared?.reactions).toEqual([])
+  })
+
+  it('renders reactions on a message written before the summary existed', async () => {
+    const { t, asAlice, slug } = await setupOwner()
+    const channel = await firstChannel(t, slug)
+    const messageId = await asAlice.mutation(api.messages.send, {
+      channelId: channel._id,
+      body: 'legacy'
+    })
+
+    // Simulate a pre-migration row: reaction rows exist, but the message carries no
+    // summary. The read path must fall back to the table, not claim zero reactions.
+    await asAlice.mutation(api.messages.toggleReaction, { messageId, emoji: '🎉' })
+    await t.run(async (ctx) => {
+      await ctx.db.patch(messageId, { reactions: undefined })
+    })
+
+    const [rendered] = await asAlice.query(api.messages.listByChannel, { channelId: channel._id })
+    expect(rendered.reactions).toEqual([{ emoji: '🎉', count: 1, reacted: true }])
+  })
+
+  it('tracks the newest message in channelActivity, and drops it with the channel', async () => {
+    const { t, asAlice, workspaceId, slug } = await setupOwner()
+    const channel = await firstChannel(t, slug)
+    const extra = await asAlice.mutation(api.channels.create, {
+      workspaceId,
+      name: 'watermark',
+      kind: 'chat'
+    })
+
+    const watermarkOf = async (channelId: string) =>
+      await t.run(async (ctx) => {
+        const row = await ctx.db
+          .query('channelActivity')
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .withIndex('by_channel', (q) => q.eq('channelId', channelId as any))
+          .unique()
+        // `t.run` marshals `undefined` across the boundary as `null` — normalise.
+        return row?.lastMessageAt ?? null
+      })
+
+    expect(await watermarkOf(extra)).toBeNull()
+    await asAlice.mutation(api.messages.send, { channelId: extra, body: 'first' })
+    const first = await watermarkOf(extra)
+    expect(first).toBeGreaterThan(0)
+
+    // The watermark moves forward with the newest message, and the OTHER channel's is
+    // untouched — the whole point of the split is that one channel's traffic doesn't
+    // write to anything the rest of the workspace reads.
+    await asAlice.mutation(api.messages.send, { channelId: extra, body: 'second' })
+    expect(await watermarkOf(extra)).toBeGreaterThanOrEqual(first!)
+    expect(await watermarkOf(channel._id)).toBeNull()
+
+    // It is a child of the channel and must not outlive it.
+    vi.useFakeTimers()
+    try {
+      await asAlice.mutation(api.channels.remove, { channelId: extra })
+      await drainScheduled(t)
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(await watermarkOf(extra)).toBeNull()
+  })
+})
+
+describe('silent messages', () => {
+  it('a @silent message pings no one — even someone it @-mentions', async () => {
+    const { t, asAlice, workspaceId } = await setupOwner()
+
+    // Bob joins.
+    const asBob = t.withIdentity(identityOf('user-bob'))
+    await asBob.mutation(api.users.store, { email: 'bob@example.com', name: 'Bob' })
+    const { code } = await asAlice.mutation(api.invitations.invite, { workspaceId })
+    await asBob.mutation(api.invitations.acceptByToken, { code })
+    const bobId = await t.run(async (ctx) => {
+      const user = await ctx.db
+        .query('users')
+        .withIndex('by_email', (q) => q.eq('email', 'bob@example.com'))
+        .unique()
+      return user!._id
+    })
+
+    const channelId = await asAlice.mutation(api.channels.create, {
+      workspaceId,
+      name: 'announcements',
+      kind: 'chat'
+    })
+
+    // A NORMAL @-mention of Bob: he gets an inbox row + a mention count.
+    await asAlice.mutation(api.messages.send, {
+      channelId,
+      body: `[@Bob](zinx://user/${bobId}) standup in 5`
+    })
+    expect(await asBob.query(api.inbox.listForMe, {})).toHaveLength(1)
+    const afterNormal = await asBob.query(api.unread.listByWorkspace, { workspaceId })
+    expect(afterNormal.find((r) => r.channelId === channelId)?.mentionCount).toBe(1)
+
+    // A SILENT @-mention of Bob: no new inbox row, and the mention count does NOT rise —
+    // even though it still @-mentions him and lands in the channel.
+    await asAlice.mutation(api.messages.send, {
+      channelId,
+      body: `[@Bob](zinx://user/${bobId}) fyi [@silent](zinx://directive/silent)`
+    })
+    expect(await asBob.query(api.inbox.listForMe, {})).toHaveLength(1)
+    const afterSilent = await asBob.query(api.unread.listByWorkspace, { workspaceId })
+    const entry = afterSilent.find((r) => r.channelId === channelId)
+    // Still just the one ping from the normal message…
+    expect(entry?.mentionCount).toBe(1)
+    // …but the silent message is really there and still bolds the channel.
+    expect(entry?.hasUnread).toBe(true)
+    expect(await asBob.query(api.messages.listByChannel, { channelId })).toHaveLength(2)
+  })
+})

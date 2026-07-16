@@ -28,7 +28,13 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // Anti-spam on the hottest write. Generous enough that normal typing AND a durable
   // outbox draining a backlog of queued messages never trip it — only egregious spam
   // (sustained >2/s) does.
-  sendMessage: { kind: 'token bucket', rate: 120, period: MINUTE, capacity: 60 }
+  sendMessage: { kind: 'token bucket', rate: 120, period: MINUTE, capacity: 60 },
+
+  // **Minting an upload URL spends our R2 storage quota**, and it was the one paid
+  // resource anyone signed in could draw on without limit — an unattached upload isn't
+  // swept for 24h, so a loop could park a lot of bytes in the bucket before the cron
+  // noticed. The burst covers dragging a folder of screenshots into the composer.
+  upload: { kind: 'token bucket', rate: 60, period: MINUTE, capacity: 30 }
 })
 
 // Re-export the time units so callers can express one-off configs consistently.

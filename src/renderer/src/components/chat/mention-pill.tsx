@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router'
-import { At, Megaphone, ShieldStar } from '@phosphor-icons/react'
+import { At, BellSlash, Megaphone, ShieldStar } from '@phosphor-icons/react'
 import { ChannelKindIcon } from '@renderer/components/chat/channel-kind-icon'
 import { UserProfilePopover } from '@renderer/components/chat/user-profile-popover'
 import { useWorkspaceDirectory } from '@renderer/components/chat/workspace-directory-context'
@@ -77,17 +77,29 @@ export function MentionPill({
     )
   }
 
+  // `@silent` — a directive, not a ping. A muted "Silent" chip tells readers this message was sent
+  // without notifications (which is why they weren't pinged even if they were @-mentioned).
+  if (parsed.kind === 'directive') {
+    const chip = (
+      <span className={cn(PILL, 'bg-muted text-muted-foreground')}>
+        <BellSlash className="size-3" weight="fill" />
+        Silent
+      </span>
+    )
+    return (
+      <Tooltip>
+        <TooltipTrigger render={chip} />
+        <TooltipContent>Sent silently — no notifications</TooltipContent>
+      </Tooltip>
+    )
+  }
+
   // A role/group ping. Amber matches the "Mentioned you" / "Replied to you"
   // language used elsewhere in the message list.
   const group = mentionGroup(parsed.id)
   const label = group?.label ?? fallbackLabel.replace(/^@/, '')
   const pill = (
-    <span
-      className={cn(
-        PILL,
-        'bg-amber-500/15 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300'
-      )}
-    >
+    <span className={cn(PILL, 'bg-warning/15 text-warning')}>
       {parsed.id === 'everyone' ? (
         <Megaphone className="size-3" weight="fill" />
       ) : (

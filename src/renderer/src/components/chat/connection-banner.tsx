@@ -29,7 +29,7 @@ export function ConnectionBanner(): React.JSX.Element | null {
 
   return (
     <div className="pointer-events-none fixed inset-x-0 top-0 z-100 flex justify-center p-2">
-      <div className="flex items-center gap-2 rounded-full border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-xs font-medium text-amber-700 shadow-lg backdrop-blur dark:text-amber-300">
+      <div className="flex items-center gap-2 rounded-full border border-warning/40 bg-warning/15 px-3 py-1.5 text-xs font-medium text-warning shadow-lg backdrop-blur">
         <CloudSlash className="size-4" weight="fill" />
         Reconnecting… anything you send will go out when you’re back online.
       </div>

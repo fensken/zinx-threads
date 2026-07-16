@@ -20,7 +20,7 @@ import {
  * web it falls back to one localStorage blob. The store starts empty with
  * `hydrated: false` and is filled by `ensureLocalDataLoaded()`.
  */
-export type LocalChannelKind = 'page' | 'kanban'
+export type LocalChannelKind = 'page' | 'kanban' | 'whiteboard'
 
 /** Sentinel bucket key for channels not in any group (mirrors the live sidebar). */
 export const LOCAL_UNGROUPED = '__ungrouped__'
@@ -80,6 +80,15 @@ export interface SidebarOrder {
   buckets: Record<string, string[]>
 }
 
+/** The canvas behind an offline `whiteboard` channel — the same shape the Convex
+ *  `whiteboards` table holds, keyed by channel like `pages` and `boards`. */
+export interface LocalWhiteboard {
+  /** Excalidraw's element array, as JSON. */
+  elements: string
+  elementCount: number
+  updatedAt: number
+}
+
 /** The persisted data slice (everything except `hydrated` + the actions) — what
  *  `lib/local-data.ts` reads/writes. */
 export interface LocalData {
@@ -90,6 +99,7 @@ export interface LocalData {
   groups: LocalGroup[]
   pages: Record<string, LocalPage>
   boards: Record<string, LocalBoard>
+  whiteboards: Record<string, LocalWhiteboard>
 }
 
 interface LocalState extends LocalData {
@@ -115,6 +125,8 @@ interface LocalState extends LocalData {
   renameGroup: (id: string, name: string) => void
   deleteGroup: (id: string) => void
   reorderSidebar: (order: SidebarOrder) => void
+
+  saveWhiteboard: (channelId: string, scene: { elements: string; elementCount: number }) => void
 
   savePageContent: (channelId: string, content: string) => void
   savePageMeta: (
@@ -147,6 +159,7 @@ export const useLocalStore = create<LocalState>()((set) => ({
   channels: [],
   groups: [],
   pages: {},
+  whiteboards: {},
   boards: {},
   hydrated: false,
 
@@ -191,9 +204,11 @@ export const useLocalStore = create<LocalState>()((set) => ({
       )
       const pages = { ...state.pages }
       const boards = { ...state.boards }
+      const whiteboards = { ...state.whiteboards }
       for (const channelId of channelIds) {
         delete pages[channelId]
         delete boards[channelId]
+        delete whiteboards[channelId]
       }
       const workspaces = state.workspaces.filter((w) => w.id !== id)
       return {
@@ -203,7 +218,8 @@ export const useLocalStore = create<LocalState>()((set) => ({
         channels: state.channels.filter((c) => c.workspaceId !== id),
         groups: state.groups.filter((g) => g.workspaceId !== id),
         pages,
-        boards
+        boards,
+        whiteboards
       }
     })
   },
@@ -262,9 +278,16 @@ export const useLocalStore = create<LocalState>()((set) => ({
     set((state) => {
       const pages = { ...state.pages }
       const boards = { ...state.boards }
+      const whiteboards = { ...state.whiteboards }
       delete pages[id]
       delete boards[id]
-      return { channels: state.channels.filter((channel) => channel.id !== id), pages, boards }
+      delete whiteboards[id]
+      return {
+        channels: state.channels.filter((channel) => channel.id !== id),
+        pages,
+        boards,
+        whiteboards
+      }
     })
   },
 
@@ -350,6 +373,19 @@ export const useLocalStore = create<LocalState>()((set) => ({
         })
       }
     })
+  },
+
+  saveWhiteboard: (channelId, scene): void => {
+    set((state) => ({
+      whiteboards: {
+        ...state.whiteboards,
+        [channelId]: {
+          elements: scene.elements,
+          elementCount: scene.elementCount,
+          updatedAt: Date.now()
+        }
+      }
+    }))
   },
 
   savePageContent: (channelId, content): void => {

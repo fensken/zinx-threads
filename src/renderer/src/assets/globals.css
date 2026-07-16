@@ -3,133 +3,215 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Palette = the tweakcn "Vercel" theme (pure neutrals: white on black, black on
-   white), applied wholesale — EXCEPT two things we pin on purpose:
+/* Palette = a tweakcn theme, applied WHOLESALE. Current:
+     pnpm dlx shadcn@latest add https://tweakcn.com/r/themes/cmlm03etv000204lh15608kec
 
-   1. `--font-sans` stays **Funnel Display** (self-hosted via @fontsource). The
-      theme ships Geist, which isn't a dependency, so taking it would silently
-      fall back to a system font. `--font-mono` / `--font-serif` are kept for the
-      same reason (Geist Mono isn't installed either).
-   2. `--primary` stays shadcn's **rose** (rose-500 on rose-50, identical in both
-      modes). The Vercel theme's primary is pure black in light / pure white in
-      dark — i.e. no brand colour at all. `--ring` and the two `--sidebar-primary*`
-      tokens follow it, since in this palette they *are* the primary.
+   A warm, low-contrast paper palette in light mode (sand/cream backgrounds, near-black
+   ink) over a neutral charcoal in dark. Everything — background, card, muted, accent,
+   border, destructive, charts, shadows, radius, letter-spacing — comes from the theme.
+   The palette is swappable; re-run the installer with any tweakcn URL.
 
-   Everything else — background, card, muted, accent, border, destructive, charts,
-   shadows, radius, tracking — comes from the theme. */
+   TWO things do NOT come from the theme, and both survive a re-install by hand:
+
+   1. **The font.** `--font-sans` stays **Funnel Display** (self-hosted via
+      `@fontsource-variable`). Themes ship fonts we don't depend on — this one wants
+      Inter / Playfair Display / JetBrains Mono, none of which are installed, so taking
+      them silently falls back to a system font. `--font-mono` / `--font-serif` stay
+      generic for the same reason.
+
+      ⚠ The installer rewrites the font in THREE places, and the third is the one that
+      bites: it writes literal families into `@theme inline`, which WIN over the `:root`
+      pin — so the `font-sans` utility and the `body` base rule quietly resolve to the
+      theme's font even though `:root` says otherwise, and the app renders in a fallback
+      nobody chose. `@theme inline` must only ever *map* (`--font-sans: var(--font-sans)`),
+      never restate a family. **Re-check all three after every theme install.**
+
+   2. **The `--titlebar*` tokens** (below). The installer doesn't know them, so it leaves
+      them alone — which is exactly why they must be *aliases* of theme tokens rather than
+      literal colours: a literal would survive the swap and clash with the new palette.
+
+   3. **`--muted-foreground` is pinned to a CONTRAST FLOOR.** The theme's own value fails
+      WCAG AA against the surfaces we render it on (4.12:1 on `--muted` in light; 3.52:1 on
+      `--accent` in dark — that's the hover surface of every icon button). Only the
+      *lightness* is changed; the theme's chroma and hue are kept, so the warmth is intact.
+      **Re-measure after any theme install** — a new palette moves the surfaces too, and
+      the old floor won't be the right one. */
 :root {
-  --background: oklch(0.99 0 0);
-  --foreground: oklch(0 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0 0 0);
-  --popover: oklch(0.99 0 0);
-  --popover-foreground: oklch(0 0 0);
-  /* PINNED — shadcn `rose` (rose-500 on rose-50), not the theme's black. */
-  --primary: oklch(0.645 0.246 16.439);
-  --primary-foreground: oklch(0.969 0.015 12.422);
-  --secondary: oklch(0.94 0 0);
-  --secondary-foreground: oklch(0 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.44 0 0);
-  --accent: oklch(0.94 0 0);
-  --accent-foreground: oklch(0 0 0);
-  --destructive: oklch(0.63 0.19 23.03);
+  --background: oklch(0.9195 0.0169 88.003);
+  --foreground: oklch(0.235 0 0);
+  --card: oklch(0.953 0.0156 86.4257);
+  --card-foreground: oklch(0.235 0 0);
+  --popover: oklch(0.953 0.0156 86.4257);
+  --popover-foreground: oklch(0.235 0 0);
+  --primary: oklch(0.54 0.246 16.439);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.8647 0.0201 87.5232);
+  --secondary-foreground: oklch(0.3012 0 0);
+  --muted: oklch(0.834 0.0232 87.163);
+  /* CONTRAST FLOOR — the theme ships 0.4688, which measures 4.12:1 against `--muted`
+     and fails WCAG AA (4.5 for body text). Darkened to 0.42, which clears AA on every
+     surface it's rendered on (worst case 5.08:1, on --muted). Chroma + hue are the
+     theme's own, so the warmth is untouched — only the lightness moved. */
+  --muted-foreground: oklch(0.42 0.0136 84.5932);
+  --accent: oklch(0.9169 0.0175 99.616);
+  --accent-foreground: oklch(0.3012 0 0);
+  --destructive: oklch(0.5771 0.2152 27.325);
   --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.92 0 0);
-  --input: oklch(0.94 0 0);
-  --ring: oklch(0.645 0.246 16.439); /* PINNED — follows --primary */
-  --chart-1: oklch(0.81 0.17 75.35);
-  --chart-2: oklch(0.55 0.22 264.53);
-  --chart-3: oklch(0.72 0 0);
-  --chart-4: oklch(0.92 0 0);
-  --chart-5: oklch(0.56 0 0);
-  --sidebar: oklch(0.99 0 0);
-  --sidebar-foreground: oklch(0 0 0);
-  --sidebar-primary: oklch(0.645 0.246 16.439); /* PINNED */
-  --sidebar-primary-foreground: oklch(0.969 0.015 12.422);
-  --sidebar-accent: oklch(0.94 0 0);
-  --sidebar-accent-foreground: oklch(0 0 0);
-  --sidebar-border: oklch(0.94 0 0);
-  --sidebar-ring: oklch(0.645 0.246 16.439); /* PINNED */
+  --border: oklch(0.8434 0.0231 87.1621);
+  --input: oklch(0.8434 0.0231 87.1621);
+  --ring: oklch(0.54 0.246 16.439);
+  --chart-1: oklch(0.6863 0.1743 34.2614);
+  --chart-2: oklch(0.235 0 0);
+  --chart-3: oklch(0.4688 0.0136 84.5932);
+  --chart-4: oklch(0.7057 0.025 82.0932);
+  --chart-5: oklch(0.834 0.0232 87.163);
+  --sidebar: oklch(0.8985 0.0199 87.5195);
+  --sidebar-foreground: oklch(0.235 0 0);
+  --sidebar-primary: oklch(0.54 0.246 16.439);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.9169 0.0175 99.616);
+  --sidebar-accent-foreground: oklch(0.3012 0 0);
+  --sidebar-border: oklch(0.8434 0.0231 87.1621);
+  --sidebar-ring: oklch(0.54 0.246 16.439);
+
+  /* The window title bar's surface. **Derived from the theme, never a literal** — these
+     are the only tokens the installer doesn't own, so if they held raw colours they'd be
+     left behind on every theme swap and the bar would clash with the new palette. As
+     aliases they follow it for free.
+
+     The bar sits on `--sidebar-accent` (what an active channel row sits on), and its
+     hover/press surface is `--border` — which is also the hover for the minimise /
+     maximise / close buttons, since on Windows/Linux we DRAW THOSE OURSELVES
+     (`layout/window-controls.tsx`). They didn't used to be ours: the OS painted them
+     over the bar and exposed two colours and a height, nothing more — a hover derived at
+     a fixed ~10% alpha that was invisible on a light bar, and buttons a dialog's backdrop
+     couldn't dim because the OS drew them above the page. Drawing them is what made a
+     light title bar possible at all. (macOS is the exception — its traffic lights stay
+     native and ignore all of this; see `windowControlsStyle`.) */
+  --titlebar: var(--sidebar-accent);
+  --titlebar-accent: var(--border);
+
+  /* ── STATUS colours ────────────────────────────────────────────────────────────
+     Success / warning / info (danger is `--destructive`, which the theme already ships).
+
+     These are **categorical, not brand**: green means "online / done", amber means "this
+     pings you", blue means "admin". They must NOT follow the palette — a theme with a
+     green primary would make an "online" dot indistinguishable from an ordinary accent.
+     So they're fixed values rather than aliases. But they ARE theme variables: the source
+     of truth for every colour in the app lives in this file, and these used to be raw
+     `amber-500` / `emerald-500` / `blue-500` Tailwind literals scattered across 19
+     components.
+
+     One token per status serves BOTH the text and the tint: the light-mode value is dark
+     enough to read as text on a light surface, and at `/15` alpha it becomes the pale
+     background a badge wants. Dark mode flips to a lighter value for the same two jobs —
+     which is why the `dark:` variants those components used to carry are all gone. */
+  --success: oklch(0.47 0.13 158);
+  --warning: oklch(0.495 0.13 75);
+  --info: oklch(0.49 0.16 255);
+
+  /* The "speaking" ring — a vivid green, kept separate from `--success` because it's a
+     GLOW, not text: it needs to be bright at full saturation, where `--success` is
+     deliberately darkened for legibility as text. */
+  --speaking: oklch(0.7 0.16 162);
+  --speaking-glow: oklch(0.7 0.16 162 / 0.55);
+
   /* PINNED — Funnel Display is the only self-hosted family. */
   --font-sans: 'Funnel Display Variable', ui-sans-serif, system-ui, sans-serif;
   --font-serif: ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
   --font-mono: monospace;
   --radius: 0.5rem;
-  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
-  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
-  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
-  --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
-  --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 2px 4px -1px hsl(0 0% 0% / 0.18);
-  --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 4px 6px -1px hsl(0 0% 0% / 0.18);
-  --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 8px 10px -1px hsl(0 0% 0% / 0.18);
-  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.45);
-  --tracking-normal: 0em;
+  --shadow-2xs: 0px 4px 10px 0px hsl(0 0% 0% / 0.05);
+  --shadow-xs: 0px 4px 10px 0px hsl(0 0% 0% / 0.05);
+  --shadow-sm: 0px 4px 10px 0px hsl(0 0% 0% / 0.1), 0px 1px 2px -1px hsl(0 0% 0% / 0.1);
+  --shadow: 0px 4px 10px 0px hsl(0 0% 0% / 0.1), 0px 1px 2px -1px hsl(0 0% 0% / 0.1);
+  --shadow-md: 0px 4px 10px 0px hsl(0 0% 0% / 0.1), 0px 2px 4px -1px hsl(0 0% 0% / 0.1);
+  --shadow-lg: 0px 4px 10px 0px hsl(0 0% 0% / 0.1), 0px 4px 6px -1px hsl(0 0% 0% / 0.1);
+  --shadow-xl: 0px 4px 10px 0px hsl(0 0% 0% / 0.1), 0px 8px 10px -1px hsl(0 0% 0% / 0.1);
+  --shadow-2xl: 0px 4px 10px 0px hsl(0 0% 0% / 0.25);
+  --tracking-normal: 0.01em;
   --spacing: 0.25rem;
-  --shadow-color: hsl(0 0% 0%);
-  --shadow-opacity: 0.18;
-  --shadow-blur: 2px;
+  --shadow-color: #000000;
+  --shadow-opacity: 0.1;
+  --shadow-blur: 10px;
   --shadow-spread: 0px;
   --shadow-offset-x: 0px;
-  --shadow-offset-y: 1px;
-  --letter-spacing: 0em;
+  --shadow-offset-y: 4px;
+  --letter-spacing: 0.01em;
 }
 
 .dark {
-  --background: oklch(0 0 0);
-  --foreground: oklch(1 0 0);
-  --card: oklch(0.14 0 0);
-  --card-foreground: oklch(1 0 0);
-  --popover: oklch(0.18 0 0);
-  --popover-foreground: oklch(1 0 0);
-  /* PINNED — rose holds the same value in dark (as it does in shadcn's own
-     theme); it already carries enough contrast against the black background. */
+  --background: oklch(0.1913 0 0);
+  --foreground: oklch(0.9173 0.0133 82.4015);
+  --card: oklch(0.2264 0 0);
+  --card-foreground: oklch(0.9173 0.0133 82.4015);
+  --popover: oklch(0.2264 0 0);
+  --popover-foreground: oklch(0.9173 0.0133 82.4015);
   --primary: oklch(0.645 0.246 16.439);
-  --primary-foreground: oklch(0.969 0.015 12.422);
-  --secondary: oklch(0.25 0 0);
-  --secondary-foreground: oklch(1 0 0);
-  --muted: oklch(0.23 0 0);
-  --muted-foreground: oklch(0.72 0 0);
-  --accent: oklch(0.32 0 0);
-  --accent-foreground: oklch(1 0 0);
-  --destructive: oklch(0.69 0.2 23.91);
-  --destructive-foreground: oklch(0 0 0);
-  --border: oklch(0.26 0 0);
-  --input: oklch(0.32 0 0);
-  --ring: oklch(0.645 0.246 16.439); /* PINNED — follows --primary */
-  --chart-1: oklch(0.81 0.17 75.35);
-  --chart-2: oklch(0.58 0.21 260.84);
-  --chart-3: oklch(0.56 0 0);
-  --chart-4: oklch(0.44 0 0);
-  --chart-5: oklch(0.92 0 0);
-  --sidebar: oklch(0.18 0 0);
-  --sidebar-foreground: oklch(1 0 0);
-  --sidebar-primary: oklch(0.645 0.246 16.439); /* PINNED */
-  --sidebar-primary-foreground: oklch(0.969 0.015 12.422);
-  --sidebar-accent: oklch(0.32 0 0);
-  --sidebar-accent-foreground: oklch(1 0 0);
-  --sidebar-border: oklch(0.32 0 0);
-  --sidebar-ring: oklch(0.645 0.246 16.439); /* PINNED */
+  --primary-foreground: oklch(0.2264 0 0);
+  --secondary: oklch(0.252 0 0);
+  --secondary-foreground: oklch(0.852 0.0205 100.6306);
+  --muted: oklch(0.285 0 0);
+  /* CONTRAST FLOOR — see the light-mode note. Dark was WORSE: the theme's 0.6348 measures
+     only 3.52:1 on `--accent` (the hover surface for every icon button and the active
+     sidebar row), which fails even the relaxed 3.0 bar for UI in places. Lightened to 0.72
+     → worst case 4.87:1. */
+  --muted-foreground: oklch(0.72 0.0113 81.7875);
+  --accent: oklch(0.3329 0 0);
+  --accent-foreground: oklch(0.852 0.0205 100.6306);
+  --destructive: oklch(0.6368 0.2078 25.3313);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.2931 0 0);
+  --input: oklch(0.2931 0 0);
+  --ring: oklch(0.645 0.246 16.439);
+  --chart-1: oklch(0.6863 0.1743 34.2614);
+  --chart-2: oklch(0.859 0.0209 74.6369);
+  --chart-3: oklch(0.6348 0.0113 81.7875);
+  --chart-4: oklch(0.4681 0.0069 84.5829);
+  --chart-5: oklch(0.3523 0 0);
+  --sidebar: oklch(0.173 0 0);
+  --sidebar-foreground: oklch(0.9173 0.0133 82.4015);
+  --sidebar-primary: oklch(0.645 0.246 16.439);
+  --sidebar-primary-foreground: oklch(0.2264 0 0);
+  --sidebar-accent: oklch(0.3329 0 0);
+  --sidebar-accent-foreground: oklch(0.852 0.0205 100.6306);
+  --sidebar-border: oklch(0.2931 0 0);
+  --sidebar-ring: oklch(0.645 0.246 16.439);
+
+  /* Dark mode. Same aliasing rule as light (see the note there), but the bar takes
+     `--sidebar` rather than `--sidebar-accent`: in a dark palette the accent is a *light*
+     surface, and a bar that bright would read as a floating panel rather than as chrome.
+     `--accent` is the hover, which is that same light surface — right for a hover, wrong
+     for a whole strip. */
+  --titlebar: var(--sidebar);
+  --titlebar-accent: var(--accent);
+
+  /* STATUS colours, dark mode — lighter, so the same token reads as text on a dark surface
+     AND as a /15 tint behind a badge. See the light-mode note. */
+  --success: oklch(0.78 0.15 160);
+  --warning: oklch(0.82 0.14 80);
+  --info: oklch(0.75 0.14 250);
+
   /* PINNED — Funnel Display is the only self-hosted family. */
   --font-sans: 'Funnel Display Variable', ui-sans-serif, system-ui, sans-serif;
   --font-serif: ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
   --font-mono: monospace;
   --radius: 0.5rem;
-  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
-  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
-  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
-  --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
-  --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 2px 4px -1px hsl(0 0% 0% / 0.18);
-  --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 4px 6px -1px hsl(0 0% 0% / 0.18);
-  --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 8px 10px -1px hsl(0 0% 0% / 0.18);
-  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.45);
-  --shadow-color: hsl(0 0% 0%);
-  --shadow-opacity: 0.18;
-  --shadow-blur: 2px;
+  --shadow-2xs: 0px 6px 15px 0px hsl(0 0% 0% / 0.15);
+  --shadow-xs: 0px 6px 15px 0px hsl(0 0% 0% / 0.15);
+  --shadow-sm: 0px 6px 15px 0px hsl(0 0% 0% / 0.3), 0px 1px 2px -1px hsl(0 0% 0% / 0.3);
+  --shadow: 0px 6px 15px 0px hsl(0 0% 0% / 0.3), 0px 1px 2px -1px hsl(0 0% 0% / 0.3);
+  --shadow-md: 0px 6px 15px 0px hsl(0 0% 0% / 0.3), 0px 2px 4px -1px hsl(0 0% 0% / 0.3);
+  --shadow-lg: 0px 6px 15px 0px hsl(0 0% 0% / 0.3), 0px 4px 6px -1px hsl(0 0% 0% / 0.3);
+  --shadow-xl: 0px 6px 15px 0px hsl(0 0% 0% / 0.3), 0px 8px 10px -1px hsl(0 0% 0% / 0.3);
+  --shadow-2xl: 0px 6px 15px 0px hsl(0 0% 0% / 0.75);
+  --shadow-color: #000000;
+  --shadow-opacity: 0.3;
+  --shadow-blur: 15px;
   --shadow-spread: 0px;
   --shadow-offset-x: 0px;
-  --shadow-offset-y: 1px;
-  --letter-spacing: 0em;
+  --shadow-offset-y: 6px;
+  --letter-spacing: 0.01em;
   --spacing: 0.25rem;
 }
 
@@ -166,6 +248,11 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-titlebar: var(--titlebar);
+  --color-titlebar-accent: var(--titlebar-accent);
 
   /* Reference the vars above rather than restating a family — otherwise the
      `font-sans` utility (and the `body` base rule) would resolve to the theme's
@@ -288,6 +375,21 @@
 .no-scrollbar {
   scrollbar-width: none;
 }
+
+/* ── Custom title bar (desktop) ─────────────────────────────────────────────
+   The app draws its own bar; the OS still draws the window buttons over it (see
+   `titleBarOverlay` in src/main/index.ts). Dragging the window is opt-IN per
+   element: `.app-drag` makes a region a window handle, and every interactive
+   child inside it must opt back OUT with `.app-no-drag`, or the click is eaten
+   by the drag handler and the button simply never fires. */
+.app-drag {
+  -webkit-app-region: drag;
+  /* A drag region swallows text selection anyway; saying so stops the I-beam. */
+  user-select: none;
+}
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
 [data-slot='dialog-content']::-webkit-scrollbar,
 [data-slot='dialog-content'] *::-webkit-scrollbar,
 [data-slot='alert-dialog-content']::-webkit-scrollbar,
@@ -306,15 +408,27 @@
   display: none;
 }
 
-/* LiveKit voice tiles — Discord-style green "speaking" glow. The tile carries
-   `data-lk-speaking="true"` while a participant is talking; the ring is a
-   categorical status color (green), same exception as presence dots. */
+/* The "speaking" glow (Discord-style), on voice tiles AND on the avatars in the sidebar
+   and the user bar.
+ *
+ * Green is a **categorical status colour** — the same documented exception as presence
+ * dots: it means "talking", not "brand", so it must NOT follow the theme's palette (a
+ * theme with a green primary would make a speaking ring indistinguishable from a normal
+ * accent). But it was a raw `#10b981` repeated in three places — the CSS below plus two
+ * Tailwind arbitrary-value shadows in TSX. One token, one utility, so it can't drift. */
+.speaking-ring {
+  box-shadow:
+    0 0 0 2px var(--speaking),
+    0 0 10px var(--speaking-glow);
+}
+
+/* LiveKit voice tiles carry `data-lk-speaking="true"` while a participant is talking. */
 .lk-participant-tile {
   border-radius: 0.75rem;
   overflow: hidden;
 }
 .lk-participant-tile[data-lk-speaking='true'] {
   box-shadow:
-    0 0 0 2px #10b981,
-    0 0 14px rgba(16, 185, 129, 0.55);
+    0 0 0 2px var(--speaking),
+    0 0 14px var(--speaking-glow);
 }

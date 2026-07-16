@@ -1,5 +1,5 @@
 import { ArrowElbowLeftDown, Gif } from '@phosphor-icons/react'
-import { Avatar } from '@renderer/components/common/avatar'
+import { Avatar, FALLBACK_AVATAR_COLOR } from '@renderer/components/common/avatar'
 import { messagePreview } from '@renderer/lib/message-preview'
 
 export interface ReplyPreview {
@@ -41,11 +41,11 @@ export function MessageReply({
       >
         <Avatar
           initials={initialsOf(replyTo.authorName)}
-          color={replyTo.authorColor ?? '#5865f2'}
+          color={replyTo.authorColor ?? FALLBACK_AVATAR_COLOR}
           image={replyTo.authorAvatarUrl}
           className="size-4 text-[8px]"
         />
-        <span className="shrink-0 font-medium text-foreground/80">{replyTo.authorName}</span>
+        <span className="shrink-0 font-medium text-foreground">{replyTo.authorName}</span>
         {isGif ? (
           <span className="flex items-center gap-1 italic">
             <Gif className="size-3.5" />

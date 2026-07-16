@@ -38,16 +38,24 @@ export function WorkspaceDirectoryProvider({
       presence: user.presence,
       statusEmoji: user.statusEmoji,
       statusText: user.statusText,
+      timezone: user.timezone,
+      isBot: user.isBot,
       joinedAt: membership._creationTime,
       isMe: user._id === me?._id
     }))
     members.sort((a, b) => a.name.localeCompare(b.name))
 
-    const channelList: DirectoryChannel[] = (channels ?? []).map((channel) => ({
-      id: channel._id,
-      name: channel.name,
-      kind: channel.kind
-    }))
+    // DMs are `channels` rows too, but they're not addressable: `#`-autocomplete and
+    // the `#pill` link to a channel by name, and a conversation has neither a name
+    // nor a place in the tree. `channels.listBySlug` already excludes them; this is
+    // the type-level half of the same rule.
+    const channelList: DirectoryChannel[] = (channels ?? [])
+      .filter((channel) => channel.kind !== 'dm')
+      .map((channel) => ({
+        id: channel._id,
+        name: channel.name,
+        kind: channel.kind as DirectoryChannel['kind']
+      }))
 
     const byUser = new Map(members.map((member) => [member.userId, member]))
     const byChannel = new Map(channelList.map((channel) => [channel.id, channel]))
@@ -58,13 +66,14 @@ export function WorkspaceDirectoryProvider({
 
     return {
       slug,
+      workspaceId,
       canModerate: mine ? mine.role !== 'member' : false,
       members,
       channels: channelList,
       memberById: (userId) => byUser.get(userId),
       channelById: (channelId) => byChannel.get(channelId)
     }
-  }, [rows, channels, me?._id, slug])
+  }, [rows, channels, me?._id, slug, workspaceId])
 
   return (
     <WorkspaceDirectoryContext.Provider value={value}>

@@ -25,7 +25,7 @@ import {
   WifiSlash
 } from '@phosphor-icons/react'
 import { useWorkspaceDirectory } from '@renderer/components/chat/workspace-directory-context'
-import { Avatar } from '@renderer/components/common/avatar'
+import { Avatar, FALLBACK_AVATAR_COLOR } from '@renderer/components/common/avatar'
 import { sameTrack } from '@renderer/lib/track-ref'
 import {
   ContextMenu,
@@ -144,7 +144,7 @@ function QualityBadge({ participant }: { participant: Participant }): React.JSX.
   if (quality === ConnectionQuality.Poor) {
     return (
       <Tip label="Poor connection">
-        <span className="flex size-5 items-center justify-center rounded bg-black/60 text-amber-400 backdrop-blur">
+        <span className="flex size-5 items-center justify-center rounded bg-black/60 text-warning backdrop-blur">
           <WifiLow className="size-3.5" weight="bold" />
         </span>
       </Tip>
@@ -355,7 +355,7 @@ export function VoiceTile({
       ) : (
         <Avatar
           initials={initialsOf(name)}
-          color={member?.color ?? '#5865f2'}
+          color={member?.color ?? FALLBACK_AVATAR_COLOR}
           image={member?.avatarUrl}
           className="size-16 text-xl"
         />
@@ -375,11 +375,7 @@ export function VoiceTile({
             )}
             {hasScreenAudio ? (
               <Tip label="Sharing audio">
-                <SpeakerHigh
-                  className="size-3 text-emerald-400"
-                  weight="fill"
-                  aria-label="Audio on"
-                />
+                <SpeakerHigh className="size-3 text-success" weight="fill" aria-label="Audio on" />
               </Tip>
             ) : (
               <Tip label="No audio shared">

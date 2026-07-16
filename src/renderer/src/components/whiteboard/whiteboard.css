@@ -1,0 +1,71 @@
+/*
+ * Excalidraw, themed from OUR variables.
+ *
+ * Excalidraw ships its design system as CSS custom properties, so this **remaps its
+ * variables** rather than fighting its rules with `!important` — the same approach
+ * `page-editor.css` takes with BlockNote, and it survives their upgrades because we're
+ * using the API they expose rather than overriding internals. Every value below is a
+ * `var(--…)` from `globals.css`; nothing here is a literal colour.
+ *
+ * TWO things this file must NOT do, both learned the hard way:
+ *
+ *  1. **Don't touch the CANVAS — only the chrome.** Excalidraw's dark mode is
+ *     `--theme-filter: invert(93%) hue-rotate(180deg)` applied to the canvas: it renders
+ *     the scene *light* and inverts the whole bitmap. So any colour we put on the canvas
+ *     comes back flipped — our dark `--card` became a pale grey, and every shape's colour
+ *     inverted with it (a blue rectangle rendering as orange). The filter doesn't reach
+ *     the toolbar/panels/dialogs, which is why theming those is safe and theming the canvas
+ *     is not. `_zinx` themes nothing here and just passes `theme` — for exactly this reason.
+ *
+ *  2. **Don't forget `.theme--dark`.** Excalidraw declares its defaults on `.excalidraw`
+ *     and then *overrides* them on `.excalidraw.theme--dark` — which is specificity (0,2,0)
+ *     against our (0,1,0). Scoping only to `.excalidraw` means every override below is
+ *     silently discarded in dark mode. Hence the doubled selector.
+ */
+.excalidraw,
+.excalidraw.theme--dark {
+  /* Accent — used for active tools, selection, focus. */
+  --color-primary: var(--primary);
+  --color-primary-darker: var(--primary);
+  --color-primary-darkest: var(--primary);
+  --color-primary-light: var(--accent);
+  --color-primary-contrast-offset: var(--accent);
+
+  /* Surfaces: `--island-bg-color` is every floating panel (toolbar, panels, menus). */
+  --island-bg-color: var(--card);
+  --default-bg-color: var(--background);
+  --sidebar-bg-color: var(--sidebar);
+  --sidebar-border-color: var(--sidebar-border);
+  --popup-bg-color: var(--popover);
+  --popup-secondary-bg-color: var(--muted);
+
+  /* Text + icons. */
+  --text-primary-color: var(--foreground);
+  --popup-text-color: var(--popover-foreground);
+  --icon-fill-color: var(--foreground);
+  --icon-green-fill-color: var(--foreground);
+
+  /* Inputs. */
+  --input-bg-color: var(--background);
+  --input-border-color: var(--border);
+  --input-hover-bg-color: var(--accent);
+  --input-label-color: var(--muted-foreground);
+
+  /* Buttons. */
+  --button-hover-bg: var(--accent);
+  --button-active-bg: var(--accent);
+  --button-active-border: var(--ring);
+
+  --dialog-border-color: var(--border);
+  --select-highlight-color: var(--ring);
+  --border-radius-md: var(--radius);
+  --border-radius-lg: var(--radius);
+}
+
+/* Our typeface in the CHROME (menus, labels, dialogs). Deliberately not the canvas text
+   tool — that has its own hand-drawn/normal font choice, which belongs to the drawing. */
+.excalidraw,
+.excalidraw .Island,
+.excalidraw .Dialog {
+  font-family: var(--font-sans);
+}

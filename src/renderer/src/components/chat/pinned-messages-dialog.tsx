@@ -2,7 +2,7 @@ import { useQuery } from 'convex-helpers/react/cache/hooks'
 import { PushPin } from '@phosphor-icons/react'
 import { api } from '@convex/_generated/api'
 import type { Id } from '@convex/_generated/dataModel'
-import { Avatar } from '@renderer/components/common/avatar'
+import { Avatar, FALLBACK_AVATAR_COLOR } from '@renderer/components/common/avatar'
 import { MarkdownMessage } from '@renderer/components/chat/markdown-message'
 import {
   Dialog,
@@ -91,7 +91,7 @@ export function PinnedMessagesDialog({
                       >
                         <Avatar
                           initials={initialsOf(name)}
-                          color={message.author?.color ?? '#5865f2'}
+                          color={message.author?.color ?? FALLBACK_AVATAR_COLOR}
                           image={message.author?.avatarUrl}
                           className="mt-0.5 size-8 text-xs"
                         />

@@ -3,10 +3,12 @@ import type { FunctionReturnType } from 'convex/server'
 import { Users, X } from '@phosphor-icons/react'
 import { api } from '@convex/_generated/api'
 import type { Id } from '@convex/_generated/dataModel'
-import { Avatar } from '@renderer/components/common/avatar'
+import { Avatar, FALLBACK_AVATAR_COLOR } from '@renderer/components/common/avatar'
 import { IconButton } from '@renderer/components/common/icon-button'
+import { UserProfilePopover } from '@renderer/components/chat/user-profile-popover'
 import { Spinner } from '@renderer/components/ui/spinner'
 import { presenceWithConnectivity } from '@renderer/lib/user-status'
+import { BotBadge } from '@renderer/components/chat/author-role-badge'
 import { useIsOnline } from '@renderer/store/presence-store'
 import { useUiStore } from '@renderer/store/ui-store'
 
@@ -92,19 +94,34 @@ function MemberRow({ member }: { member: Member }): React.JSX.Element {
   // Offline (grey) when their app isn't connected, else their chosen status.
   const isOnline = useIsOnline(member.user._id)
   return (
-    <div className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left transition-colors hover:bg-sidebar-accent">
-      <Avatar
-        initials={initialsOf(name)}
-        color={member.user.color ?? '#5865f2'}
-        image={member.user.avatarUrl}
-        presence={presenceWithConnectivity(member.user.presence, isOnline)}
-        ringClassName="ring-2 ring-sidebar"
-        className="size-8"
-      />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{name}</div>
-        <div className="truncate text-xs text-muted-foreground">{custom ?? member.user.email}</div>
+    // The row was inert. Clicking a person should do the obvious thing, and the
+    // profile card is already where "message them" lives — the same card the message
+    // list opens from an author's avatar, so it behaves identically in both places.
+    <UserProfilePopover
+      userId={member.user._id}
+      fallbackName={name}
+      fallbackColor={member.user.color ?? FALLBACK_AVATAR_COLOR}
+      fallbackAvatarUrl={member.user.avatarUrl}
+    >
+      <div className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left transition-colors hover:bg-sidebar-accent">
+        <Avatar
+          initials={initialsOf(name)}
+          color={member.user.color ?? FALLBACK_AVATAR_COLOR}
+          image={member.user.avatarUrl}
+          presence={presenceWithConnectivity(member.user.presence, isOnline)}
+          ringClassName="ring-2 ring-sidebar"
+          className="size-8"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-sm font-medium">{name}</span>
+            {member.user.isBot ? <BotBadge /> : null}
+          </div>
+          <div className="truncate text-xs text-muted-foreground">
+            {custom ?? member.user.email}
+          </div>
+        </div>
       </div>
-    </div>
+    </UserProfilePopover>
   )
 }

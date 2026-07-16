@@ -84,6 +84,26 @@ export interface ZinxApi {
   getInitialDeepLink: () => Promise<string | null>
   /** Subscribe to deep links opened while running. Returns an unsubscribe fn. */
   onDeepLink: (handler: (url: string) => void) => () => void
+  /** Repaint the native window buttons to match the theme (Windows/Linux). */
+  windowControls: {
+    minimize: () => Promise<void>
+    toggleMaximize: () => Promise<boolean>
+    close: () => Promise<void>
+    isMaximized: () => Promise<boolean>
+    onMaximizeChange: (handler: (maximized: boolean) => void) => () => void
+  }
+  /** Show an OS notification. `route` is handed back on click. */
+  notify: (payload: {
+    title: string
+    body: string
+    route?: string
+    silent?: boolean
+    tag?: string
+  }) => Promise<boolean>
+  /** The user clicked a notification: its `route`. Returns an unsubscribe fn. */
+  onNotificationClick: (handler: (route: string) => void) => () => void
+  /** Unread badge on the dock/taskbar. */
+  setBadgeCount: (count: number) => Promise<void>
 }
 
 declare global {

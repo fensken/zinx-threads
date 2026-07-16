@@ -29,7 +29,11 @@ function WorkspacesPage(): React.JSX.Element {
   const hasWorkspaces = list.length > 0
 
   return (
-    <div className="flex min-h-dvh flex-col bg-sidebar">
+    // `min-h-full` + its own scroller, NOT `min-h-dvh`: the custom title bar means the
+    // app's content box is `100dvh` minus the title bar, and asking for a full viewport
+    // height inside it overflows a container that clips. Nothing above this scrolls, so
+    // with enough workspaces the bottom of the list was simply unreachable.
+    <div className="flex min-h-full flex-col overflow-y-auto bg-sidebar">
       <header className="flex items-center justify-between px-6 py-4">
         <LogoWordmark />
         {/* Full account nav — status, edit profile, appearance, sign out — even

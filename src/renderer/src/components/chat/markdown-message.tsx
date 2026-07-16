@@ -44,7 +44,7 @@ export const MarkdownMessage = memo(function MarkdownMessage({
   return (
     <div
       className={cn(
-        'text-[0.9375rem] leading-[1.45] break-words text-foreground/90',
+        'text-[0.9375rem] leading-[1.45] break-words text-foreground',
         edited && '[&>p:last-child]:inline'
       )}
     >

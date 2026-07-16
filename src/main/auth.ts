@@ -210,7 +210,7 @@ async function refresh(): Promise<boolean> {
 
 /** Return a valid access token, refreshing when it's within a minute of expiry (or when
  *  Convex forces it). Null when there's no session or the refresh failed. */
-async function getToken(forceRefresh: boolean): Promise<string | null> {
+export async function getToken(forceRefresh: boolean): Promise<string | null> {
   ensureLoaded()
   if (!session) return null
   const expiry = tokenExpiryMs(session.accessToken)

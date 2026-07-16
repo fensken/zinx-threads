@@ -4,6 +4,7 @@ import {
   MENTION_GROUPS,
   MENTION_PREFIX,
   parseMentionHref,
+  SILENT_DIRECTIVE_ID,
   type MentionKind
 } from '@renderer/lib/mention'
 import type { SuggestionApplyContext, SuggestionEntry } from '@renderer/lib/tiptap-suggestion'
@@ -93,7 +94,7 @@ export interface MentionMember {
 export interface MentionChannel {
   id: string
   name: string
-  kind: 'chat' | 'voice' | 'page' | 'kanban'
+  kind: 'chat' | 'voice' | 'page' | 'kanban' | 'whiteboard'
 }
 
 /** Replace the trigger + query with a mention pill, then a trailing space. */
@@ -150,7 +151,22 @@ export function userMentionEntries(
     apply: insertMention('group', group.id, group.label)
   }))
 
-  return [...people, ...groups]
+  // `@silent` is a directive, not a ping: it sends the message without notifying anyone (even
+  // people it @-mentions). Offered to everyone, matched on "silent".
+  const directives: SuggestionEntry[] = matches(query, 'silent')
+    ? [
+        {
+          id: 'directive:silent',
+          label: 'silent',
+          description: 'Send without notifying anyone',
+          group: 'Options',
+          icon: 'silent' as const,
+          apply: insertMention('directive', SILENT_DIRECTIVE_ID, 'silent')
+        }
+      ]
+    : []
+
+  return [...people, ...groups, ...directives]
 }
 
 /** `#` — any channel in the workspace, shown with its kind icon (as `zinx-os`
@@ -176,5 +192,6 @@ export const CHANNEL_KIND_LABEL: Record<MentionChannel['kind'], string> = {
   chat: 'Chat channel',
   voice: 'Voice channel',
   page: 'Page',
-  kanban: 'Board'
+  kanban: 'Board',
+  whiteboard: 'Whiteboard'
 }

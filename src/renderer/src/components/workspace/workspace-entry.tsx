@@ -10,7 +10,7 @@ export function WorkspaceEntry(): React.JSX.Element {
 
   if (workspaces === undefined) {
     return (
-      <div className="flex h-dvh items-center justify-center bg-sidebar">
+      <div className="flex h-full items-center justify-center bg-sidebar">
         <Spinner className="size-6 text-muted-foreground" />
       </div>
     )

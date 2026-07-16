@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useMutation } from 'convex/react'
 import { api } from '@convex/_generated/api'
 import { useAppAuth } from '@renderer/lib/use-app-auth'
+import { detectTimeZone } from '@renderer/lib/timezone'
 
 /** Upserts the signed-in WorkOS user into the Convex `users` table (idempotent).
  *  Rendered only inside <Authenticated>, so `useAppAuth` + the mutation are safe. */
@@ -15,7 +16,10 @@ export function UserHydrator(): null {
     void store({
       email: user.email,
       name: name || undefined,
-      avatarUrl: user.profilePictureUrl ?? undefined
+      avatarUrl: user.profilePictureUrl ?? undefined,
+      // Only ever fills an EMPTY zone (see `users.store`) — this is how a new user
+      // gets one without being asked, not a per-session overwrite.
+      timezone: detectTimeZone()
     })
   }, [user?.email, user?.firstName, user?.lastName, user?.profilePictureUrl, store])
 

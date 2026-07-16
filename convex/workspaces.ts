@@ -134,8 +134,16 @@ export const slugAvailable = query({
  *  be free (the dialog advises before submitting); omitted, we derive one and
  *  auto-suffix on collision. */
 export const create = mutation({
-  args: { name: v.string(), slug: v.optional(v.string()) },
-  handler: async (ctx, { name, slug: rawSlug }) => {
+  args: {
+    name: v.string(),
+    slug: v.optional(v.string()),
+    /** The team's clock (IANA). Defaulted from the creator's browser and asked for
+     *  at creation, because an event is authored in it — a workspace with no zone
+     *  would have to guess, and guessing is what silently shifts a standup by five
+     *  hours. */
+    timezone: v.optional(v.string())
+  },
+  handler: async (ctx, { name, slug: rawSlug, timezone }) => {
     const user = await requireUser(ctx)
     await rateLimiter.limit(ctx, 'createWorkspace', { key: user._id, throws: true })
     const trimmed = name.trim()
@@ -165,7 +173,8 @@ export const create = mutation({
       slug,
       ownerId: user._id,
       inviteCode: randomCode(8),
-      icon: await initials(trimmed)
+      icon: await initials(trimmed),
+      timezone
     })
     await ctx.db.insert('workspaceMembers', {
       workspaceId,
@@ -227,9 +236,10 @@ export const update = mutation({
     name: v.optional(v.string()),
     slug: v.optional(v.string()),
     icon: v.optional(v.string()),
-    color: v.optional(v.string())
+    color: v.optional(v.string()),
+    timezone: v.optional(v.string())
   },
-  handler: async (ctx, { workspaceId, name, slug, icon, color }) => {
+  handler: async (ctx, { workspaceId, name, slug, icon, color, timezone }) => {
     const user = await requireUser(ctx)
     const membership = await getMembership(ctx, workspaceId, user._id)
     if (!membership || (membership.role !== 'owner' && membership.role !== 'admin')) {
@@ -238,7 +248,8 @@ export const update = mutation({
     const workspace = await ctx.db.get(workspaceId)
     if (!workspace) throw new ConvexError('Workspace not found')
 
-    const patch: Partial<Pick<Doc<'workspaces'>, 'name' | 'slug' | 'icon' | 'color'>> = {}
+    const patch: Partial<Pick<Doc<'workspaces'>, 'name' | 'slug' | 'icon' | 'color' | 'timezone'>> =
+      {}
     if (name !== undefined) {
       const trimmed = name.trim()
       if (trimmed.length < 2) throw new ConvexError('Workspace name is too short')
@@ -257,6 +268,7 @@ export const update = mutation({
     }
     if (icon !== undefined) patch.icon = icon
     if (color !== undefined) patch.color = color
+    if (timezone !== undefined) patch.timezone = timezone.trim().slice(0, 64)
     await ctx.db.patch(workspaceId, patch)
     return { slug: patch.slug ?? workspace.slug }
   }
@@ -276,7 +288,7 @@ export const setLogo = mutation({
     const workspace = await ctx.db.get(workspaceId)
     if (!workspace) return
     const previousKey = workspace.imageKey
-    await markUploadUsed(ctx, key)
+    await markUploadUsed(ctx, user._id, key)
     await ctx.db.patch(workspaceId, { imageKey: key, imageUrl: await objectUrl(key) })
     if (previousKey && previousKey !== key) {
       try {

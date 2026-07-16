@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { FileText, Kanban } from '@phosphor-icons/react'
+import { FileText, Kanban, PenNib } from '@phosphor-icons/react'
 import { useLocalStore, type LocalChannelKind } from '@renderer/store/local-store'
 import {
   Dialog,
@@ -17,7 +17,8 @@ import { cn } from '@renderer/lib/utils'
 
 const KINDS: { kind: LocalChannelKind; label: string; hint: string; Icon: typeof FileText }[] = [
   { kind: 'page', label: 'Page', hint: 'A Notion-style doc', Icon: FileText },
-  { kind: 'kanban', label: 'Board', hint: 'A kanban board', Icon: Kanban }
+  { kind: 'kanban', label: 'Board', hint: 'A kanban board', Icon: Kanban },
+  { kind: 'whiteboard', label: 'Whiteboard', hint: 'An Excalidraw canvas', Icon: PenNib }
 ]
 
 /** Create an offline page or board — the offline counterpart of the live

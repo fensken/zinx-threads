@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from 'convex-helpers/react/cache/hooks'
-import { ArrowLeft, ChatsCircle } from '@phosphor-icons/react'
+import { ArrowLeft, Scribble } from '@phosphor-icons/react'
 import { api } from '@convex/_generated/api'
 import type { Id } from '@convex/_generated/dataModel'
 import { ChannelKindIcon } from '@renderer/components/chat/channel-kind-icon'
@@ -50,7 +50,7 @@ export function RealThreadPage({
         >
           <ArrowLeft className="size-5" />
         </IconButton>
-        <ChatsCircle className="size-5 shrink-0 text-muted-foreground" />
+        <Scribble className="size-5 shrink-0 text-muted-foreground" />
         <span className="truncate font-semibold">{thread.name}</span>
         <span className="mx-1 hidden h-4 w-px shrink-0 bg-border md:block" />
         <span className="hidden min-w-0 items-center gap-1 truncate text-sm text-muted-foreground md:flex">
@@ -66,6 +66,8 @@ export function RealThreadPage({
         name={thread.name}
         replyCount={thread.replyCount}
         canModerate={thread.canModerate}
+        canPost={thread.canPost}
+        postingPolicy={thread.postingPolicy}
       />
     </div>
   )

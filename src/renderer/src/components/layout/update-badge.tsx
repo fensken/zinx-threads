@@ -37,7 +37,7 @@ export function UpdateBadge(): React.JSX.Element | null {
         if (ready) void platform.updates.install()
         else if (state.url) platform.openExternal(state.url)
       }}
-      className="app-no-drag flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-primary/15 px-2 text-xs font-medium text-primary transition-colors hover:bg-primary/25"
+      className="app-no-drag ml-auto mr-1 flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-primary/15 px-2 text-xs font-medium text-primary transition-colors hover:bg-primary/25"
     >
       <Icon className="size-4 shrink-0" weight={ready ? 'bold' : 'regular'} />
       <span className="whitespace-nowrap">{label}</span>

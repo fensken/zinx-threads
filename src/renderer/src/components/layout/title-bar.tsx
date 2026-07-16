@@ -120,14 +120,15 @@ export function TitleBar(): React.JSX.Element | null {
         </button>
       </div>
 
-      {/* Right cluster: the "Update available" pill sits just LEFT of the window action
-          buttons. On macOS (no buttons on this side) it's flush to the right edge. */}
-      <div className="flex shrink-0 items-center gap-1 pl-1">
-        <UpdateBadge />
-        {/* Windows/Linux: our minimise / maximise / close, flush to the corner. macOS:
-            renders nothing (the traffic lights are already at the other end). */}
-        <WindowControls />
-      </div>
+      {/* The "Update available" pill sits just LEFT of the window buttons (it carries
+          `ml-auto`, so it hugs the right edge next to them). It must NOT wrap
+          `WindowControls` — those need to stay a direct child of the bar so `self-stretch`
+          fills the full bar height and they sit flush in the corner. */}
+      <UpdateBadge />
+
+      {/* Windows/Linux: our minimise / maximise / close, flush to the corner. macOS:
+          renders nothing (the traffic lights are already at the other end). */}
+      <WindowControls />
     </div>
   )
 }

@@ -7,6 +7,7 @@ import {
   Moon,
   Palette,
   Plugs,
+  Power,
   Robot,
   Sun,
   TextAa,
@@ -32,6 +33,7 @@ import { useSettingsStore, type UiScale } from '@renderer/store/settings-store'
 import { useUiStore, type SettingsSection } from '@renderer/store/ui-store'
 import { Spinner } from '@renderer/components/ui/spinner'
 import { AccountControls } from '@renderer/components/settings/account-controls'
+import { SystemPrefsSettings } from '@renderer/components/settings/system-prefs-settings'
 import { DeveloperSettings } from '@renderer/components/settings/developer-settings'
 import { BotsTab } from '@renderer/components/settings/bots-settings'
 import {
@@ -124,6 +126,10 @@ function SettingsPanes({
     ...(authEnabled ? [{ id: 'account' as const, label: 'My Account', Icon: UserCircle }] : []),
     { id: 'appearance', label: 'Appearance', Icon: Palette },
     { id: 'notifications', label: 'Notifications', Icon: BellRinging },
+    // Desktop only — launch-at-startup + run-in-background (tray). Web has neither.
+    ...(platform.systemPrefs.supported()
+      ? [{ id: 'startup' as const, label: 'Startup & tray', Icon: Power }]
+      : []),
     ...(authEnabled ? [{ id: 'developers' as const, label: 'Developers', Icon: Plugs }] : []),
     // Desktop only — on the web there's no data folder to open, so the section would be
     // an empty room.
@@ -199,6 +205,7 @@ function SectionContent({
   if (active === 'account') return <AccountControls />
   if (active === 'appearance') return <AppearanceSettings />
   if (active === 'notifications') return <NotificationSettings />
+  if (active === 'startup') return <SystemPrefsSettings />
   if (active === 'developers') return <DeveloperSettings />
   if (active === 'advanced') return <AdvancedSettings />
 

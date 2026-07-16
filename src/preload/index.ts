@@ -119,7 +119,29 @@ const api = {
   },
 
   /** Unread count on the dock (macOS) / taskbar (Linux). A no-op on Windows. */
-  setBadgeCount: (count: number): Promise<void> => ipcRenderer.invoke('set-badge-count', count)
+  setBadgeCount: (count: number): Promise<void> => ipcRenderer.invoke('set-badge-count', count),
+
+  /** Desktop "lives in the tray" settings, Discord/Slack-style (see src/main/system-integration.ts).
+   *  `launchAtStartup` registers a login item with the OS; `runInBackground` makes closing the
+   *  window hide it to a tray icon and keep the app running until the user quits. */
+  systemPrefs: {
+    /** The current values — reads the OS login item + the persisted run-in-background flag. */
+    get: (): Promise<SystemPrefs> => ipcRenderer.invoke('system:get-prefs'),
+    /** Register/unregister the OS login item; resolves with the value the OS reports back. */
+    setLaunchAtStartup: (value: boolean): Promise<boolean> =>
+      ipcRenderer.invoke('system:set-open-at-login', value),
+    /** Enable/disable close-to-tray (creates/removes the tray icon); resolves with the new value. */
+    setRunInBackground: (value: boolean): Promise<boolean> =>
+      ipcRenderer.invoke('system:set-run-in-background', value)
+  }
+}
+
+/** Desktop launch-at-startup + run-in-background (tray) settings. */
+export interface SystemPrefs {
+  /** The app is registered to open when the user logs in. */
+  openAtLogin: boolean
+  /** Closing the window hides it to the tray instead of quitting. */
+  runInBackground: boolean
 }
 
 /** A shareable screen or window (thumbnail is a data URL). */

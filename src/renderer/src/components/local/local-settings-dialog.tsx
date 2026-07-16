@@ -27,6 +27,7 @@ import { ConfirmDialog } from '@renderer/components/common/confirm-dialog'
 import { UploadableAvatar } from '@renderer/components/common/uploadable-avatar'
 import { IconPickerDialog } from '@renderer/components/pickers/icon-picker-dialog'
 import { WorkspaceGlyph } from '@renderer/components/workspace/workspace-glyph'
+import { SystemPrefsSettings } from '@renderer/components/settings/system-prefs-settings'
 import { fileToAvatarDataUrl } from '@renderer/lib/local-avatar'
 import { platform } from '@renderer/lib/platform'
 import { cn } from '@renderer/lib/utils'
@@ -265,6 +266,8 @@ function AppearancePane(): React.JSX.Element {
           ))}
         </div>
       </Section>
+      {/* Launch-at-startup + run-in-background (tray) — desktop only, hidden on web. */}
+      {platform.systemPrefs.supported() ? <SystemPrefsSettings /> : null}
     </div>
   )
 }

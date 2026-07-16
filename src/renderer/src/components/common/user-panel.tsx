@@ -50,6 +50,7 @@ export function UserPanel(): React.JSX.Element {
       color={me?.color ?? FALLBACK_AVATAR_COLOR}
       image={me?.avatarUrl ?? user?.profilePictureUrl}
       userId={me?._id ?? ''}
+      timezone={me?.timezone}
       status={normalizeStatus(me?.presence)}
       statusEmoji={me?.statusEmoji}
       statusText={me?.statusText}
@@ -67,6 +68,7 @@ function UserPanelView({
   color,
   image,
   userId,
+  timezone,
   status,
   statusEmoji,
   statusText,
@@ -80,6 +82,7 @@ function UserPanelView({
   color: string
   image?: string | null
   userId: string
+  timezone?: string
   status: UserStatus
   statusEmoji?: string
   statusText?: string
@@ -142,6 +145,7 @@ function UserPanelView({
           color={color}
           image={image}
           userId={userId}
+          timezone={timezone}
           status={status}
           statusEmoji={statusEmoji}
           statusText={statusText}

@@ -104,6 +104,19 @@ export interface ZinxApi {
   onNotificationClick: (handler: (route: string) => void) => () => void
   /** Unread badge on the dock/taskbar. */
   setBadgeCount: (count: number) => Promise<void>
+  /** Desktop launch-at-startup + run-in-background (tray) settings. */
+  systemPrefs: SystemPrefsBridge
+}
+
+/** Desktop launch-at-startup + run-in-background (tray) settings. */
+export interface SystemPrefs {
+  openAtLogin: boolean
+  runInBackground: boolean
+}
+export interface SystemPrefsBridge {
+  get: () => Promise<SystemPrefs>
+  setLaunchAtStartup: (value: boolean) => Promise<boolean>
+  setRunInBackground: (value: boolean) => Promise<boolean>
 }
 
 declare global {

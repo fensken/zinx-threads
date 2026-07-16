@@ -49,7 +49,9 @@ export function ChannelComposer({
         onSubmit={onSend}
         onUpload={onUpload}
         onRemoveUpload={onRemoveUpload}
-        autoFocus={Boolean(replyTo)}
+        // Focus the box on mount (opening a channel or thread) and again whenever a
+        // reply target is set/cleared — the composer isn't remounted between those.
+        focusKey={replyTo?._id ?? 'compose'}
         expanded={expanded}
         onExpandedChange={setExpanded}
       >

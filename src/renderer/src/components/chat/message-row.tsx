@@ -16,6 +16,7 @@ import { UserProfilePopover } from '@renderer/components/chat/user-profile-popov
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 import { formatDateSeparator, formatFullTimestamp, formatTimestamp } from '@renderer/lib/date-time'
 import { initialsOf } from '@renderer/lib/initials'
+import { avatarImageFor } from '@renderer/lib/app-logo'
 import { stripMentionLinks } from '@renderer/lib/mention'
 import { copyToClipboard } from '@renderer/lib/clipboard'
 import { gifSrc } from '@renderer/lib/message-preview'
@@ -259,7 +260,7 @@ export function MessageRow({
             <Avatar
               initials={initialsOf(name)}
               color={message.author?.color ?? FALLBACK_AVATAR_COLOR}
-              image={message.author?.avatarUrl}
+              image={avatarImageFor(message.author?.avatarUrl, message.author?.isBot)}
               presence={presenceWithConnectivity(message.author?.presence, authorOnline)}
               className="mt-0.5 size-10 shrink-0 text-sm"
               ringClassName="ring-2 ring-card"

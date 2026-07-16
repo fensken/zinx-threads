@@ -252,7 +252,44 @@ export const platform = {
   /** Unread count on the dock (macOS) / taskbar (Linux). No-op on Windows and web. */
   setBadgeCount(count: number): void {
     if (isElectron && window.api?.setBadgeCount) void window.api.setBadgeCount(count)
+  },
+
+  /**
+   * Desktop "lives in the tray" settings, Discord/Slack-style (see
+   * src/main/system-integration.ts). Web has no login item or tray — `supported()` is
+   * false there, so the settings UI hides the whole section rather than showing dead toggles.
+   */
+  systemPrefs: {
+    /** Only meaningful on desktop with the bridge loaded. */
+    supported(): boolean {
+      return isElectron && Boolean(window.api?.systemPrefs)
+    },
+    /** Current values, or null on web / when the bridge is absent. */
+    get(): Promise<SystemPrefs | null> {
+      if (isElectron && window.api?.systemPrefs) return window.api.systemPrefs.get()
+      return Promise.resolve(null)
+    },
+    /** Register/unregister the OS login item; resolves with the value the OS reports. */
+    setLaunchAtStartup(value: boolean): Promise<boolean> {
+      if (isElectron && window.api?.systemPrefs) {
+        return window.api.systemPrefs.setLaunchAtStartup(value)
+      }
+      return Promise.resolve(false)
+    },
+    /** Enable/disable close-to-tray; resolves with the new value. */
+    setRunInBackground(value: boolean): Promise<boolean> {
+      if (isElectron && window.api?.systemPrefs) {
+        return window.api.systemPrefs.setRunInBackground(value)
+      }
+      return Promise.resolve(false)
+    }
   }
+}
+
+/** Desktop launch-at-startup + run-in-background (tray) settings. */
+export interface SystemPrefs {
+  openAtLogin: boolean
+  runInBackground: boolean
 }
 
 /** The app draws its own title bar on desktop; the web build has the browser's chrome

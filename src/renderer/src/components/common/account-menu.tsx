@@ -75,6 +75,7 @@ export function AccountMenu(): React.JSX.Element {
           color={me?.color ?? FALLBACK_AVATAR_COLOR}
           image={me?.avatarUrl ?? user?.profilePictureUrl}
           userId={me?._id ?? ''}
+          timezone={me?.timezone}
           status={status}
           statusEmoji={me?.statusEmoji}
           statusText={me?.statusText}

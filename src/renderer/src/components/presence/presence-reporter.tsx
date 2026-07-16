@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useQuery } from 'convex-helpers/react/cache/hooks'
-import usePresence from '@convex-dev/presence/react'
 import { api } from '@convex/_generated/api'
+import { useKeepAlivePresence } from '@renderer/lib/use-keep-alive-presence'
 import { usePresenceStore } from '@renderer/store/presence-store'
 
 /** One global presence "room" — a user is online wherever their account is (across
@@ -10,18 +10,20 @@ import { usePresenceStore } from '@renderer/store/presence-store'
  *  the workspace you currently have open.) */
 const GLOBAL_ROOM = 'global'
 
-/** 2 minutes between heartbeats. A clean app close shows offline **instantly** (the
- *  hook fires a `sendBeacon` disconnect); a crash / force-quit / network drop times
- *  out at 2.5× = ~5 min. Cost is ~30 calls/hr per *actively-visible* user (heartbeats
- *  pause entirely when the window is backgrounded), which is negligible. Tune here. */
+/** 2 minutes between heartbeats. A clean app close shows offline **instantly** (a
+ *  `sendBeacon` disconnect on unload); a crash / force-quit / network drop times out at
+ *  2.5× = ~5 min. The heartbeat keeps firing while the window is minimised or hidden to
+ *  the tray, so a backgrounded app stays **online** (Discord/Slack behaviour) — see
+ *  `useKeepAlivePresence`; the desktop window's `backgroundThrottling: false` keeps the
+ *  timer on cadence while hidden. Cost is ~30 calls/hr per signed-in user — negligible. */
 const HEARTBEAT_INTERVAL_MS = 120_000
 
 /** Runs the presence heartbeat for the signed-in user and mirrors the room's live
  *  online set into `presence-store`. Renders nothing. */
 function PresenceReporter({ userId }: { userId: string }): null {
-  // Sends heartbeats + a graceful disconnect on tab close / background, and returns
-  // the room's live presence list (`undefined` until the first heartbeat lands).
-  const state = usePresence(api.presence, GLOBAL_ROOM, userId, HEARTBEAT_INTERVAL_MS)
+  // Heartbeats + a graceful disconnect only on real unload (not on background), and
+  // returns the room's live presence list (`undefined` until the first heartbeat lands).
+  const state = useKeepAlivePresence(api.presence, GLOBAL_ROOM, userId, HEARTBEAT_INTERVAL_MS)
   const set = usePresenceStore((store) => store.set)
 
   useEffect(() => {
@@ -40,5 +42,7 @@ function PresenceReporter({ userId }: { userId: string }): null {
 export function PresenceReporterMount(): React.JSX.Element | null {
   const me = useQuery(api.users.me)
   if (!me?._id) return null
-  return <PresenceReporter userId={me._id} />
+  // Key by user id so an account switch remounts the reporter → a fresh presence
+  // session (the old one is disconnected on unmount). See useKeepAlivePresence.
+  return <PresenceReporter key={me._id} userId={me._id} />
 }

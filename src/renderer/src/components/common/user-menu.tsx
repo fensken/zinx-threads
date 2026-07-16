@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import {
   CaretRight,
   Check,
+  Clock,
   Copy,
   PencilSimple,
   SignOut,
@@ -17,6 +18,8 @@ import {
   presenceForStatus,
   type UserStatus
 } from '@renderer/lib/user-status'
+import { localTimeLabel } from '@renderer/lib/timezone'
+import { useNow } from '@renderer/lib/use-now'
 import { cn } from '@renderer/lib/utils'
 import { copyToClipboard } from '@renderer/lib/clipboard'
 
@@ -27,6 +30,9 @@ export interface UserMenuProps {
   color: string
   image?: string | null
   userId: string
+  /** The signed-in user's IANA zone (`users.timezone`), so the menu can show their own
+   *  local time — a reassurance that the zone teammates see is set right. Absent → hidden. */
+  timezone?: string
   status: UserStatus
   statusEmoji?: string
   statusText?: string
@@ -53,6 +59,7 @@ export function UserMenu(props: UserMenuProps): React.JSX.Element {
     color,
     image,
     userId,
+    timezone,
     status,
     statusEmoji,
     statusText,
@@ -66,6 +73,8 @@ export function UserMenu(props: UserMenuProps): React.JSX.Element {
     submenuSide = 'right'
   } = props
 
+  // Ticks every 30s so the local-time line stays right while the menu is open.
+  const now = useNow().getTime()
   const [editing, setEditing] = useState(false)
   const [draftEmoji, setDraftEmoji] = useState<string | undefined>(statusEmoji)
   const [draftText, setDraftText] = useState(statusText ?? '')
@@ -201,6 +210,15 @@ export function UserMenu(props: UserMenuProps): React.JSX.Element {
           {hasCustom ? <PencilSimple className="size-3.5 text-muted-foreground" /> : null}
         </button>
       )}
+
+      {/* Your own local time — a quiet reassurance the zone teammates see is set right.
+          `useNow` keeps it ticking while the menu is open. */}
+      {timezone ? (
+        <div className="mb-1 flex items-center gap-2.5 px-2.5 py-1 text-xs text-muted-foreground">
+          <Clock className="size-3.5 shrink-0" />
+          <span className="truncate">{localTimeLabel(timezone, now)}</span>
+        </div>
+      ) : null}
 
       <Divider />
 

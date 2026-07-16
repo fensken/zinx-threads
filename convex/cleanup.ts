@@ -42,16 +42,21 @@ export const channel = internalMutation({
   handler: async (ctx, { channelId }) => {
     let more = false
 
+    // These three use the CHANNEL PREFIX of a compound index (`by_channel_thread_created`
+    // / `by_channel_workspace`) rather than a dedicated `by_channel` — the single-field
+    // index was dropped to save an index write on every message / notification / read
+    // (the three hottest write tables). Deletion doesn't care about the sort order the
+    // rest of the compound key imposes.
     const messages = await ctx.db
       .query('messages')
-      .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+      .withIndex('by_channel_thread_created', (q) => q.eq('channelId', channelId))
       .take(BATCH)
     for (const message of messages) await purgeMessage(ctx, message)
     if (messages.length === BATCH) more = true
 
     const notifications = await ctx.db
       .query('notifications')
-      .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+      .withIndex('by_channel_workspace', (q) => q.eq('channelId', channelId))
       .take(BATCH)
     for (const row of notifications) await ctx.db.delete(row._id)
     if (notifications.length === BATCH) more = true
@@ -65,7 +70,7 @@ export const channel = internalMutation({
 
     const reads = await ctx.db
       .query('channelReads')
-      .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+      .withIndex('by_channel_workspace', (q) => q.eq('channelId', channelId))
       .take(BATCH)
     for (const row of reads) await ctx.db.delete(row._id)
     if (reads.length === BATCH) more = true

@@ -8,6 +8,7 @@ import { IconButton } from '@renderer/components/common/icon-button'
 import { UserProfilePopover } from '@renderer/components/chat/user-profile-popover'
 import { Spinner } from '@renderer/components/ui/spinner'
 import { presenceWithConnectivity } from '@renderer/lib/user-status'
+import { avatarImageFor } from '@renderer/lib/app-logo'
 import { BotBadge } from '@renderer/components/chat/author-role-badge'
 import { useIsOnline } from '@renderer/store/presence-store'
 import { useUiStore } from '@renderer/store/ui-store'
@@ -107,7 +108,7 @@ function MemberRow({ member }: { member: Member }): React.JSX.Element {
         <Avatar
           initials={initialsOf(name)}
           color={member.user.color ?? FALLBACK_AVATAR_COLOR}
-          image={member.user.avatarUrl}
+          image={avatarImageFor(member.user.avatarUrl, member.user.isBot)}
           presence={presenceWithConnectivity(member.user.presence, isOnline)}
           ringClassName="ring-2 ring-sidebar"
           className="size-8"

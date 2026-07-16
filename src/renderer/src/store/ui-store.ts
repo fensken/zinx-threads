@@ -36,6 +36,7 @@ export type SettingsSection =
   | 'account'
   | 'appearance'
   | 'notifications'
+  | 'startup'
   | 'developers'
   | 'advanced'
   | 'ws-profile'

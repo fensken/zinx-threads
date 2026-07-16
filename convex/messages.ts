@@ -441,7 +441,27 @@ export const toggleReaction = mutation({
       return
     }
 
-    // Only enforce the cap when introducing a *new* emoji to this message.
+    // Enforce the distinct-emoji cap only when introducing a NEW emoji. The summary IS
+    // the list of distinct emoji, so for a message that already has one (every message
+    // born after the field existed — new ones start `reactions: []`) the cap check reads
+    // NOTHING; the reaction rows only get read for a legacy summary-less message, which
+    // is also the one case that needs them to seed the summary.
+    if (message.reactions) {
+      const known = message.reactions.some((r) => r.emoji === clean)
+      if (!known && message.reactions.length >= MAX_UNIQUE_REACTIONS) {
+        throw new ConvexError(
+          `A message can have at most ${MAX_UNIQUE_REACTIONS} different reactions`
+        )
+      }
+      await ctx.db.insert('messageReactions', { messageId, userId: user._id, emoji: clean })
+      await ctx.db.patch(messageId, {
+        reactions: applyReaction(message.reactions, clean, user._id, 'add')
+      })
+      return
+    }
+
+    // Legacy message with no summary yet — read the rows once to both cap-check and seed
+    // the summary (starting from an empty one would drop everyone else's reactions).
     const all: Doc<'messageReactions'>[] = await ctx.db
       .query('messageReactions')
       .withIndex('by_message', (q) => q.eq('messageId', messageId))
@@ -452,19 +472,9 @@ export const toggleReaction = mutation({
         `A message can have at most ${MAX_UNIQUE_REACTIONS} different reactions`
       )
     }
-
     await ctx.db.insert('messageReactions', { messageId, userId: user._id, emoji: clean })
-    // Keep the denormalised summary in step. `message.reactions` may be absent (a
-    // message written before the field existed) — rebuild it from the rows we just
-    // read rather than starting from an empty summary, which would drop everyone
-    // else's reactions the first time anyone touched an old message.
     await ctx.db.patch(messageId, {
-      reactions: applyReaction(
-        message.reactions ?? summarizeReactionRows(all),
-        clean,
-        user._id,
-        'add'
-      )
+      reactions: applyReaction(summarizeReactionRows(all), clean, user._id, 'add')
     })
   }
 })

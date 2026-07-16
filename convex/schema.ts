@@ -366,8 +366,9 @@ export default defineSchema({
   })
     .index('by_user_workspace', ['userId', 'workspaceId'])
     .index('by_user_channel', ['userId', 'channelId'])
-    .index('by_channel', ['channelId'])
     // A guest workspace leaving a shared channel drops its own read markers for it.
+    // Its `channelId` prefix also serves the channel cascade (`cleanup.ts`), so there's
+    // no separate `by_channel` — one fewer index write per read-mark (a hot write).
     .index('by_channel_workspace', ['channelId', 'workspaceId']),
 
   // The Inbox: one row per (recipient, message) written at send time — a
@@ -412,8 +413,9 @@ export default defineSchema({
     .index('by_user_read', ['userId', 'readAt'])
     // Cascades: a deleted message / channel drops its notifications.
     .index('by_message', ['messageId'])
-    .index('by_channel', ['channelId'])
-    // A guest workspace leaving a shared channel drops its notifications for it.
+    // A guest workspace leaving a shared channel drops its notifications for it; its
+    // `channelId` prefix also serves the channel cascade, so there's no separate
+    // `by_channel` — one fewer index write per notification (fan-out is up to 100/send).
     .index('by_channel_workspace', ['channelId', 'workspaceId'])
     // Removed from a private channel → their inbox rows for it go too. Without this, you'd
     // keep getting notifications for a channel you can no longer open, and clicking one
@@ -501,11 +503,13 @@ export default defineSchema({
       )
     )
   })
-    .index('by_channel', ['channelId'])
     .index('by_client_id', ['clientId'])
     // The channel's own message list. `threadId` sits in the middle so the query
     // can pin it to `undefined` and exclude thread replies — Convex indexes match
     // on optional fields, and our rules forbid `.filter()` on a query builder.
+    // Its `channelId` prefix also serves the channel cascade (`cleanup.ts`), so there's
+    // no separate `by_channel` — one fewer index write on every message (the hottest
+    // write table).
     .index('by_channel_thread_created', ['channelId', 'threadId', 'createdAt'])
     .index('by_thread_created', ['threadId', 'createdAt'])
     // Lets `listPinned` read a channel's pins directly instead of scanning it.

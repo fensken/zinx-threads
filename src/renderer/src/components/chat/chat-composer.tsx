@@ -90,6 +90,12 @@ interface ChatComposerProps {
   onChange?: (markdown: string) => void
   onCancel?: () => void
   autoFocus?: boolean
+  /** Edge-triggered focus: the editor grabs focus when it first mounts (opening a
+   *  channel/thread) AND every time this value changes. The channel composer passes
+   *  a key that changes when a reply target is set — the composer isn't remounted
+   *  then, so the caret would otherwise stay put. Distinct from `autoFocus`, which
+   *  only focuses at editor creation (edit-in-place). */
+  focusKey?: string | number
   /** Pre-fill the editor (edit-in-place, or a field's current value). Parsed via
    *  `markdownToHtml`. Read **once**, at mount. */
   initialMarkdown?: string
@@ -125,6 +131,7 @@ function ChatComposerRoot({
   onChange,
   onCancel,
   autoFocus,
+  focusKey,
   initialMarkdown,
   expanded: expandedProp,
   onExpandedChange,
@@ -395,6 +402,14 @@ function ChatComposerRoot({
   useEffect(() => {
     if (autoFocus && editor) editor.commands.focus('end')
   }, [autoFocus, editor])
+
+  // Edge-triggered focus: fires when the editor is first created (opening a channel
+  // or thread → focus the composer) and again whenever `focusKey` changes (a reply
+  // target is set/cleared). One effect covers both because the editor's creation is
+  // itself a change of this effect's deps.
+  useEffect(() => {
+    if (focusKey !== undefined && editor) editor.commands.focus('end')
+  }, [focusKey, editor])
 
   const active = useEditorState({
     editor,

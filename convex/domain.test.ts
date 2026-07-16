@@ -58,7 +58,7 @@ describe('cascade deletes', () => {
     await t.run(async (ctx) => {
       const messages = await ctx.db
         .query('messages')
-        .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+        .withIndex('by_channel_thread_created', (q) => q.eq('channelId', channelId))
         .collect()
       const reactions = await ctx.db
         .query('messageReactions')
@@ -145,7 +145,7 @@ describe('cascade deletes', () => {
         .collect()
       const messages = await ctx.db
         .query('messages')
-        .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+        .withIndex('by_channel_thread_created', (q) => q.eq('channelId', channelId))
         .collect()
       expect(await ctx.db.get(workspaceId)).toBeNull()
       expect(channels).toHaveLength(0)

@@ -18,6 +18,7 @@ import { useWorkspaceDirectory } from '@renderer/components/chat/workspace-direc
 import { Popover, PopoverContent, PopoverTrigger } from '@renderer/components/ui/popover'
 import { errorMessage } from '@renderer/lib/convex-error'
 import { initialsOf } from '@renderer/lib/initials'
+import { avatarImageFor } from '@renderer/lib/app-logo'
 import { localTimeLabel } from '@renderer/lib/timezone'
 import { useNow } from '@renderer/lib/use-now'
 import { normalizeStatus, presenceWithConnectivity, STATUS_LABEL } from '@renderer/lib/user-status'
@@ -102,7 +103,7 @@ export function UserProfilePopover({
           <Avatar
             initials={initialsOf(name)}
             color={color}
-            image={avatarUrl}
+            image={avatarImageFor(avatarUrl, member?.isBot)}
             presence={presenceWithConnectivity(member?.presence, isOnline)}
             className="size-14 text-base"
             ringClassName="ring-2 ring-popover"

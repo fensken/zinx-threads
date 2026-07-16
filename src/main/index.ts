@@ -6,6 +6,7 @@ import { registerAuthIpc } from './auth'
 import { registerLocalDataIpc } from './local-data'
 import { registerNotificationIpc } from './notifications'
 import { initAutoUpdater } from './updater'
+import { registerSystemIntegration, shouldHideOnClose } from './system-integration'
 import { BRAND, DEEP_LINK_SCHEME, TITLE_BAR_HEIGHT } from '../shared/brand'
 
 let mainWindow: BrowserWindow | null = null
@@ -119,12 +120,27 @@ function createWindow(): void {
       // zinx-threads security non-negotiables (see CLAUDE.md) — do not disable.
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      // Keep timers running at full cadence while the window is minimised or hidden to
+      // the tray — Chromium otherwise throttles background timers, which would stretch
+      // the ~2min presence heartbeat toward its 5min timeout and drop "online" state
+      // (and delay background message/notification handling). See useKeepAlivePresence.
+      backgroundThrottling: false
     }
   })
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
+  })
+
+  // Run-in-background (Discord/Slack): when the setting is on, closing the window HIDES it to the
+  // tray and keeps the app running, rather than quitting. A genuine quit (tray → Quit, Cmd+Q, the
+  // updater) flips `shouldHideOnClose` to false so this passes through. See system-integration.ts.
+  mainWindow.on('close', (event) => {
+    if (shouldHideOnClose()) {
+      event.preventDefault()
+      mainWindow?.hide()
+    }
   })
 
   mainWindow.on('closed', () => {
@@ -290,6 +306,9 @@ app.whenReady().then(() => {
   // shows it and routes the click back.
   registerNotificationIpc(() => mainWindow)
 
+  // "Launch at startup" + "Run in background" (tray). See src/main/system-integration.ts.
+  registerSystemIntegration(() => mainWindow)
+
   configureMediaPermissions()
 
   // Default open or close DevTools by F12 in development
@@ -411,9 +430,14 @@ app.whenReady().then(() => {
   initAutoUpdater()
 
   app.on('activate', function () {
-    // On macOS it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    // Clicking the dock icon reopens the app. If the window is only HIDDEN (run-in-background
+    // close-to-tray), show it; if it was actually closed, recreate it.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show()
+      mainWindow.focus()
+    } else if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow()
+    }
   })
 })
 

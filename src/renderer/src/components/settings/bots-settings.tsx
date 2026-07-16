@@ -20,6 +20,7 @@ import {
 import { ChannelKindIcon } from '@renderer/components/chat/channel-kind-icon'
 import { copyToClipboard } from '@renderer/lib/clipboard'
 import { initialsOf } from '@renderer/lib/initials'
+import { avatarImageFor } from '@renderer/lib/app-logo'
 import { errorMessage } from '@renderer/lib/convex-error'
 import { cn } from '@renderer/lib/utils'
 
@@ -176,7 +177,7 @@ function BotCard({
         <Avatar
           initials={initialsOf(bot.name)}
           color={bot.color ?? FALLBACK_AVATAR_COLOR}
-          image={bot.avatarUrl}
+          image={avatarImageFor(bot.avatarUrl, true)}
           className="size-8"
         />
         <div className="min-w-0 flex-1">

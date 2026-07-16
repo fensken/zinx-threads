@@ -165,8 +165,11 @@ export function PageEditor({
 
         <div className={cn('zinx-editor mx-auto max-w-3xl pb-24', cover ? '' : 'pt-12')}>
           {/* `mb-4` is the breathing room between the title and the first block. Flush
-            reads as a caption of the title; much more and the page looks broken. */}
-          <div className={cn('zinx-page-head group relative mb-4', cover && '-mt-12')}>
+            reads as a caption of the title; much more and the page looks broken.
+            The `-mt-12` pulls the head up so an ICON straddles the cover's bottom edge
+            (Notion-style) — but with no icon it would drag the TITLE up over the cover,
+            so it only applies when there's an icon to overlap. */}
+          <div className={cn('zinx-page-head group relative mb-4', cover && icon && '-mt-12')}>
             {icon ? (
               <button
                 type="button"

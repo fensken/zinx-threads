@@ -48,6 +48,14 @@ builds are **unsigned** and run against the **dev** Convex backend.
      (`release:mac` / `release:linux` exist too, but macOS must build on a Mac and Linux on Linux.)
 3. Publish the draft Release. Existing installs pick up the update on their next launch (Win/Linux).
 
+> ⚠ **Known electron-builder gotcha — duplicate drafts.** When it uploads assets in parallel to a
+> release that doesn't exist yet, electron-builder can create **two** draft releases with the same
+> `v<version>` tag and split the assets between them (e.g. one gets the `.exe`, the other the
+> `.blockmap`). Before publishing, check the Releases page: if you see two drafts for the version,
+> keep the one with the `.exe` + `latest.yml`, move any missing asset (like the `.blockmap`) onto
+> it, and delete the stray. A published release needs all three: the installer, `latest.yml`, and
+> the `.blockmap`.
+
 ## Just want an installer to hand out (no auto-update)
 
 `pnpm build:win` (or `build:mac` / `build:linux`) packages the installer into `dist/` **without**

@@ -23,6 +23,10 @@ export function initAutoUpdater(): void {
 
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
+  // Beta builds carry a `-beta.N` prerelease tag, so updates flow on the `beta` channel
+  // (`beta.yml`, not `latest.yml`). electron-updater ignores prereleases unless this is set — so a
+  // `0.0.1-beta.1` install would never see `0.0.1-beta.2` without it. Flip to `false` at 1.0.0.
+  autoUpdater.allowPrerelease = true
   autoUpdater.on('error', (error) => console.error('[updater]', error?.message ?? error))
   autoUpdater.on('update-available', (info) =>
     console.info('[updater] update available', info.version)

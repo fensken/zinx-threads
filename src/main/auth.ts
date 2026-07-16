@@ -22,11 +22,12 @@ import { BrowserWindow, app, ipcMain, safeStorage } from 'electron'
 import { createHash, randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { BRAND, DESKTOP_REDIRECT_URI } from '../shared/brand'
 
 const WORKOS_API_BASE = 'https://api.workos.com'
 // Registered in the WorkOS dashboard. Nothing listens here — the login window's
 // navigation to it is intercepted (will-redirect) and the code is read off the URL.
-const REDIRECT_URI = 'http://127.0.0.1:9876/callback'
+const REDIRECT_URI = DESKTOP_REDIRECT_URI
 
 /** The camelCase user shape the renderer expects (mirrors `authkit-react`'s `user`),
  *  mapped from the snake_case WorkOS API response. */
@@ -264,7 +265,7 @@ async function signIn(parent: BrowserWindow | null): Promise<AuthState> {
       parent: parent ?? undefined,
       modal: Boolean(parent),
       autoHideMenuBar: true,
-      title: 'Sign in to Zinx Threads',
+      title: `Sign in to ${BRAND.productName}`,
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,

@@ -4,6 +4,7 @@
  * `mintToken` needs `crypto.getRandomValues`, which is non-deterministic and therefore
  * forbidden in a mutation — so it runs in ACTIONS (bot/webhook/token creation).
  */
+import { API_TOKEN_PREFIX } from './brand'
 
 export async function sha256Hex(input: string): Promise<string> {
   const data = new TextEncoder().encode(input)
@@ -23,10 +24,14 @@ export async function mintToken(): Promise<{
   hashedToken: string
   preview: string
 }> {
-  // 32 random bytes → base64url. `zt_` prefix so a leaked secret is greppable + obviously
-  // ours (the same reason GitHub prefixes `ghp_`).
+  // 32 random bytes → base64url. The `zt_` prefix (from `brand.ts`) makes a leaked secret
+  // greppable + obviously ours (the same reason GitHub prefixes `ghp_`).
   const bytes = new Uint8Array(32)
   crypto.getRandomValues(bytes)
-  const token = 'zt_' + toBase64Url(bytes)
-  return { token, hashedToken: await sha256Hex(token), preview: token.slice(0, 11) }
+  const token = API_TOKEN_PREFIX + toBase64Url(bytes)
+  return {
+    token,
+    hashedToken: await sha256Hex(token),
+    preview: token.slice(0, API_TOKEN_PREFIX.length + 8)
+  }
 }

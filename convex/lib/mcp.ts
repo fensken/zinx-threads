@@ -2,6 +2,7 @@ import { ConvexError } from 'convex/values'
 import { internal } from '../_generated/api'
 import type { ActionCtx } from '../_generated/server'
 import type { Id } from '../_generated/dataModel'
+import { BRAND } from './brand'
 
 /**
  * The MCP (Model Context Protocol) server logic — the protocol both Claude and ChatGPT speak to
@@ -14,7 +15,7 @@ import type { Id } from '../_generated/dataModel'
  * a tool here and to `apiTools.ts` and it lands in all three at once.
  */
 
-export const MCP_SERVER_INFO = { name: 'Zinx Threads', version: '0.1.0' }
+export const MCP_SERVER_INFO = { name: BRAND.productName, version: '0.1.0' }
 
 /** The protocol revision we implement. We echo the client's requested version when it sends one
  *  it likes; this is the fallback. */

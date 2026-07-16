@@ -17,6 +17,7 @@ import {
   X
 } from '@phosphor-icons/react'
 import { useQuery } from 'convex-helpers/react/cache/hooks'
+import { BRAND } from '@shared/brand'
 import { api } from '@convex/_generated/api'
 import type { Doc } from '@convex/_generated/dataModel'
 import { cn } from '@renderer/lib/utils'
@@ -235,7 +236,7 @@ function AppearanceSettings(): React.JSX.Element {
 
   return (
     <div>
-      <Section title="Theme" description="Choose how Zinx Threads looks to you.">
+      <Section title="Theme" description={`Choose how ${BRAND.productName} looks to you.`}>
         <div className="grid grid-cols-3 gap-2">
           {THEMES.map(({ value, label, Icon }) => (
             <OptionCard key={value} active={theme === value} onClick={() => setTheme(value)}>
@@ -396,7 +397,7 @@ async function sendSampleNotification(): Promise<void> {
   }
   platform.notify({
     title: 'Alice in #general',
-    body: 'This is what a notification from Zinx Threads looks like.',
+    body: `This is what a notification from ${BRAND.productName} looks like.`,
     // Share a tag so clicking "test" repeatedly replaces the banner instead of stacking a
     // pile of them in the OS notification centre.
     tag: 'zinx-test'

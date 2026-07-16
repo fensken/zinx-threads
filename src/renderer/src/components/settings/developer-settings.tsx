@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { BRAND } from '@shared/brand'
 import { useAction, useMutation } from 'convex/react'
 import { useQuery } from 'convex-helpers/react/cache/hooks'
 import { Copy, Check, Plus, Trash, Warning, Plugs } from '@phosphor-icons/react'
@@ -59,10 +60,10 @@ export function DeveloperSettings(): React.JSX.Element {
           <h3 className="text-sm font-semibold">Connect an AI (MCP)</h3>
         </div>
         <p className="text-sm text-muted-foreground">
-          Zinx Threads speaks the Model Context Protocol, so Claude, ChatGPT and other AI tools can
-          read your channels and search your messages on your behalf. In Claude or ChatGPT, add a
-          custom connector with this URL — you’ll sign in and approve access, no token needed. The
-          access tokens below are for the MCP Inspector or scripts.
+          {BRAND.productName} speaks the Model Context Protocol, so Claude, ChatGPT and other AI
+          tools can read your channels and search your messages on your behalf. In Claude or
+          ChatGPT, add a custom connector with this URL — you’ll sign in and approve access, no
+          token needed. The access tokens below are for the MCP Inspector or scripts.
         </p>
         <CopyField label="MCP server URL" value={MCP_URL} />
         <a

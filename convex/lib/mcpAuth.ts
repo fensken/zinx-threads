@@ -2,6 +2,7 @@ import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose'
 import { internal } from '../_generated/api'
 import type { ActionCtx } from '../_generated/server'
 import type { Id } from '../_generated/dataModel'
+import { API_TOKEN_PREFIX } from './brand'
 
 /**
  * MCP authorization. Two credentials reach the `/mcp` endpoint, and both resolve to a user:
@@ -72,7 +73,7 @@ export async function resolveMcpUser(
   if (!token) return null
 
   // Personal access token — hashed lookup.
-  if (token.startsWith('zt_')) {
+  if (token.startsWith(API_TOKEN_PREFIX)) {
     const hashedToken = await sha256Hex(token)
     return ctx.runQuery(internal.mcp.userIdForToken, { hashedToken })
   }

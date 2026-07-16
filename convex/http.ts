@@ -5,6 +5,7 @@ import { internal } from './_generated/api'
 import { callTool, handleRpc, TOOLS } from './lib/mcp'
 import { protectedResourceMetadata, resolveMcpUser, wwwAuthenticate } from './lib/mcpAuth'
 import { sha256Hex } from './lib/tokens'
+import { BRAND } from './lib/brand'
 
 /**
  * The app's HTTP surface, served from `https://<deployment>.convex.site` (NOT `.convex.cloud`
@@ -158,7 +159,7 @@ const apiEndpoint = httpAction(async (ctx, request) => {
   // Public liveness/info — no auth, no secrets.
   if (request.method === 'GET' && (path === '/api' || path === '/api/v1')) {
     return json({
-      name: 'Zinx Threads API',
+      name: `${BRAND.productName} API`,
       version: 'v1',
       tools: `${url.origin}/api/v1/tools`,
       auth: 'Bearer token — create one in Settings → Developers (or a bot token). See /docs.'

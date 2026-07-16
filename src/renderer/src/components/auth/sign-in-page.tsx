@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router'
+import { BRAND } from '@shared/brand'
 import { WifiSlash } from '@phosphor-icons/react'
 import { Button } from '@renderer/components/ui/button'
 import { Spinner } from '@renderer/components/ui/spinner'
@@ -16,7 +17,7 @@ export function SignInPage(): React.JSX.Element {
     <div className="flex h-full w-full flex-col items-center justify-center gap-8 bg-sidebar p-6">
       <div className="flex flex-col items-center gap-3 text-center">
         <Logo className="size-16 rounded-2xl shadow-lg" />
-        <h1 className="text-2xl font-bold">Welcome to Zinx Threads</h1>
+        <h1 className="text-2xl font-bold">Welcome to {BRAND.productName}</h1>
         <p className="max-w-sm text-sm text-muted-foreground">
           Team chat, docs, and boards in one place. Sign in to reach your workspaces.
         </p>

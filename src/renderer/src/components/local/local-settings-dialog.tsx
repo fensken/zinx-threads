@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { BRAND } from '@shared/brand'
 import { useNavigate } from '@tanstack/react-router'
 import {
   FolderOpen,
@@ -243,7 +244,7 @@ function AppearancePane(): React.JSX.Element {
 
   return (
     <div>
-      <Section title="Theme" description="Choose how Zinx Threads looks to you.">
+      <Section title="Theme" description={`Choose how ${BRAND.productName} looks to you.`}>
         <div className="grid grid-cols-3 gap-2">
           {THEMES.map(({ value, label, Icon }) => (
             <OptionCard key={value} active={theme === value} onClick={() => setTheme(value)}>

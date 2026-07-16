@@ -9,11 +9,11 @@ builds are **unsigned** and run against the **dev** Convex backend.
 `electron-builder --publish always` builds the installers **and** uploads them, plus the
 `latest.yml` / `latest-mac.yml` / `latest-linux.yml` update manifests, to a GitHub Release:
 
-| OS      | Artifact                                       | Auto-update (unsigned)               |
-| ------- | ---------------------------------------------- | ------------------------------------ |
-| Windows | `zinx-threads-<version>-setup.exe`             | ✅ works                             |
-| Linux   | `zinx-threads-<version>.AppImage` (+ deb)      | ✅ works                             |
-| macOS   | `zinx-threads-<version>.dmg`                   | ❌ needs signing — user re-downloads |
+| OS      | Artifact                                  | Auto-update (unsigned)               |
+| ------- | ----------------------------------------- | ------------------------------------ |
+| Windows | `zinx-threads-<version>-setup.exe`        | ✅ works                             |
+| Linux   | `zinx-threads-<version>.AppImage` (+ deb) | ✅ works                             |
+| macOS   | `zinx-threads-<version>.dmg`              | ❌ needs signing — user re-downloads |
 
 > ⚠ **macOS unsigned:** Gatekeeper blocks the DMG on first open (user right-clicks → **Open**),
 > and Squirrel refuses to auto-apply unsigned updates. Both are fixed later by an Apple Developer

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useRouterState } from '@tanstack/react-router'
 import { CaretLeft, CaretRight, MagnifyingGlass, SidebarSimple } from '@phosphor-icons/react'
+import { Logo } from '@renderer/components/layout/logo'
 import { WindowControls } from '@renderer/components/layout/window-controls'
 import { hasCustomTitleBar, windowControlsStyle } from '@renderer/lib/platform'
 import { useMediaQuery } from '@renderer/lib/use-media-query'
@@ -99,17 +100,24 @@ export function TitleBar(): React.JSX.Element | null {
           left group (history + sidebar) and the right window buttons have different widths,
           so `mx-auto` would sit it off-centre. `left-1/2 -translate-x-1/2` puts it dead
           centre regardless; `max-w` keeps it clear of the side controls at the min width. */}
-      <button
-        type="button"
-        onClick={togglePalette}
-        className="app-no-drag absolute top-1/2 left-1/2 flex h-8 w-[28rem] max-w-[calc(100%-18rem)] -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-lg bg-titlebar-accent px-2.5 text-xs text-muted-foreground transition-colors hover:bg-titlebar-accent/70 hover:text-foreground"
-      >
-        <MagnifyingGlass className="size-4 shrink-0" />
-        <span className="flex-1 truncate text-left">Search</span>
-        <kbd className="pointer-events-none shrink-0 font-sans text-[0.6875rem] font-semibold opacity-70">
-          {SEARCH_SHORTCUT}
-        </kbd>
-      </button>
+      {/* The app mark sits immediately left of the search box, and the two are centred as one
+          unit (so the search shifts a hair right of dead-centre — the logo is the counterweight).
+          The mark is `pointer-events-none` so it neither steals clicks nor drags as an image; the
+          bar behind it stays a window-drag handle. */}
+      <div className="absolute top-1/2 left-1/2 flex max-w-[calc(100%-14rem)] -translate-x-1/2 -translate-y-1/2 items-center gap-2">
+        <Logo className="pointer-events-none size-6 shrink-0 rounded-md" />
+        <button
+          type="button"
+          onClick={togglePalette}
+          className="app-no-drag flex h-8 w-[28rem] max-w-full items-center gap-2 rounded-lg bg-titlebar-accent px-2.5 text-xs text-muted-foreground transition-colors hover:bg-titlebar-accent/70 hover:text-foreground"
+        >
+          <MagnifyingGlass className="size-4 shrink-0" />
+          <span className="flex-1 truncate text-left">Search</span>
+          <kbd className="pointer-events-none shrink-0 font-sans text-[0.6875rem] font-semibold opacity-70">
+            {SEARCH_SHORTCUT}
+          </kbd>
+        </button>
+      </div>
 
       {/* Windows/Linux: our minimise / maximise / close, flush to the corner. macOS:
           renders nothing (the traffic lights are already at the other end). */}

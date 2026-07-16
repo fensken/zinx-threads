@@ -1,26 +1,13 @@
+import { BRAND } from '@shared/brand'
 import { cn } from '@renderer/lib/utils'
+import logoSrc from '@renderer/assets/logo.png'
 
-/** The Zinx Threads app mark — a rounded-square badge in the brand/primary color
- *  with a contrasting "Z". Themed via `bg-primary` / `text-primary-foreground` so
- *  it follows the active theme (light/dark). Size it with `className`. */
+/** The Zinx Threads app mark — the brand logo image, clipped to a rounded square. Imported as a
+ *  module (not a `public/` path) so the URL resolves in the packaged desktop build's `file://`
+ *  renderer too. Size it with `className`. */
 export function Logo({ className }: { className?: string }): React.JSX.Element {
   return (
-    <span
-      className={cn(
-        'flex items-center justify-center rounded-xl bg-primary text-primary-foreground',
-        className
-      )}
-    >
-      <svg viewBox="0 0 32 32" fill="none" className="size-[62%]" aria-hidden>
-        <path
-          d="M11 11.5H21L11 20.5H21"
-          stroke="currentColor"
-          strokeWidth="2.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </span>
+    <img src={logoSrc} alt="" aria-hidden className={cn('rounded-xl object-cover', className)} />
   )
 }
 
@@ -29,7 +16,7 @@ export function LogoWordmark({ className }: { className?: string }): React.JSX.E
   return (
     <span className={cn('flex items-center gap-2', className)}>
       <Logo className="size-7" />
-      <span className="text-base font-bold tracking-tight">Zinx Threads</span>
+      <span className="text-base font-bold tracking-tight">{BRAND.productName}</span>
     </span>
   )
 }

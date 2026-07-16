@@ -6,6 +6,7 @@ import { registerAuthIpc } from './auth'
 import { registerLocalDataIpc } from './local-data'
 import { registerNotificationIpc } from './notifications'
 import { initAutoUpdater } from './updater'
+import { BRAND, DEEP_LINK_SCHEME, TITLE_BAR_HEIGHT } from '../shared/brand'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -20,7 +21,7 @@ let pendingDeepLink: string | null = null
 
 /** The first `zinx://…` URL in an argv list, or null. */
 function deepLinkFromArgv(argv: string[]): string | null {
-  return argv.find((arg) => arg.startsWith('zinx://')) ?? null
+  return argv.find((arg) => arg.startsWith(`${DEEP_LINK_SCHEME}://`)) ?? null
 }
 
 /** Deliver a deep link. If a window is up, focus it and push the URL to the renderer;
@@ -65,8 +66,6 @@ let pendingScreenShareAudio = false
  * that hit-target, so the flyout is gone (Discord has the same gap). Dragging a window
  * to a screen edge, and Win+Arrow, still snap normally.
  */
-const TITLE_BAR_HEIGHT = 44
-
 /** Only `http(s)` may be handed to the OS. Everything else — `file:`, `smb:`,
  *  `ms-msdt:`, any registered handler — is a way to make the OS do something on the
  *  user's behalf, from a link a *different user* wrote. */
@@ -198,10 +197,10 @@ if (!app.requestSingleInstanceLock()) {
 // declares the scheme so the installer registers it on the user's machine.
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient('zinx', process.execPath, [resolve(process.argv[1])])
+    app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME, process.execPath, [resolve(process.argv[1])])
   }
 } else {
-  app.setAsDefaultProtocolClient('zinx')
+  app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME)
 }
 
 // Cold start: the launching deep link (if any) rides in on our own argv.
@@ -276,7 +275,7 @@ function configureMediaPermissions(): void {
 
 app.whenReady().then(() => {
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.zinxthreads.app')
+  electronApp.setAppUserModelId(BRAND.appId)
 
   // WorkOS sign-in runs in the main process (PKCE + token vault + in-app login window).
   // See src/main/auth.ts.

@@ -3,6 +3,7 @@ import { action, internalMutation, internalQuery, mutation, query } from './_gen
 import { internal } from './_generated/api'
 import type { Id } from './_generated/dataModel'
 import { requireUser } from './lib/auth'
+import { API_TOKEN_PREFIX } from './lib/brand'
 import { colorFor, nameFromEmail } from './users'
 
 /**
@@ -33,13 +34,13 @@ export const createToken = action({
   handler: async (ctx, { name }): Promise<{ token: string; name: string; preview: string }> => {
     const label = name.trim().slice(0, 60) || 'API token'
 
-    // 32 random bytes → base64url. `zt_` prefix so a leaked secret is greppable + obviously
-    // ours (the same reason GitHub prefixes `ghp_`).
+    // 32 random bytes → base64url. The `zt_` prefix (from `brand.ts`) makes a leaked secret
+    // greppable + obviously ours (the same reason GitHub prefixes `ghp_`).
     const bytes = new Uint8Array(32)
     crypto.getRandomValues(bytes)
-    const token = 'zt_' + toBase64Url(bytes)
+    const token = API_TOKEN_PREFIX + toBase64Url(bytes)
     const hashedToken = await sha256Hex(token)
-    const preview = token.slice(0, 11) // `zt_` + 8 chars
+    const preview = token.slice(0, API_TOKEN_PREFIX.length + 8)
 
     await ctx.runMutation(internal.mcp.storeToken, { hashedToken, name: label, preview })
     return { token, name: label, preview }

@@ -1,5 +1,6 @@
 import { Resend } from '@convex-dev/resend'
 import { components } from './_generated/api'
+import { BRAND } from './lib/brand'
 
 // Transactional email via the `@convex-dev/resend` component (registered in
 // convex.config.ts). Reads `RESEND_API_KEY` from the deployment env. `testMode: false`
@@ -14,4 +15,4 @@ export const resend: Resend = new Resend(components.resend, { testMode: false })
 /** Sender address — read from the `EMAIL_FROM` deployment env var so the from-name and
  *  domain are configurable per deployment. Must be on the Resend-verified domain; falls
  *  back to the shared account's verified `zinx.app` sender. */
-export const EMAIL_FROM = process.env.EMAIL_FROM ?? 'Zinx Threads <contact@zinx.app>'
+export const EMAIL_FROM = process.env.EMAIL_FROM ?? `${BRAND.productName} <contact@zinx.app>`

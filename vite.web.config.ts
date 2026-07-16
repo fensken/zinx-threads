@@ -26,7 +26,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@renderer': resolve(__dirname, 'src/renderer/src'),
-      '@convex': resolve(__dirname, 'convex')
+      '@convex': resolve(__dirname, 'convex'),
+      '@shared': resolve(__dirname, 'src/shared')
     }
   },
   plugins: [

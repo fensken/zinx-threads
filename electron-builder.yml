@@ -1,3 +1,5 @@
+# NB: appId / productName / the `zinx` scheme below mirror `src/shared/brand.ts` (this YAML can't
+# import TS). Change them together — brand.ts is the canonical source.
 appId: com.zinxthreads.app
 productName: Zinx Threads
 directories:
@@ -21,6 +23,10 @@ protocols:
       - zinx
 win:
   executableName: zinx-threads
+  # No `publisherName` here: an unsigned beta always shows "unknown publisher" in SmartScreen, and
+  # in electron-builder 26 the Windows publisher/signing options live under `win.signtoolOptions`
+  # (or Azure Trusted Signing) — set the publisher there together with the cert once signing is
+  # added. See RELEASING.md.
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
@@ -43,7 +49,9 @@ linux:
   target:
     - AppImage
     - deb
-  maintainer: electronjs.org
+  # deb wants a `Name <email>` maintainer — change the address to a real Zinx contact before
+  # shipping the .deb (Windows/AppImage ignore this).
+  maintainer: Zinx <support@zinx.app>
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}

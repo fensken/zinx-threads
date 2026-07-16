@@ -1,6 +1,7 @@
 import { v } from 'convex/values'
 import { internalMutation } from './_generated/server'
 import { EMAIL_FROM, resend } from './resend'
+import { BRAND } from './lib/brand'
 
 // Composes + sends the app's invitation emails. Called (scheduled) from the invite
 // mutations. All caller-supplied strings (names, codes) are HTML-escaped — an email
@@ -29,8 +30,8 @@ function shell(title: string, inner: string): string {
     <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:14px;overflow:hidden;border:1px solid #e5e5e5">
       <tr><td style="padding:28px 32px 8px">
         <div style="display:inline-flex;align-items:center;gap:8px">
-          <span style="display:inline-block;width:28px;height:28px;border-radius:8px;background:#e11d48;color:#fff;text-align:center;line-height:28px;font-weight:700">Z</span>
-          <span style="font-weight:700;font-size:16px">Zinx Threads</span>
+          <span style="display:inline-block;width:28px;height:28px;border-radius:8px;background:${BRAND.primaryHex};color:#fff;text-align:center;line-height:28px;font-weight:700">Z</span>
+          <span style="font-weight:700;font-size:16px">${BRAND.productName}</span>
         </div>
       </td></tr>
       <tr><td style="padding:8px 32px 32px">
@@ -38,13 +39,13 @@ function shell(title: string, inner: string): string {
         ${inner}
       </td></tr>
     </table>
-    <p style="color:#a1a1a1;font-size:12px;margin-top:16px">You received this because someone invited you on Zinx Threads.</p>
+    <p style="color:#a1a1a1;font-size:12px;margin-top:16px">You received this because someone invited you on ${BRAND.productName}.</p>
   </td></tr></table>
   </body></html>`
 }
 
 function button(href: string, label: string): string {
-  return `<a href="${href}" style="display:inline-block;background:#e11d48;color:#fff;text-decoration:none;padding:10px 18px;border-radius:10px;font-weight:600;margin:16px 0">${label}</a>`
+  return `<a href="${href}" style="display:inline-block;background:${BRAND.primaryHex};color:#fff;text-decoration:none;padding:10px 18px;border-radius:10px;font-weight:600;margin:16px 0">${label}</a>`
 }
 
 /** Invite a workspace OWNER to a shared channel, with a one-click **accept link**

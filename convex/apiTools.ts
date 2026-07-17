@@ -1,7 +1,13 @@
 import { ConvexError, v } from 'convex/values'
 import { internalMutation, internalQuery } from './_generated/server'
 import type { Doc, Id } from './_generated/dataModel'
-import { canPostIn, getChannelAccess, getMembership, getMemberships } from './lib/auth'
+import {
+  canPostIn,
+  getChannelAccess,
+  getMembership,
+  getMemberships,
+  requireChannelAccess
+} from './lib/auth'
 import { listRealChannels } from './lib/channels'
 import { getMyChannelIds, visibleChannels } from './lib/channelMembers'
 import { resolveAuthors, searchMessagesForUser } from './lib/messages'
@@ -148,7 +154,9 @@ async function resolveColumn(
   return columns.find((c) => c.title.toLowerCase() === wanted) ?? null
 }
 
-/** Get a task by id for the actor, checking workspace membership. */
+/** Get a task by id for the actor, checking **channel** access (not just workspace
+ *  membership) — a task in a private board an admin isn't a member of stays off-limits,
+ *  matching `boards.ts`. */
 async function requireTask(
   ctx: ReaderCtx,
   userId: Id<'users'>,
@@ -158,13 +166,11 @@ async function requireTask(
   if (!id) throw new ConvexError('Unknown task id')
   const task = await ctx.db.get(id)
   if (!task) throw new ConvexError('Task not found')
-  if (!(await getMembership(ctx, task.workspaceId, userId))) {
-    throw new ConvexError('Not a member of this workspace')
-  }
+  await requireChannelAccess(ctx, task.channelId, userId)
   return task
 }
 
-/** Get a column by id for the actor, checking workspace membership. */
+/** Get a column by id for the actor, checking **channel** access (see `requireTask`). */
 async function requireColumn(
   ctx: ReaderCtx,
   userId: Id<'users'>,
@@ -174,9 +180,7 @@ async function requireColumn(
   if (!id) throw new ConvexError('Unknown column id')
   const column = await ctx.db.get(id)
   if (!column) throw new ConvexError('Column not found')
-  if (!(await getMembership(ctx, column.workspaceId, userId))) {
-    throw new ConvexError('Not a member of this workspace')
-  }
+  await requireChannelAccess(ctx, column.channelId, userId)
   return column
 }
 
@@ -485,6 +489,19 @@ export const whiteboardFor = internalQuery({
 // ===========================================================================
 // WRITES — each acts AS the actor, gated exactly like the app's own mutations
 // ===========================================================================
+
+/** Spend one unit of the shared per-actor **API write** budget (see `rateLimiter.ts`).
+ *  `callTool` runs this before every write tool, so an automation can't hammer
+ *  creates/edits/deletes and pile up rows or channels. Kept as its own mutation so the
+ *  dispatch has ONE drift-proof place to enforce it — a new write tool inherits the limit
+ *  automatically (it's gated by the tool's `readOnlyHint`, not a per-handler call).
+ *  `post_message` additionally keeps its tighter `sendMessage` limit on top. */
+export const spendWriteBudget = internalMutation({
+  args: { userId: v.id('users') },
+  handler: async (ctx, { userId }) => {
+    await rateLimiter.limit(ctx, 'apiWrite', { key: userId, throws: true })
+  }
+})
 
 /** `post_message` — post a plain-text message to a channel, as the actor. */
 export const postMessageFor = internalMutation({

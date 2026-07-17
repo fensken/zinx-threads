@@ -3,6 +3,25 @@ import { query, mutation } from './_generated/server'
 import type { Doc, Id } from './_generated/dataModel'
 import { getCurrentUser, getMembership, requireUser } from './lib/auth'
 import { resolveAuthors } from './lib/messages'
+import { expandEventToRange, type EventInstance } from './lib/recurrence'
+
+/** What kind of event — colours the calendar and drives the Type filter. */
+export const eventKind = v.union(
+  v.literal('meeting'),
+  v.literal('deadline'),
+  v.literal('reminder'),
+  v.literal('other')
+)
+/** How an event repeats. `'none'` is the client's word for "no recurrence"; it's
+ *  stored as an absent `repeat` (the column only ever holds an active unit). */
+export const eventRepeat = v.union(
+  v.literal('none'),
+  v.literal('daily'),
+  v.literal('weekly'),
+  v.literal('monthly')
+)
+type EventKind = 'meeting' | 'deadline' | 'reminder' | 'other'
+type EventRepeat = 'none' | 'daily' | 'weekly' | 'monthly'
 
 /**
  * Calendar events.
@@ -32,6 +51,71 @@ function clampReminder(minutes: number | undefined): number | undefined {
   return Math.min(Math.round(minutes), MAX_REMINDER_MINUTES)
 }
 
+/** How recurrence is STORED: `'none'` collapses to an absent `repeat`, and `repeatUntil`
+ *  is dropped unless it's a real bound at/after the start (a one-off has no "until", and
+ *  an "until" before the start would produce zero occurrences). */
+function normalizeRepeat(
+  repeat: EventRepeat | undefined,
+  repeatUntil: number | undefined,
+  startAt: number
+): { repeat?: 'daily' | 'weekly' | 'monthly'; repeatUntil?: number } {
+  if (!repeat || repeat === 'none') return { repeat: undefined, repeatUntil: undefined }
+  // `repeatUntil` names a DAY (stored at midnight); a same-day timed start is still a
+  // valid one-occurrence bound, so compare against the END of the until-day, not midnight
+  // (matches `lib/recurrence.ts` extending the bound). Only a bound strictly before the
+  // start day is dropped (it would yield zero occurrences).
+  const until =
+    repeatUntil !== undefined &&
+    Number.isFinite(repeatUntil) &&
+    repeatUntil + 24 * 3_600_000 > startAt
+      ? repeatUntil
+      : undefined
+  return { repeat, repeatUntil: until }
+}
+
+const MAX_URL = 500
+
+/** Normalise an external meeting link to an `http(s)` URL, or throw. An empty
+ *  string means "no link" (the caller clears the field). A bare `zoom.us/…` is
+ *  assumed https so the user needn't type the scheme. */
+function normalizeUrl(raw: string | undefined): string | undefined {
+  const trimmed = raw?.trim()
+  if (!trimmed) return undefined
+  const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+  if (withProto.length > MAX_URL) throw new ConvexError('That link is too long')
+  try {
+    const parsed = new URL(withProto)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new ConvexError('The link must be an http(s) URL')
+    }
+  } catch {
+    throw new ConvexError('That doesn’t look like a valid link')
+  }
+  return withProto
+}
+
+/** Resolve + validate the voice channel an event meets in. Returns the id to store,
+ *  or throws. An event is visible to the whole workspace, so the channel must be one
+ *  of THIS workspace's, must be a **voice** channel (that's the whole point — you jump
+ *  into the call from the event), and never a DM or a private room (which would leak
+ *  its existence through the calendar). */
+async function resolveVoiceChannel(
+  ctx: Parameters<typeof getCurrentUser>[0],
+  workspaceId: Id<'workspaces'>,
+  channelId: Id<'channels'>
+): Promise<Id<'channels'>> {
+  const channel = await ctx.db.get(channelId)
+  if (
+    !channel ||
+    channel.workspaceId !== workspaceId ||
+    channel.kind !== 'voice' ||
+    channel.visibility === 'private'
+  ) {
+    throw new ConvexError('Pick a voice channel in this workspace')
+  }
+  return channelId
+}
+
 export const rsvpStatus = v.union(
   v.literal('going'),
   v.literal('maybe'),
@@ -41,18 +125,33 @@ export const rsvpStatus = v.union(
 
 export interface EventSummary {
   _id: Id<'events'>
+  /** Unique per *occurrence* — `${_id}:${startAt}` — since a recurring series expands
+   *  into many rows that share `_id`. Use this for React keys; `_id` for edit/RSVP. */
+  instanceKey: string
   title: string
   description?: string
   location?: string
+  /** The OCCURRENCE times (a recurring series' expanded instance), not the series row. */
   startAt: number
   endAt: number
   allDay: boolean
+  kind: EventKind
+  /** `'none'` unless recurring; `repeatUntil` (UTC ms) bounds an active series. */
+  repeat: EventRepeat
+  repeatUntil?: number
+  /** True when this row is an expanded occurrence of a recurring series. */
+  isRecurring: boolean
   /** Minutes before the start to remind — 0/absent = none. */
   reminderMinutes: number
   /** The zone it was authored in — the client shows this time *and* the viewer's. */
   timezone: string
+  /** The voice channel to meet in (if any). */
   channelId?: Id<'channels'>
   channelName?: string
+  /** Its `kind` (always `'voice'` today) — so the UI shows the matching channel icon. */
+  channelKind?: string
+  /** An external meeting link (if any) — mutually exclusive with `channelId`. */
+  url?: string
   createdBy: Id<'users'>
   creatorName: string
   /** Whether the event came from an outside calendar (none do yet — see the schema). */
@@ -63,51 +162,74 @@ export interface EventSummary {
   maybe: number
 }
 
+/** Enrich occurrence instances into `EventSummary`s. Attendees + channel names are
+ *  cached by the SERIES id, so a recurring event expanded into 30 occurrences costs one
+ *  attendee read, not thirty. */
 async function summarize(
   ctx: Parameters<typeof getCurrentUser>[0],
-  rows: Doc<'events'>[],
+  instances: EventInstance[],
   workspaceId: Id<'workspaces'>,
   userId: Id<'users'>
 ): Promise<EventSummary[]> {
   const creators = await resolveAuthors(
     ctx,
     workspaceId,
-    rows.map((row) => row.createdBy)
+    instances.map((inst) => inst.event.createdBy)
   )
-  const channelCache = new Map<string, string>()
+  const channelCache = new Map<string, { name: string; kind: string } | null>()
+  const attendeeCache = new Map<string, Doc<'eventAttendees'>[]>()
 
   const out: EventSummary[] = []
-  for (const row of rows) {
-    // Bounded by MAX_ATTENDEES; a month of events costs one read per event.
-    const attendees = await ctx.db
-      .query('eventAttendees')
-      .withIndex('by_event', (q) => q.eq('eventId', row._id))
-      .take(MAX_ATTENDEES)
+  for (const { event: row, startAt, endAt } of instances) {
+    const eventKey = row._id as string
+    let attendees = attendeeCache.get(eventKey)
+    if (!attendees) {
+      // Bounded by MAX_ATTENDEES; one read per distinct series, not per occurrence.
+      attendees = await ctx.db
+        .query('eventAttendees')
+        .withIndex('by_event', (q) => q.eq('eventId', row._id))
+        .take(MAX_ATTENDEES)
+      attendeeCache.set(eventKey, attendees)
+    }
 
     let channelName: string | undefined
+    let channelKind: string | undefined
     if (row.channelId) {
       const key = row.channelId as string
       if (!channelCache.has(key)) {
         const channel = await ctx.db.get(row.channelId)
         // A DM is never a valid event channel (`create` refuses one), so this can't
         // leak a conversation's internal name.
-        channelCache.set(key, channel && channel.kind !== 'dm' ? channel.name : '')
+        channelCache.set(
+          key,
+          channel && channel.kind !== 'dm' ? { name: channel.name, kind: channel.kind } : null
+        )
       }
-      channelName = channelCache.get(key) || undefined
+      const resolved = channelCache.get(key)
+      channelName = resolved?.name
+      channelKind = resolved?.kind
     }
 
+    const isRecurring = startAt !== row.startAt || row.repeat !== undefined
     out.push({
       _id: row._id,
+      instanceKey: `${row._id}:${startAt}`,
       title: row.title,
       description: row.description,
       location: row.location,
-      startAt: row.startAt,
-      endAt: row.endAt,
+      startAt,
+      endAt,
       allDay: row.allDay ?? false,
+      kind: (row.kind ?? 'meeting') as EventKind,
+      repeat: (row.repeat ?? 'none') as EventRepeat,
+      repeatUntil: row.repeatUntil,
+      isRecurring: isRecurring && row.repeat !== undefined,
       reminderMinutes: row.reminderMinutes ?? 0,
       timezone: row.timezone,
       channelId: row.channelId,
       channelName,
+      channelKind,
+      url: row.url,
       createdBy: row.createdBy,
       creatorName: creators.get(row.createdBy)?.name ?? 'Unknown',
       external: row.externalProvider !== undefined,
@@ -119,16 +241,18 @@ async function summarize(
   return out
 }
 
+/** How far ahead `listUpcoming` looks for the next occurrence of a recurring event. */
+const UPCOMING_HORIZON = 120 * 24 * 60 * 60 * 1000
+
 /**
  * Events that **overlap** a range — the calendar's only read.
  *
- * The index is on `startAt`, so the range is widened backwards by `MAX_EVENT_SPAN`
- * to catch an event that started before the window and runs into it (a multi-day
- * offsite that begins on the 30th and is still going on the 2nd). Anything longer
- * than that span is dropped from the view rather than turning this into a full scan.
+ * A recurring series is one row whose occurrences are **expanded on read**
+ * (`expandEventToRange`), so the fetch can't just window on `startAt`: a series that
+ * began years ago can still have an occurrence today. We take every series with
+ * `startAt <= to` (bounded by `MAX_EVENTS`) and expand each into `[from, to]`. Realistic
+ * workspaces never approach the cap; one that does would want an archived-events sweep.
  */
-const MAX_EVENT_SPAN = 30 * 24 * 60 * 60 * 1000
-
 export const listRange = query({
   args: {
     workspaceId: v.id('workspaces'),
@@ -142,25 +266,24 @@ export const listRange = query({
     if (!user) return []
     if (!(await getMembership(ctx, workspaceId, user._id))) return []
 
+    // **Newest-first** (`order('desc')`): the window's events have the LARGEST `startAt`,
+    // so at the `MAX_EVENTS` cap we keep the recent ones, not the oldest — ascending would
+    // blank the current month for a workspace past the cap. A recurring series whose ORIGIN
+    // is older than the cap is the one edge — the documented archived-events limit.
     const rows = await ctx.db
       .query('events')
-      .withIndex('by_workspace_start', (q) =>
-        q
-          .eq('workspaceId', workspaceId)
-          .gte('startAt', from - MAX_EVENT_SPAN)
-          .lt('startAt', to)
-      )
+      .withIndex('by_workspace_start', (q) => q.eq('workspaceId', workspaceId).lte('startAt', to))
+      .order('desc')
       .take(MAX_EVENTS)
 
-    // Started before the window AND ended before it — the widening caught it, but it
-    // doesn't actually overlap.
-    const overlapping = rows.filter((row) => row.endAt >= from)
-    overlapping.sort((a, b) => a.startAt - b.startAt)
-    return await summarize(ctx, overlapping, workspaceId, user._id)
+    const instances = rows.flatMap((row) => expandEventToRange(row, from, to, row.timezone))
+    instances.sort((a, b) => a.startAt - b.startAt)
+    return await summarize(ctx, instances, workspaceId, user._id)
   }
 })
 
-/** The next few events — the header's quick "what's coming up" flyout. */
+/** The next few events — the header's quick "what's coming up" flyout + the reminder
+ *  banner. Expands recurring series into their next occurrences within the horizon. */
 export const listUpcoming = query({
   args: { workspaceId: v.id('workspaces'), limit: v.optional(v.number()) },
   handler: async (ctx, { workspaceId, limit }): Promise<EventSummary[]> => {
@@ -169,18 +292,19 @@ export const listUpcoming = query({
     if (!(await getMembership(ctx, workspaceId, user._id))) return []
 
     const now = Date.now()
+    const to = now + UPCOMING_HORIZON
     const take = Math.min(Math.max(limit ?? 5, 1), 20)
-    // Anything still running counts as upcoming, so start the scan a span back and
-    // drop what has already finished.
     const rows = await ctx.db
       .query('events')
-      .withIndex('by_workspace_start', (q) =>
-        q.eq('workspaceId', workspaceId).gte('startAt', now - MAX_EVENT_SPAN)
-      )
+      .withIndex('by_workspace_start', (q) => q.eq('workspaceId', workspaceId).lte('startAt', to))
+      .order('desc')
       .take(MAX_EVENTS)
 
-    const live = rows.filter((row) => row.endAt >= now).sort((a, b) => a.startAt - b.startAt)
-    return await summarize(ctx, live.slice(0, take), workspaceId, user._id)
+    // Expand into [now, horizon] — `expandEventToRange` keeps only occurrences still
+    // running or ahead — then take the soonest `take`.
+    const instances = rows.flatMap((row) => expandEventToRange(row, now, to, row.timezone))
+    instances.sort((a, b) => a.startAt - b.startAt)
+    return await summarize(ctx, instances.slice(0, take), workspaceId, user._id)
   }
 })
 
@@ -204,7 +328,14 @@ export const get = query({
       attendees.map((a) => a.userId)
     )
 
-    const [summary] = await summarize(ctx, [event], event.workspaceId, user._id)
+    // The detail dialog shows the SERIES (no per-occurrence expansion) — editing a
+    // recurring event changes the whole series.
+    const [summary] = await summarize(
+      ctx,
+      [{ event, startAt: event.startAt, endAt: event.endAt }],
+      event.workspaceId,
+      user._id
+    )
     return {
       event: summary,
       canManage: event.createdBy === user._id,
@@ -252,7 +383,13 @@ export const create = mutation({
     allDay: v.optional(v.boolean()),
     /** The zone the wall-clock was entered in — the workspace's, from the client. */
     timezone: v.string(),
+    /** A voice channel to meet in — mutually exclusive with `url`. */
     channelId: v.optional(v.id('channels')),
+    /** An external meeting link — mutually exclusive with `channelId`. */
+    url: v.optional(v.string()),
+    kind: v.optional(eventKind),
+    repeat: v.optional(eventRepeat),
+    repeatUntil: v.optional(v.number()),
     reminderMinutes: v.optional(v.number())
   },
   handler: async (ctx, args) => {
@@ -262,22 +399,11 @@ export const create = mutation({
     }
     validate(args)
 
-    if (args.channelId) {
-      const channel = await ctx.db.get(args.channelId)
-      // The channel must be one of THIS workspace's, and never a DM — an event is
-      // visible to every member, so tying it to a private conversation would leak it.
-      // Not a DM, and not a PRIVATE channel: an event is visible to every member of the
-      // workspace, so tying it to a room they can't enter would leak the room's existence
-      // (and its name) through the calendar.
-      if (
-        !channel ||
-        channel.workspaceId !== args.workspaceId ||
-        channel.kind === 'dm' ||
-        channel.visibility === 'private'
-      ) {
-        throw new ConvexError('That channel is not in this workspace')
-      }
-    }
+    // A meeting has one place: a voice channel OR an external link, never both.
+    const channelId = args.channelId
+      ? await resolveVoiceChannel(ctx, args.workspaceId, args.channelId)
+      : undefined
+    const url = channelId ? undefined : normalizeUrl(args.url)
 
     const now = Date.now()
     const eventId = await ctx.db.insert('events', {
@@ -289,7 +415,10 @@ export const create = mutation({
       endAt: args.endAt,
       allDay: args.allDay,
       timezone: args.timezone,
-      channelId: args.channelId,
+      channelId,
+      url,
+      kind: args.kind,
+      ...normalizeRepeat(args.repeat, args.repeatUntil, args.startAt),
       reminderMinutes: clampReminder(args.reminderMinutes),
       createdBy: user._id,
       createdAt: now,
@@ -312,13 +441,20 @@ export const update = mutation({
     eventId: v.id('events'),
     title: v.optional(v.string()),
     description: v.optional(v.string()),
-    location: v.optional(v.string()),
+    // Clearable fields take `null` to clear vs an absent key to leave unchanged —
+    // the "where" of an event genuinely changes (a link becomes a voice channel, a
+    // location is removed), which a bare `?? existing` merge can never express.
+    location: v.optional(v.union(v.string(), v.null())),
     startAt: v.optional(v.number()),
     endAt: v.optional(v.number()),
     allDay: v.optional(v.boolean()),
     timezone: v.optional(v.string()),
-    channelId: v.optional(v.id('channels')),
-    reminderMinutes: v.optional(v.number())
+    channelId: v.optional(v.union(v.id('channels'), v.null())),
+    url: v.optional(v.union(v.string(), v.null())),
+    kind: v.optional(eventKind),
+    repeat: v.optional(eventRepeat),
+    repeatUntil: v.optional(v.union(v.number(), v.null())),
+    reminderMinutes: v.optional(v.union(v.number(), v.null()))
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx)
@@ -331,11 +467,32 @@ export const update = mutation({
     const next = {
       title: args.title ?? event.title,
       description: args.description ?? event.description,
-      location: args.location ?? event.location,
+      location: args.location === undefined ? event.location : (args.location ?? undefined),
       startAt: args.startAt ?? event.startAt,
       endAt: args.endAt ?? event.endAt
     }
     validate(next)
+
+    // Resolve the where. `null` = clear, a value = set (and clears the other place —
+    // a meeting has one place), absent = leave both as they were.
+    let channelId = event.channelId
+    let url = event.url
+    if (args.channelId !== undefined) {
+      channelId = args.channelId
+        ? await resolveVoiceChannel(ctx, event.workspaceId, args.channelId)
+        : undefined
+      if (channelId) url = undefined
+    }
+    if (args.url !== undefined) {
+      url = args.url ? normalizeUrl(args.url) : undefined
+      if (url) channelId = undefined
+    }
+
+    // Recurrence: the dialog sends the whole choice, so compute from args (falling back
+    // to the stored value) and re-normalise against the new start.
+    const repeatChoice = (args.repeat ?? event.repeat ?? 'none') as EventRepeat
+    const untilChoice =
+      args.repeatUntil === undefined ? event.repeatUntil : (args.repeatUntil ?? undefined)
 
     await ctx.db.patch(args.eventId, {
       title: next.title.trim(),
@@ -345,8 +502,15 @@ export const update = mutation({
       endAt: next.endAt,
       allDay: args.allDay ?? event.allDay,
       timezone: args.timezone ?? event.timezone,
-      channelId: args.channelId ?? event.channelId,
-      reminderMinutes: clampReminder(args.reminderMinutes ?? event.reminderMinutes),
+      channelId,
+      url,
+      kind: args.kind ?? event.kind,
+      ...normalizeRepeat(repeatChoice, untilChoice, next.startAt),
+      reminderMinutes: clampReminder(
+        args.reminderMinutes === undefined
+          ? event.reminderMinutes
+          : (args.reminderMinutes ?? undefined)
+      ),
       updatedAt: Date.now()
     })
   }

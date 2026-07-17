@@ -20,8 +20,21 @@ interface JoinPrefs {
   joinMuted: boolean
   joinVideo: boolean
   joinDeafened: boolean
+  /** Selected input/output devices (`''` = the system default). Applied to the call
+   *  (see `voice/device-applier.tsx`). */
+  micDeviceId: string
+  speakerDeviceId: string
+  cameraDeviceId: string
 }
 function readPrefs(): JoinPrefs {
+  const fallback: JoinPrefs = {
+    joinMuted: false,
+    joinVideo: false,
+    joinDeafened: false,
+    micDeviceId: '',
+    speakerDeviceId: '',
+    cameraDeviceId: ''
+  }
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(PREFS_KEY) : null
     if (raw) {
@@ -29,13 +42,16 @@ function readPrefs(): JoinPrefs {
       return {
         joinMuted: Boolean(parsed.joinMuted),
         joinVideo: Boolean(parsed.joinVideo),
-        joinDeafened: Boolean(parsed.joinDeafened)
+        joinDeafened: Boolean(parsed.joinDeafened),
+        micDeviceId: typeof parsed.micDeviceId === 'string' ? parsed.micDeviceId : '',
+        speakerDeviceId: typeof parsed.speakerDeviceId === 'string' ? parsed.speakerDeviceId : '',
+        cameraDeviceId: typeof parsed.cameraDeviceId === 'string' ? parsed.cameraDeviceId : ''
       }
     }
   } catch {
     // ignore corrupt/absent prefs
   }
-  return { joinMuted: false, joinVideo: false, joinDeafened: false }
+  return fallback
 }
 function writePrefs(prefs: JoinPrefs): void {
   try {
@@ -84,6 +100,23 @@ interface VoiceStore extends JoinPrefs {
   setJoinMuted: (joinMuted: boolean) => void
   setJoinVideo: (joinVideo: boolean) => void
   setJoinDeafened: (joinDeafened: boolean) => void
+  // Device selection (persisted).
+  setMicDeviceId: (micDeviceId: string) => void
+  setSpeakerDeviceId: (speakerDeviceId: string) => void
+  setCameraDeviceId: (cameraDeviceId: string) => void
+}
+
+/** Extract the persisted prefs slice from the store state (so a setter writing one
+ *  field carries the rest). */
+function prefsOf(state: JoinPrefs): JoinPrefs {
+  return {
+    joinMuted: state.joinMuted,
+    joinVideo: state.joinVideo,
+    joinDeafened: state.joinDeafened,
+    micDeviceId: state.micDeviceId,
+    speakerDeviceId: state.speakerDeviceId,
+    cameraDeviceId: state.cameraDeviceId
+  }
 }
 
 export const useVoiceStore = create<VoiceStore>((set) => ({
@@ -133,17 +166,32 @@ export const useVoiceStore = create<VoiceStore>((set) => ({
 
   setJoinMuted: (joinMuted) =>
     set((state) => {
-      writePrefs({ joinMuted, joinVideo: state.joinVideo, joinDeafened: state.joinDeafened })
+      writePrefs({ ...prefsOf(state), joinMuted })
       return { joinMuted }
     }),
   setJoinVideo: (joinVideo) =>
     set((state) => {
-      writePrefs({ joinMuted: state.joinMuted, joinVideo, joinDeafened: state.joinDeafened })
+      writePrefs({ ...prefsOf(state), joinVideo })
       return { joinVideo }
     }),
   setJoinDeafened: (joinDeafened) =>
     set((state) => {
-      writePrefs({ joinMuted: state.joinMuted, joinVideo: state.joinVideo, joinDeafened })
+      writePrefs({ ...prefsOf(state), joinDeafened })
       return { joinDeafened }
+    }),
+  setMicDeviceId: (micDeviceId) =>
+    set((state) => {
+      writePrefs({ ...prefsOf(state), micDeviceId })
+      return { micDeviceId }
+    }),
+  setSpeakerDeviceId: (speakerDeviceId) =>
+    set((state) => {
+      writePrefs({ ...prefsOf(state), speakerDeviceId })
+      return { speakerDeviceId }
+    }),
+  setCameraDeviceId: (cameraDeviceId) =>
+    set((state) => {
+      writePrefs({ ...prefsOf(state), cameraDeviceId })
+      return { cameraDeviceId }
     })
 }))

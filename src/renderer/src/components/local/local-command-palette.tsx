@@ -60,13 +60,13 @@ function LocalPalette(): React.JSX.Element {
       key: `ws-${workspace.id}`,
       group: 'Workspaces',
       label: workspace.name,
-      sublabel: 'Offline',
+      sublabel: 'Local',
       icon: (
         <WorkspaceGlyph
           image={workspace.image}
           icon={workspace.icon}
           name={workspace.name}
-          className="size-5 overflow-hidden rounded bg-warning/15 text-warning"
+          className="size-5 overflow-hidden rounded text-foreground"
           iconClassName="size-3.5"
         />
       ),

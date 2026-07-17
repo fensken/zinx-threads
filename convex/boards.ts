@@ -2,7 +2,7 @@ import { ConvexError, v } from 'convex/values'
 import { query, mutation, type MutationCtx } from './_generated/server'
 import type { Doc, Id } from './_generated/dataModel'
 import { taskPriority } from './schema'
-import { getCurrentUser, getMembership, requireUser } from './lib/auth'
+import { getChannelAccess, getCurrentUser, requireChannelAccess, requireUser } from './lib/auth'
 import { seedBoardColumns } from './lib/boardSeed'
 
 /** A board loads whole — there's no pagination in a kanban UI — so bound it. Past
@@ -74,12 +74,10 @@ async function requireBoardAccess(
   channelId: Id<'channels'>
 ): Promise<{ channel: Doc<'channels'>; userId: Id<'users'> }> {
   const user = await requireUser(ctx)
-  const channel = await ctx.db.get(channelId)
-  if (!channel) throw new ConvexError('Channel not found')
+  // `requireChannelAccess` enforces private-channel membership — an admin outside a
+  // private board channel can't touch it, matching chat/pages.
+  const { channel } = await requireChannelAccess(ctx, channelId, user._id)
   if (channel.kind !== 'kanban') throw new ConvexError('That channel is not a board')
-  if (!(await getMembership(ctx, channel.workspaceId, user._id))) {
-    throw new ConvexError('Not a member of this workspace')
-  }
   return { channel, userId: user._id }
 }
 
@@ -91,9 +89,7 @@ async function requireColumn(
   const user = await requireUser(ctx)
   const column = await ctx.db.get(columnId)
   if (!column) throw new ConvexError('Column not found')
-  if (!(await getMembership(ctx, column.workspaceId, user._id))) {
-    throw new ConvexError('Not a member of this workspace')
-  }
+  await requireChannelAccess(ctx, column.channelId, user._id)
   return { column, userId: user._id }
 }
 
@@ -104,9 +100,8 @@ export const getByChannel = query({
   handler: async (ctx, { channelId }) => {
     const user = await getCurrentUser(ctx)
     if (!user) return []
-    const channel = await ctx.db.get(channelId)
-    if (!channel) return []
-    if (!(await getMembership(ctx, channel.workspaceId, user._id))) return []
+    // Membership, not role: an admin outside a private board channel sees nothing.
+    if (!(await getChannelAccess(ctx, channelId, user._id))) return []
 
     const columns = await ctx.db
       .query('kanbanColumns')
@@ -227,9 +222,7 @@ export const updateTask = mutation({
     const user = await requireUser(ctx)
     const task = await ctx.db.get(taskId)
     if (!task) throw new ConvexError('Task not found')
-    if (!(await getMembership(ctx, task.workspaceId, user._id))) {
-      throw new ConvexError('Not a member of this workspace')
-    }
+    await requireChannelAccess(ctx, task.channelId, user._id)
     await ctx.db.patch(taskId, { ...validateTask(fields), updatedAt: Date.now() })
   }
 })
@@ -240,9 +233,7 @@ export const removeTask = mutation({
     const user = await requireUser(ctx)
     const task = await ctx.db.get(taskId)
     if (!task) return
-    if (!(await getMembership(ctx, task.workspaceId, user._id))) {
-      throw new ConvexError('Not a member of this workspace')
-    }
+    await requireChannelAccess(ctx, task.channelId, user._id)
     await ctx.db.delete(taskId)
   }
 })

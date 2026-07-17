@@ -89,6 +89,23 @@ export interface LocalWhiteboard {
   updatedAt: number
 }
 
+/**
+ * A single local workspace serialized for **export / import** — its identity plus its
+ * channels/groups (with their ORIGINAL ids, which `importWorkspace` remaps fresh) and
+ * the per-channel page/board/whiteboard content keyed by channel id. This is the JSON
+ * carried inside an exported `.zip` (see `lib/local-export.ts`).
+ */
+export interface LocalWorkspaceExport {
+  version: 1
+  exportedAt: number
+  workspace: { name: string; icon?: string; image?: string }
+  channels: Omit<LocalChannel, 'workspaceId'>[]
+  groups: Omit<LocalGroup, 'workspaceId'>[]
+  pages: Record<string, LocalPage>
+  boards: Record<string, LocalBoard>
+  whiteboards: Record<string, LocalWhiteboard>
+}
+
 /** The persisted data slice (everything except `hydrated` + the actions) — what
  *  `lib/local-data.ts` reads/writes. */
 export interface LocalData {
@@ -112,6 +129,9 @@ interface LocalState extends LocalData {
   setWorkspaceIcon: (id: string, icon: string | undefined) => void
   setWorkspaceImage: (id: string, image: string | undefined) => void
   deleteWorkspace: (id: string) => void
+  /** Create a NEW workspace from an exported one, remapping every id so it can never
+   *  collide with existing local data. Returns the new workspace id + switches to it. */
+  importWorkspace: (payload: LocalWorkspaceExport) => string
   setCurrentWorkspace: (id: string) => void
   setProfileName: (name: string) => void
   setProfileAvatar: (avatar: string | undefined) => void
@@ -222,6 +242,55 @@ export const useLocalStore = create<LocalState>()((set) => ({
         whiteboards
       }
     })
+  },
+
+  importWorkspace: (payload): string => {
+    const wsId = uid()
+    // Remap group + channel ids so an imported workspace never collides with existing
+    // local data — and carry each channel's page/board/whiteboard to its NEW id.
+    const groupIdMap = new Map<string, string>()
+    const groups: LocalGroup[] = payload.groups.map((group) => {
+      const id = uid()
+      groupIdMap.set(group.id, id)
+      return { id, workspaceId: wsId, name: group.name, order: group.order }
+    })
+    const pages: Record<string, LocalPage> = {}
+    const boards: Record<string, LocalBoard> = {}
+    const whiteboards: Record<string, LocalWhiteboard> = {}
+    const channels: LocalChannel[] = payload.channels.map((channel) => {
+      const id = uid()
+      if (payload.pages[channel.id]) pages[id] = payload.pages[channel.id]
+      if (payload.boards[channel.id]) boards[id] = payload.boards[channel.id]
+      if (payload.whiteboards[channel.id]) whiteboards[id] = payload.whiteboards[channel.id]
+      return {
+        id,
+        workspaceId: wsId,
+        name: channel.name,
+        kind: channel.kind,
+        groupId: channel.groupId ? groupIdMap.get(channel.groupId) : undefined,
+        order: channel.order,
+        createdAt: channel.createdAt || Date.now()
+      }
+    })
+    set((state) => ({
+      workspaces: [
+        ...state.workspaces,
+        {
+          id: wsId,
+          name: payload.workspace.name.trim() || 'Imported workspace',
+          icon: payload.workspace.icon,
+          image: payload.workspace.image,
+          createdAt: Date.now()
+        }
+      ],
+      currentWorkspaceId: wsId,
+      channels: [...state.channels, ...channels],
+      groups: [...state.groups, ...groups],
+      pages: { ...state.pages, ...pages },
+      boards: { ...state.boards, ...boards },
+      whiteboards: { ...state.whiteboards, ...whiteboards }
+    }))
+    return wsId
   },
 
   setCurrentWorkspace: (id): void => {

@@ -641,8 +641,28 @@ export default defineSchema({
     allDay: v.optional(v.boolean()),
     /** The IANA zone the event was authored in (the workspace's). */
     timezone: v.string(),
-    /** Optionally tied to a channel — "the #design sync". */
+    /** Where the event happens — a **voice channel** in this workspace to meet in
+     *  ("join the #standup call"). Restricted to `kind: 'voice'` by `events.ts`;
+     *  mutually exclusive with `url` in the UI (an event meets in ONE place). */
     channelId: v.optional(v.id('channels')),
+    /** An external meeting link (Zoom/Meet/an address) — the alternative to a voice
+     *  channel. Normalised to an `http(s)` URL by `events.ts`. */
+    url: v.optional(v.string()),
+    /** What KIND of event — colours the calendar and drives the Type filter. Absent
+     *  reads as `meeting` (the default). */
+    kind: v.optional(
+      v.union(
+        v.literal('meeting'),
+        v.literal('deadline'),
+        v.literal('reminder'),
+        v.literal('other')
+      )
+    ),
+    /** Recurrence. Absent = a one-off. `repeatUntil` (UTC ms) bounds the series; absent
+     *  = forever (within the query range). Occurrences are **expanded on read**, never
+     *  stored (see `lib/recurrence.ts`). */
+    repeat: v.optional(v.union(v.literal('daily'), v.literal('weekly'), v.literal('monthly'))),
+    repeatUntil: v.optional(v.number()),
     /** Minutes before `startAt` to remind attendees. Absent (or 0) = no reminder.
      *  The reminder is **derived, not scheduled**: the app surfaces an event once
      *  `now >= startAt - reminderMinutes` (see `events.listUpcoming` + the header

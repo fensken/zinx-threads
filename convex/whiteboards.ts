@@ -1,7 +1,7 @@
 import { ConvexError, v } from 'convex/values'
 import { query, mutation, type MutationCtx } from './_generated/server'
 import type { Doc, Id } from './_generated/dataModel'
-import { getCurrentUser, getMembership, requireUser } from './lib/auth'
+import { getChannelAccess, getCurrentUser, requireChannelAccess, requireUser } from './lib/auth'
 
 /**
  * The Excalidraw canvas behind a `kind: 'whiteboard'` channel — one row per channel,
@@ -27,11 +27,9 @@ async function requireWhiteboardChannel(
   channelId: Id<'channels'>,
   userId: Id<'users'>
 ): Promise<Doc<'channels'>> {
-  const channel = await ctx.db.get(channelId)
-  if (!channel) throw new ConvexError('Channel not found')
-  if (!(await getMembership(ctx, channel.workspaceId, userId))) {
-    throw new ConvexError('Not a member of this workspace')
-  }
+  // `requireChannelAccess` enforces private-channel membership — an admin outside a
+  // private whiteboard channel can't touch it, matching chat/pages/boards.
+  const { channel } = await requireChannelAccess(ctx, channelId, userId)
   if (channel.kind !== 'whiteboard') throw new ConvexError('That channel is not a whiteboard')
   return channel
 }
@@ -43,9 +41,8 @@ export const getByChannel = query({
   handler: async (ctx, { channelId }) => {
     const user = await getCurrentUser(ctx)
     if (!user) return null
-    const channel = await ctx.db.get(channelId)
-    if (!channel) return null
-    if (!(await getMembership(ctx, channel.workspaceId, user._id))) return null
+    // Membership, not role: an admin outside a private whiteboard channel sees nothing.
+    if (!(await getChannelAccess(ctx, channelId, user._id))) return null
     return await ctx.db
       .query('whiteboards')
       .withIndex('by_channel', (q) => q.eq('channelId', channelId))

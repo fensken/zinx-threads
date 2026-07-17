@@ -10,6 +10,9 @@ const COMPOSER_KEY = 'zinx-composer-expanded'
 const SOUND_KEY = 'zinx-sound-enabled'
 const VOLUME_KEY = 'zinx-sound-volume'
 const DESKTOP_NOTIF_KEY = 'zinx-desktop-notifications'
+const PTT_KEY = 'zinx-push-to-talk'
+const PTT_COMBO_KEY = 'zinx-ptt-combo'
+const PTT_LABEL_KEY = 'zinx-ptt-label'
 
 /** Default 0.7 — the sounds are designed to be gentle, so this is "clearly audible"
  *  rather than "loud". */
@@ -52,6 +55,15 @@ interface SettingsState {
   /** Desktop OS notifications while the window is in the background. */
   desktopNotifications: boolean
   setDesktopNotifications: (enabled: boolean) => void
+  /** Voice input mode. `false` = voice activity (mic always live); `true` = push to
+   *  talk (mic muted unless the bound key is held). */
+  pushToTalk: boolean
+  setPushToTalk: (enabled: boolean) => void
+  /** The push-to-talk binding — a serialized `Keybind` (a key + modifiers, so combos
+   *  like `Alt+K` work; see `lib/keybind.ts`) + a human label. Empty until recorded. */
+  pushToTalkCombo: string
+  pushToTalkLabel: string
+  setPushToTalkKey: (combo: string, label: string) => void
 }
 
 function readBool(key: string, fallback: boolean): boolean {
@@ -87,6 +99,18 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setDesktopNotifications: (desktopNotifications) => {
     localStorage.setItem(DESKTOP_NOTIF_KEY, desktopNotifications ? '1' : '0')
     set({ desktopNotifications })
+  },
+  pushToTalk: readBool(PTT_KEY, false),
+  setPushToTalk: (pushToTalk) => {
+    localStorage.setItem(PTT_KEY, pushToTalk ? '1' : '0')
+    set({ pushToTalk })
+  },
+  pushToTalkCombo: localStorage.getItem(PTT_COMBO_KEY) ?? '',
+  pushToTalkLabel: localStorage.getItem(PTT_LABEL_KEY) ?? '',
+  setPushToTalkKey: (combo, label) => {
+    localStorage.setItem(PTT_COMBO_KEY, combo)
+    localStorage.setItem(PTT_LABEL_KEY, label)
+    set({ pushToTalkCombo: combo, pushToTalkLabel: label })
   }
 }))
 

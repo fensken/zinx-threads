@@ -23,7 +23,6 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import {
   Check,
-  Copy,
   FileText,
   FolderOpen,
   Hash,
@@ -74,9 +73,7 @@ import { RenameField } from '@renderer/components/chat/rename-field'
 import { UserPanel } from '@renderer/components/common/user-panel'
 import { useVoiceStore } from '@renderer/store/voice-store'
 import { toSlug } from '@renderer/lib/slug'
-import { copyToClipboard } from '@renderer/lib/clipboard'
 import { cn } from '@renderer/lib/utils'
-import { toast } from 'sonner'
 
 const UNGROUPED = '__ungrouped__'
 
@@ -653,9 +650,6 @@ function ChannelRow({
             surface={(className) => (
               <Link {...linkProps} className={className}>
                 {channelIcon(channel.kind, 'size-4 shrink-0 opacity-60')}
-                {channel.emoji ? (
-                  <span className="shrink-0 text-sm leading-none">{channel.emoji}</span>
-                ) : null}
                 <span className="truncate">{channel.name}</span>
                 {/* Private: not everyone in the workspace can see this. The leading glyph is
                     the channel's KIND, so access lives here, beside the shared-out plug. */}
@@ -792,16 +786,6 @@ function ChannelRow({
               Channel settings
             </ContextMenuItem>
           ) : null}
-          <ContextMenuItem
-            onClick={() =>
-              void copyToClipboard(channel._id).then((ok) => {
-                if (ok) toast.success('Channel ID copied')
-              })
-            }
-          >
-            <Copy className="text-muted-foreground" />
-            Copy channel ID
-          </ContextMenuItem>
           {!locked ? (
             <>
               <ContextMenuSeparator />

@@ -1,7 +1,7 @@
 import { ConvexError, v } from 'convex/values'
 import { query, mutation, type MutationCtx } from './_generated/server'
 import type { Doc, Id } from './_generated/dataModel'
-import { getCurrentUser, getMembership, requireUser } from './lib/auth'
+import { getChannelAccess, getCurrentUser, requireChannelAccess, requireUser } from './lib/auth'
 import { markUploadUsed, objectUrl, r2 } from './files'
 
 /** Best-effort delete of a page's uploaded cover object (a stale object is wasted
@@ -27,9 +27,9 @@ export const getByChannel = query({
   handler: async (ctx, { channelId }) => {
     const user = await getCurrentUser(ctx)
     if (!user) return null
-    const channel = await ctx.db.get(channelId)
-    if (!channel) return null
-    if (!(await getMembership(ctx, channel.workspaceId, user._id))) return null
+    // Membership decides *content* access, not workspace role: an admin outside a
+    // private page channel gets nothing (the same chokepoint chat goes through).
+    if (!(await getChannelAccess(ctx, channelId, user._id))) return null
 
     return await ctx.db
       .query('pages')
@@ -44,12 +44,10 @@ async function requirePageAccess(
   channelId: Id<'channels'>
 ): Promise<{ channel: Doc<'channels'>; page: Doc<'pages'> | null; userId: Id<'users'> }> {
   const user = await requireUser(ctx)
-  const channel = await ctx.db.get(channelId)
-  if (!channel) throw new ConvexError('Channel not found')
+  // `requireChannelAccess` enforces private-channel membership — an admin who isn't in
+  // a private page channel can't write it, matching chat.
+  const { channel } = await requireChannelAccess(ctx, channelId, user._id)
   if (channel.kind !== 'page') throw new ConvexError('That channel is not a page')
-  if (!(await getMembership(ctx, channel.workspaceId, user._id))) {
-    throw new ConvexError('Not a member of this workspace')
-  }
   const page = await ctx.db
     .query('pages')
     .withIndex('by_channel', (q) => q.eq('channelId', channelId))

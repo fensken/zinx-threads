@@ -4,7 +4,7 @@ import { useMutation } from 'convex/react'
 import { useQuery } from 'convex-helpers/react/cache/hooks'
 import { useUploadFile } from '@convex-dev/r2/react'
 import { toast } from 'sonner'
-import { Check, Trash, Warning, X } from '@phosphor-icons/react'
+import { Check, Warning, X } from '@phosphor-icons/react'
 import { api } from '@convex/_generated/api'
 import type { Doc, Id } from '@convex/_generated/dataModel'
 import { Input } from '@renderer/components/ui/input'
@@ -23,6 +23,7 @@ import {
 } from '@renderer/components/ui/select'
 import { useUiStore } from '@renderer/store/ui-store'
 import { ConfirmDialog } from '@renderer/components/common/confirm-dialog'
+import { WorkspaceDeleteCard } from '@renderer/components/settings/workspace-delete-card'
 import { Avatar, FALLBACK_AVATAR_COLOR } from '@renderer/components/common/avatar'
 import { UploadableAvatar } from '@renderer/components/common/uploadable-avatar'
 import { IconPickerDialog } from '@renderer/components/pickers/icon-picker-dialog'
@@ -305,7 +306,7 @@ export function GeneralTab({
         <span className="text-xs text-muted-foreground">
           {workspace.imageUrl
             ? 'A logo is set and takes priority — the icon shows only if you remove it.'
-            : "Pick an icon, or leave blank to use the name's initials."}
+            : 'Pick an icon, or leave blank to use the app logo.'}
         </span>
       </div>
 
@@ -438,13 +439,8 @@ export function DangerTab({
   const remove = useMutation(api.workspaces.remove)
   const navigate = useNavigate()
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen)
-  const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
-  const [confirmName, setConfirmName] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const canDelete = confirmName.trim() === workspaceName
 
   // Close the modal before leaving so it doesn't re-open on the next workspace's
   // shell (settingsOpen is global, persisted state).
@@ -458,82 +454,19 @@ export function DangerTab({
       setBusy(false)
     }
   }
-  const doDelete = async (): Promise<void> => {
-    if (!canDelete) return
-    setBusy(true)
-    setError(null)
-    try {
-      await remove({ workspaceId, confirmName: confirmName.trim() })
-      setSettingsOpen(false)
-      await navigate({ to: '/' })
-    } catch (err) {
-      setError(errorMessage(err, 'Could not delete'))
-    } finally {
-      setBusy(false)
-    }
-  }
 
   return (
     <div className="grid gap-4">
       {isOwner ? (
-        <div className="grid gap-2 rounded-xl border border-destructive/30 p-4">
-          <p className="text-sm font-medium">Delete this workspace</p>
-          <p className="text-sm text-muted-foreground">
-            Permanently removes the workspace and all its channels, messages, and members. This
-            can&apos;t be undone.
-          </p>
-          {confirmDelete ? (
-            <div className="mt-1 grid gap-2">
-              <label htmlFor="ws-confirm-delete" className="text-sm text-muted-foreground">
-                Type <span className="font-semibold text-foreground">{workspaceName}</span> to
-                confirm
-              </label>
-              <Input
-                id="ws-confirm-delete"
-                autoFocus
-                value={confirmName}
-                onChange={(e) => setConfirmName(e.target.value)}
-                placeholder={workspaceName}
-                disabled={busy}
-              />
-              {error ? <p className="text-sm text-destructive">{error}</p> : null}
-              <div className="flex gap-2">
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  disabled={busy || !canDelete}
-                  onClick={doDelete}
-                  className="gap-1.5"
-                >
-                  {busy ? null : <Trash className="size-4" />}
-                  <BusyLabel busy={busy} busyText="Deleting…" idle="Delete workspace" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => {
-                    setConfirmDelete(false)
-                    setConfirmName('')
-                    setError(null)
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-fit gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={() => setConfirmDelete(true)}
-            >
-              <Trash className="size-4" />
-              Delete workspace
-            </Button>
-          )}
-        </div>
+        <WorkspaceDeleteCard
+          workspaceName={workspaceName}
+          description="Permanently removes the workspace and all its channels, messages, and members. This can’t be undone."
+          onDelete={async (confirmName) => {
+            await remove({ workspaceId, confirmName })
+            setSettingsOpen(false)
+            await navigate({ to: '/' })
+          }}
+        />
       ) : (
         <div className="grid gap-2 rounded-xl border p-4">
           <p className="text-sm font-medium">Leave this workspace</p>

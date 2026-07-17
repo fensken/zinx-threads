@@ -22,6 +22,7 @@ import {
   MicrophoneSlash,
   Monitor,
   PhoneDisconnect,
+  PushPin,
   SpeakerHigh,
   UsersThree,
   VideoCamera,
@@ -35,6 +36,7 @@ import { Spinner } from '@renderer/components/ui/spinner'
 import { Popover, PopoverContent, PopoverTrigger } from '@renderer/components/ui/popover'
 import { Tip } from '@renderer/components/ui/tooltip'
 import { useVoiceStore } from '@renderer/store/voice-store'
+import { useSettingsStore } from '@renderer/store/settings-store'
 import { useCallControls } from '@renderer/components/voice/use-call-controls'
 import { ScreenSharePicker } from '@renderer/components/voice/screen-share-picker'
 import { DeafenGlyph } from '@renderer/components/voice/deafen-glyph'
@@ -105,26 +107,58 @@ export function RealVoiceView({
     return <ActiveCall />
   }
 
-  // You left this call (or it's mid-connect) — offer to (re)join.
+  // You left this call (or it's mid-connect) — a playful, themed "waiting room" that
+  // offers to (re)join, with a drifting gradient atmosphere behind it (Discord-style).
   const isConnecting = connecting === channel._id
   return (
-    <Centered>
-      <div className="flex size-16 items-center justify-center rounded-2xl bg-muted">
-        <SpeakerHigh className="size-8 text-muted-foreground" weight="duotone" />
+    <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden">
+      <VoiceAtmosphere />
+      <div className="relative z-10 flex flex-col items-center gap-5 p-6 text-center">
+        <div className="relative flex size-24 items-center justify-center">
+          {/* A soft breathing halo behind the glyph — the room feels "alive" while empty. */}
+          <span className="absolute inset-0 animate-pulse rounded-full bg-primary/25 blur-xl" />
+          <span className="relative flex size-20 items-center justify-center rounded-3xl border border-primary/20 bg-primary/10 text-primary shadow-lg shadow-primary/10">
+            <SpeakerHigh className="size-9" weight="duotone" />
+          </span>
+        </div>
+        <div className="space-y-1.5">
+          <p className="text-2xl font-bold tracking-tight text-foreground">{channel.name}</p>
+          <p className="max-w-xs text-sm text-muted-foreground">
+            {isConnecting
+              ? 'Connecting to voice…'
+              : 'Hop in to talk, video chat and share your screen.'}
+          </p>
+        </div>
+        <Button
+          size="lg"
+          className="gap-2 shadow-lg shadow-primary/20"
+          disabled={isConnecting}
+          onClick={() => void join()}
+        >
+          {isConnecting ? (
+            <Spinner className="size-4" />
+          ) : (
+            <Microphone className="size-4" weight="fill" />
+          )}
+          {isConnecting ? 'Connecting…' : 'Join Voice'}
+        </Button>
       </div>
-      <div className="space-y-1">
-        <p className="text-lg font-semibold text-foreground">{channel.name}</p>
-        <p className="text-sm">{isConnecting ? 'Connecting…' : 'You’re not in this call.'}</p>
-      </div>
-      <Button size="lg" className="gap-2" disabled={isConnecting} onClick={() => void join()}>
-        {isConnecting ? (
-          <Spinner className="size-4" />
-        ) : (
-          <Microphone className="size-4" weight="fill" />
-        )}
-        {isConnecting ? 'Connecting…' : 'Join voice'}
-      </Button>
-    </Centered>
+    </div>
+  )
+}
+
+/** The drifting, themed gradient background behind the voice pre-join screen — Discord's
+ *  playful animated voice look, in our palette. Decorative (`aria-hidden`); the blobs are
+ *  primary-tinted so it stays on-theme, and `prefers-reduced-motion` freezes them (see the
+ *  `voice-blob` rule in globals.css). */
+function VoiceAtmosphere(): React.JSX.Element {
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-b from-primary/[0.06] via-transparent to-primary/[0.12]" />
+      <div className="voice-blob absolute -top-24 -left-40 size-[38rem] rounded-full bg-primary/25 blur-[120px] [animation:voice-drift-a_26s_ease-in-out_infinite]" />
+      <div className="voice-blob absolute -right-32 -bottom-32 size-[34rem] rounded-full bg-primary/15 blur-[130px] [animation:voice-drift-b_34s_ease-in-out_infinite]" />
+      <div className="voice-blob absolute top-1/2 left-1/2 size-[26rem] rounded-full bg-primary/10 blur-[110px] [animation:voice-drift-c_22s_ease-in-out_infinite]" />
+    </div>
   )
 }
 
@@ -422,6 +456,8 @@ function VoiceControlBar({
   onToggleFullscreen: () => void
 }): React.JSX.Element {
   const controls = useCallControls()
+  const pushToTalk = useSettingsStore((s) => s.pushToTalk)
+  const setPushToTalk = useSettingsStore((s) => s.setPushToTalk)
 
   return (
     <div
@@ -453,6 +489,15 @@ function VoiceControlBar({
         OffIcon={VideoCameraSlash}
         label="Camera"
       />
+      {/* Quick push-to-talk on/off — lit (primary) when active, so normal mode vs
+          push-to-talk is obvious at a glance. */}
+      <ToggleButton
+        active={pushToTalk}
+        onClick={() => setPushToTalk(!pushToTalk)}
+        title={pushToTalk ? 'Push to talk: On' : 'Push to talk: Off'}
+      >
+        <PushPin className="size-5" weight={pushToTalk ? 'fill' : 'regular'} />
+      </ToggleButton>
       <ToggleButton
         active={controls.deafened}
         danger

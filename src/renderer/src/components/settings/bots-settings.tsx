@@ -233,7 +233,8 @@ function BotWebhooks({
 
   // Only chat channels the bot could post in are valid targets.
   const postable = (channels ?? []).filter((c) => c.kind === 'chat' && c.canPost)
-  const channelItems = Object.fromEntries(postable.map((c) => [c._id, `#${c.name}`]))
+  // Plain names — the trigger shows the channel-kind icon, not a text `#`.
+  const channelItems = Object.fromEntries(postable.map((c) => [c._id, c.name]))
 
   const add = async (): Promise<void> => {
     if (!channelId) return
@@ -259,6 +260,7 @@ function BotWebhooks({
             items={channelItems}
           >
             <SelectTrigger className="h-9 flex-1">
+              <ChannelKindIcon kind="chat" className="size-3.5 text-muted-foreground" />
               <SelectValue placeholder="Post to channel…" />
             </SelectTrigger>
             <SelectContent>

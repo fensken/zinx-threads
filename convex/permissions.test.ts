@@ -363,6 +363,105 @@ describe('read-only channels (postingPolicy: selected)', () => {
   })
 })
 
+describe('private non-chat channels (pages / boards / whiteboards / voice)', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  // The same rule as chat, and the same load-bearing case: an ADMIN who isn't a member of
+  // a private page/board/whiteboard/voice channel gets NOTHING — read or write. These route
+  // through `getChannelAccess` exactly like `messages.*` do.
+
+  it('a private PAGE is off-limits to an admin who is not a member', async () => {
+    const { asAlice, asBob, asCarol, workspaceId, bobId } = await setup()
+    const channelId = await asAlice.mutation(api.channels.create, {
+      workspaceId,
+      name: 'private-page',
+      kind: 'page',
+      visibility: 'private'
+    })
+    await asAlice.mutation(api.channelMembers.add, { channelId, userIds: [bobId] })
+    await asAlice.mutation(api.pages.saveContent, { channelId, content: '[{"secret":true}]' })
+
+    // A member reads + writes.
+    expect(await asBob.query(api.pages.getByChannel, { channelId })).not.toBeNull()
+    await expect(
+      asBob.mutation(api.pages.saveMeta, { channelId, title: 'Plans' })
+    ).resolves.toBeNull()
+
+    // Carol (admin, not in the room): nothing.
+    expect(await asCarol.query(api.pages.getByChannel, { channelId })).toBeNull()
+    await expect(
+      asCarol.mutation(api.pages.saveContent, { channelId, content: '[]' })
+    ).rejects.toThrow()
+    await expect(
+      asCarol.mutation(api.pages.saveMeta, { channelId, title: 'Hack' })
+    ).rejects.toThrow()
+  })
+
+  it('a private BOARD is off-limits to an admin who is not a member', async () => {
+    const { asAlice, asBob, asCarol, workspaceId, bobId } = await setup()
+    const channelId = await asAlice.mutation(api.channels.create, {
+      workspaceId,
+      name: 'private-board',
+      kind: 'kanban',
+      visibility: 'private'
+    })
+    await asAlice.mutation(api.channelMembers.add, { channelId, userIds: [bobId] })
+
+    // A member sees the seeded board; the admin outside sees nothing + can't write.
+    expect((await asBob.query(api.boards.getByChannel, { channelId })).length).toBeGreaterThan(0)
+    expect(await asCarol.query(api.boards.getByChannel, { channelId })).toHaveLength(0)
+    await expect(
+      asCarol.mutation(api.boards.createColumn, { channelId, title: 'Sneak' })
+    ).rejects.toThrow()
+  })
+
+  it('a private WHITEBOARD is off-limits to an admin who is not a member', async () => {
+    const { asAlice, asBob, asCarol, workspaceId, bobId } = await setup()
+    const channelId = await asAlice.mutation(api.channels.create, {
+      workspaceId,
+      name: 'private-wb',
+      kind: 'whiteboard',
+      visibility: 'private'
+    })
+    await asAlice.mutation(api.channelMembers.add, { channelId, userIds: [bobId] })
+    await asAlice.mutation(api.whiteboards.save, {
+      channelId,
+      elements: '[{"id":"a"}]',
+      elementCount: 1
+    })
+
+    expect(await asBob.query(api.whiteboards.getByChannel, { channelId })).not.toBeNull()
+    expect(await asCarol.query(api.whiteboards.getByChannel, { channelId })).toBeNull()
+    await expect(
+      asCarol.mutation(api.whiteboards.save, { channelId, elements: '[]', elementCount: 0 })
+    ).rejects.toThrow()
+  })
+
+  it('a private VOICE channel never leaks its participants to an admin outside it', async () => {
+    const { asAlice, asBob, asCarol, workspaceId, bobId } = await setup()
+    const channelId = await asAlice.mutation(api.channels.create, {
+      workspaceId,
+      name: 'private-voice',
+      kind: 'voice',
+      visibility: 'private'
+    })
+    await asAlice.mutation(api.channelMembers.add, { channelId, userIds: [bobId] })
+
+    // Bob (a member) joins the call.
+    await asBob.mutation(api.voice.setPresence, { channelId })
+    const inChannel = (rows: { channelId: string }[]) => rows.filter((r) => r.channelId === channelId)
+
+    // Alice (in the channel) sees him; Carol (admin, outside) sees nobody in it.
+    expect(inChannel(await asAlice.query(api.voice.listByWorkspace, { workspaceId }))).toHaveLength(1)
+    expect(inChannel(await asCarol.query(api.voice.listByWorkspace, { workspaceId }))).toHaveLength(0)
+
+    // Carol can't even report presence into it (no row is created).
+    await asCarol.mutation(api.voice.setPresence, { channelId })
+    expect(inChannel(await asAlice.query(api.voice.listByWorkspace, { workspaceId }))).toHaveLength(1)
+  })
+})
+
 describe('guests', () => {
   it('sees ONLY the channels they were added to — every channel acts private', async () => {
     const { asAlice, asBob, workspaceId, slug, bobId, setRole } = await setup()

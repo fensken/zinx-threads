@@ -12,6 +12,8 @@ import { toast } from 'sonner'
 import { api } from '@convex/_generated/api'
 import type { Id } from '@convex/_generated/dataModel'
 import { useVoiceStore } from '@renderer/store/voice-store'
+import { PushToTalkController } from '@renderer/components/voice/push-to-talk-controller'
+import { DeviceApplier } from '@renderer/components/voice/device-applier'
 import { playJoinSound, playLeaveSound } from '@renderer/lib/sounds'
 import { errorMessage } from '@renderer/lib/convex-error'
 
@@ -58,6 +60,8 @@ export function VoiceCallProvider({ children }: { children: React.ReactNode }): 
       {call ? <CallSounds /> : null}
       {call ? <VoicePresenceReporter channelId={call.channelId} /> : null}
       {call ? <SpeakingTracker /> : null}
+      {call ? <PushToTalkController /> : null}
+      {call ? <DeviceApplier /> : null}
     </LiveKitRoom>
   )
 }

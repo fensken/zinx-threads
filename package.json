@@ -69,6 +69,7 @@
     "electron-updater": "^6.3.9",
     "embla-carousel-react": "^8.6.0",
     "emoji-picker-react": "^4.12.2",
+    "fflate": "^0.8.2",
     "input-otp": "^1.4.2",
     "jose": "^6.2.3",
     "livekit-client": "^2.20.1",

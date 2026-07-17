@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { BRAND } from '@shared/brand'
-import { WifiSlash } from '@phosphor-icons/react'
+import { HardDrives } from '@phosphor-icons/react'
 import { Button } from '@renderer/components/ui/button'
 import { Spinner } from '@renderer/components/ui/spinner'
 import { Logo } from '@renderer/components/layout/logo'
@@ -33,16 +33,16 @@ export function SignInPage(): React.JSX.Element {
             'Sign in'
           )}
         </Button>
-        {/* No-account, local-only pages + boards — DESKTOP ONLY: it persists to disk
+        {/* No-account, device-local pages + boards — DESKTOP ONLY: it persists to disk
             and hosts the local AI assistant, neither of which a browser tab can do, so
-            offline mode isn't offered on web. */}
+            local mode isn't offered on web. */}
         {isElectron ? (
           <Link
             to="/local"
             className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
-            <WifiSlash className="size-4" />
-            Work offline without an account
+            <HardDrives className="size-4" />
+            Use local mode — no account, stays on this device
           </Link>
         ) : null}
       </div>

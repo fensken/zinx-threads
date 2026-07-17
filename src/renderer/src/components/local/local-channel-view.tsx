@@ -1,7 +1,7 @@
 import { Suspense, lazy } from 'react'
-import { FileText, Kanban, PenNib } from '@phosphor-icons/react'
 import { useLocalStore, type LocalChannel } from '@renderer/store/local-store'
 import { SidebarToggle } from '@renderer/components/layout/sidebar-toggle'
+import { ChannelKindIcon } from '@renderer/components/chat/channel-kind-icon'
 import { EditableChannelName } from '@renderer/components/chat/editable-channel-name'
 import { Spinner } from '@renderer/components/ui/spinner'
 import { LocalBoardView } from '@renderer/components/local/local-board-view'
@@ -24,22 +24,18 @@ const LocalWhiteboardView = lazy(() =>
 export function LocalChannelView({ channel }: { channel: LocalChannel }): React.JSX.Element {
   const rename = useLocalStore((state) => state.renameChannel)
 
-  const icon =
-    channel.kind === 'kanban' ? (
-      <Kanban className="size-5 shrink-0 text-muted-foreground" />
-    ) : channel.kind === 'whiteboard' ? (
-      <PenNib className="size-5 shrink-0 text-muted-foreground" />
-    ) : (
-      <FileText className="size-5 shrink-0 text-muted-foreground" />
-    )
-
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-card">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3">
         <SidebarToggle />
         <EditableChannelName
           name={channel.name}
-          icon={icon}
+          icon={
+            <ChannelKindIcon
+              kind={channel.kind}
+              className="size-5 shrink-0 text-muted-foreground"
+            />
+          }
           onRename={(name) => rename(channel.id, name)}
         />
       </header>

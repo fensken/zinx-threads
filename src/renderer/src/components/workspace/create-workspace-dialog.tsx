@@ -22,6 +22,82 @@ import { detectTimeZone } from '@renderer/lib/timezone'
 import { errorMessage } from '@renderer/lib/convex-error'
 import { toSlug } from '@renderer/lib/slug'
 
+/**
+ * The presentational Create-a-workspace shell — **the one component both the online and
+ * local dialogs render**. It owns the modal + name field + footer; online-only fields
+ * (the URL address with its availability check, the timezone) are injected as `children`,
+ * so local simply passes none. Same UI, no fork.
+ */
+export function CreateWorkspaceDialogView({
+  open,
+  onOpenChange,
+  title = 'Create a workspace',
+  description,
+  submitLabel = 'Create workspace',
+  name,
+  onNameChange,
+  namePlaceholder = 'Acme Inc.',
+  busy = false,
+  error = null,
+  canSubmit,
+  onSubmit,
+  children
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  title?: string
+  description?: string
+  submitLabel?: string
+  name: string
+  onNameChange: (value: string) => void
+  namePlaceholder?: string
+  busy?: boolean
+  error?: string | null
+  canSubmit: boolean
+  onSubmit: () => void
+  /** Online-only extra fields (address, timezone) rendered between name and footer. */
+  children?: React.ReactNode
+}): React.JSX.Element {
+  const submit = (event: React.FormEvent): void => {
+    event.preventDefault()
+    if (!canSubmit) return
+    onSubmit()
+  }
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          {description ? <DialogDescription>{description}</DialogDescription> : null}
+        </DialogHeader>
+        <form id="create-workspace-form" onSubmit={submit} className="grid gap-3 py-2">
+          <div className="grid gap-1.5">
+            <Label htmlFor="ws-name">Workspace name</Label>
+            <Input
+              id="ws-name"
+              autoFocus
+              value={name}
+              onChange={(event) => onNameChange(event.target.value)}
+              placeholder={namePlaceholder}
+              maxLength={60}
+            />
+          </div>
+          {children}
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        </form>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button type="submit" form="create-workspace-form" disabled={!canSubmit}>
+            <BusyLabel busy={busy} busyText="Creating…" idle={submitLabel} />
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 /** Create-workspace dialog (used by the switcher + onboarding). Picks a **name** and a
  *  URL **address** (slug) — the address auto-fills from the name and is checked for
  *  availability as you type; taken/reserved addresses are flagged before you submit. */
@@ -52,8 +128,7 @@ export function CreateWorkspaceDialog({
     if (!slugTouched) setSlug(toSlug(value))
   }
 
-  const submit = async (event: React.FormEvent): Promise<void> => {
-    event.preventDefault()
+  const submit = async (): Promise<void> => {
     if (!canSubmit) return
     setBusy(true)
     setError(null)
@@ -102,63 +177,43 @@ export function CreateWorkspaceDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Create a workspace</DialogTitle>
-          <DialogDescription>
-            A workspace is where your team chats, plans, and shares.
-          </DialogDescription>
-        </DialogHeader>
-        <form id="create-workspace-form" onSubmit={submit} className="grid gap-3 py-2">
-          <div className="grid gap-1.5">
-            <Label htmlFor="ws-name">Workspace name</Label>
-            <Input
-              id="ws-name"
-              autoFocus
-              value={name}
-              onChange={(event) => onNameChange(event.target.value)}
-              placeholder="Acme Inc."
-              maxLength={60}
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="ws-slug">Address</Label>
-            <div className="flex items-center rounded-md border bg-transparent focus-within:border-ring">
-              <span className="pl-3 text-sm text-muted-foreground select-none">/w/</span>
-              <Input
-                id="ws-slug"
-                value={slug}
-                onChange={(event) => {
-                  setSlugTouched(true)
-                  setSlug(toSlug(event.target.value))
-                }}
-                placeholder="acme"
-                maxLength={40}
-                className="border-0 pl-1 focus-visible:ring-0"
-              />
-            </div>
-            {status()}
-          </div>
-          <div className="grid gap-1.5">
-            <Label>Time zone</Label>
-            <TimezoneSelect value={timezone} onChange={setTimezone} />
-            <p className="text-xs text-muted-foreground">
-              The team&apos;s working clock. Events are scheduled in it — everyone still sees the
-              time in their own zone as well.
-            </p>
-          </div>
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
-        </form>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button type="submit" form="create-workspace-form" disabled={!canSubmit}>
-            <BusyLabel busy={busy} busyText="Creating…" idle="Create workspace" />
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <CreateWorkspaceDialogView
+      open={open}
+      onOpenChange={onOpenChange}
+      description="A workspace is where your team chats, plans, and shares."
+      name={name}
+      onNameChange={onNameChange}
+      busy={busy}
+      error={error}
+      canSubmit={canSubmit}
+      onSubmit={() => void submit()}
+    >
+      <div className="grid gap-1.5">
+        <Label htmlFor="ws-slug">Address</Label>
+        <div className="flex items-center rounded-md border bg-transparent focus-within:border-ring">
+          <span className="pl-3 text-sm text-muted-foreground select-none">/w/</span>
+          <Input
+            id="ws-slug"
+            value={slug}
+            onChange={(event) => {
+              setSlugTouched(true)
+              setSlug(toSlug(event.target.value))
+            }}
+            placeholder="acme"
+            maxLength={40}
+            className="border-0 pl-1 focus-visible:ring-0"
+          />
+        </div>
+        {status()}
+      </div>
+      <div className="grid gap-1.5">
+        <Label>Time zone</Label>
+        <TimezoneSelect value={timezone} onChange={setTimezone} />
+        <p className="text-xs text-muted-foreground">
+          The team&apos;s working clock. Events are scheduled in it — everyone still sees the time
+          in their own zone as well.
+        </p>
+      </div>
+    </CreateWorkspaceDialogView>
   )
 }

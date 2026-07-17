@@ -3,13 +3,21 @@ import type { ChatMessage } from '@renderer/components/chat/message-row'
 import type { OutboxEntry } from '@renderer/store/outbox-store'
 
 /** The author fields a pending row needs. Comes from the workspace directory —
- *  the sender is, by definition, a member. */
+ *  the sender is, by definition, a member. **Presence + custom status are carried too**
+ *  so the optimistic row shows your ACTUAL status (Away / DND / a custom emoji), not a
+ *  default "online" that then flips when the server message lands. */
 export interface PendingAuthor {
   userId: string
   name: string
   color: string
   avatarUrl?: string | null
+  presence?: string | null
+  statusEmoji?: string | null
+  statusText?: string | null
 }
+
+/** The strict author shape a rendered message row carries (presence is a narrow union). */
+type MessageAuthor = NonNullable<ChatMessage['author']>
 
 /** Turn an outbox entry into a row the message list can render.
  *
@@ -27,7 +35,17 @@ function toMessage(entry: OutboxEntry, author: PendingAuthor | undefined): ChatM
     threadId: entry.threadId as Id<'threads'> | undefined,
     replyToId: entry.replyToId as Id<'messages'> | undefined,
     author: author
-      ? { name: author.name, color: author.color, avatarUrl: author.avatarUrl ?? undefined }
+      ? {
+          name: author.name,
+          color: author.color,
+          avatarUrl: author.avatarUrl ?? undefined,
+          // Match the real message's status so nothing flips when it lands. The directory
+          // types presence loosely (string); it's the same value set as the message
+          // author's narrow union, so narrow it back here.
+          presence: (author.presence ?? undefined) as MessageAuthor['presence'],
+          statusEmoji: author.statusEmoji ?? undefined,
+          statusText: author.statusText ?? undefined
+        }
       : null,
     reactions: [],
     // Show the local preview while the message is unsent; the server URL takes

@@ -51,10 +51,7 @@ export function IconPickerDialog({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className={cn(
-            'flex h-9 w-full items-center gap-2 rounded-md border border-input bg-transparent px-3 text-left text-sm shadow-xs transition-colors hover:bg-accent/40 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
-            hasSelected ? 'pr-9' : 'pr-8'
-          )}
+          className="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-transparent px-3 pr-8 text-left text-sm shadow-xs transition-colors hover:bg-accent/40 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
         >
           {hasSelected ? (
             <DynamicIcon name={selectedIcon} className="size-4 shrink-0 text-foreground" />
@@ -64,8 +61,10 @@ export function IconPickerDialog({
           <span className={cn('min-w-0 flex-1 truncate', !hasSelected && 'text-muted-foreground')}>
             {hasSelected ? selectedIcon : 'Pick an icon…'}
           </span>
-          {!hasSelected ? <CaretDown className="size-3.5 shrink-0 text-muted-foreground" /> : null}
         </button>
+        {/* A single trailing control at the right edge — the clear X when an icon is
+            picked, otherwise a select-style caret (absolutely positioned so it sits flush
+            against the edge, like a real select trigger). */}
         {hasSelected ? (
           <button
             type="button"
@@ -75,7 +74,9 @@ export function IconPickerDialog({
           >
             <X className="size-3 text-muted-foreground opacity-60 hover:opacity-100" />
           </button>
-        ) : null}
+        ) : (
+          <CaretDown className="pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        )}
       </div>
 
       <DialogContent className="p-0 sm:max-w-[480px]">

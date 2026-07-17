@@ -36,6 +36,7 @@ export type SettingsSection =
   | 'account'
   | 'appearance'
   | 'notifications'
+  | 'voice'
   | 'startup'
   | 'developers'
   | 'advanced'

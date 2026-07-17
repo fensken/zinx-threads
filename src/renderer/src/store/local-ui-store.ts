@@ -2,7 +2,8 @@ import { create } from 'zustand'
 
 /** Which pane the offline settings dialog opens to. Mirrors the online settings
  *  sections, minus the online-only ones (members, per-workspace nickname, etc.). */
-export type LocalSettingsSection = 'profile' | 'appearance' | 'workspace' | 'danger'
+export type LocalSettingsSection =
+  'profile' | 'appearance' | 'notifications' | 'startup' | 'workspace' | 'danger'
 
 /** Ephemeral UI state for the offline shell (NOT persisted). */
 interface LocalUiStore {

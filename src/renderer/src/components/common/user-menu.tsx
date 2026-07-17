@@ -310,7 +310,7 @@ export function UserMenu(props: UserMenuProps): React.JSX.Element {
           }}
         >
           <WifiSlash className="size-4 text-muted-foreground" />
-          <span className="flex-1">Offline workspaces</span>
+          <span className="flex-1">Local workspaces</span>
         </Row>
       ) : null}
 

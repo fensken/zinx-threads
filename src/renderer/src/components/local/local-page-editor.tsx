@@ -1,15 +1,18 @@
 import { useCallback, useState } from 'react'
+import { toast } from 'sonner'
 import { PageEditor, type PageMetaPatch } from '@renderer/components/page/page-editor'
 import {
   isEmptyPageContent,
   parsePageContent,
   type PageDoc
 } from '@renderer/components/page/page-schema'
+import { fileToCoverDataUrl } from '@renderer/lib/local-avatar'
 import { useLocalStore } from '@renderer/store/local-store'
 
-/** A local (offline) page — the presentational `PageEditor` seeded from + saved to
- *  the local store. No cover **upload** (that needs R2/an account); the cover picker
- *  still offers gradients / colors / links. Lazy-loaded (BlockNote is a big chunk); keyed per channel by the caller so
+/** A local page — the presentational `PageEditor` seeded from + saved to the local
+ *  store. The cover picker offers gradients / colors / links **and a device image**
+ *  (stored as a downscaled data URL, no upload); only Unsplash is hidden (it needs the
+ *  network). Lazy-loaded (BlockNote is a big chunk); keyed per channel by the caller so
  *  BlockNote re-seeds on channel switch.
  *
  *  **Writes to the store are NOT debounced**, deliberately. The store is memory — a
@@ -70,14 +73,32 @@ export function LocalPageEditor({
     [savePageMeta, renameChannel, channelId]
   )
 
+  // Pick a cover from the device — downscaled to a data URL and saved to the store (no
+  // upload). The editor only reflects the returned URL in its own state (the online path
+  // persists via a mutation), so we persist it here.
+  const handleCoverUpload = useCallback(
+    async (file: File): Promise<string> => {
+      try {
+        const url = await fileToCoverDataUrl(file)
+        savePageMeta(channelId, { cover: url, coverY: 50 })
+        return url
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Could not use that image')
+        throw error
+      }
+    },
+    [savePageMeta, channelId]
+  )
+
   return (
     <PageEditor
       key={channelId}
       doc={seed}
       onContentChange={pushContent}
       onMetaChange={pushMeta}
-      // Offline: no cover upload (needs R2) and no Unsplash (needs the network) —
-      // gradients / colors / links still work.
+      onCoverUpload={handleCoverUpload}
+      // Offline: a device image works (data URL, above), but Unsplash needs the network,
+      // so it stays hidden — gradients / colors / links / upload all work.
       allowNetworkCovers={false}
     />
   )

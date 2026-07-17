@@ -38,6 +38,7 @@ import type * as lib_messages from "../lib/messages.js";
 import type * as lib_notifications from "../lib/notifications.js";
 import type * as lib_post from "../lib/post.js";
 import type * as lib_reactions from "../lib/reactions.js";
+import type * as lib_recurrence from "../lib/recurrence.js";
 import type * as lib_threads from "../lib/threads.js";
 import type * as lib_tokens from "../lib/tokens.js";
 import type * as lib_unread from "../lib/unread.js";
@@ -95,6 +96,7 @@ declare const fullApi: ApiFromModules<{
   "lib/notifications": typeof lib_notifications;
   "lib/post": typeof lib_post;
   "lib/reactions": typeof lib_reactions;
+  "lib/recurrence": typeof lib_recurrence;
   "lib/threads": typeof lib_threads;
   "lib/tokens": typeof lib_tokens;
   "lib/unread": typeof lib_unread;

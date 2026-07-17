@@ -1,5 +1,7 @@
 import { useMemo } from 'react'
+import { ArrowsClockwise } from '@phosphor-icons/react'
 import type { CalendarEvent, GridDay } from '@renderer/lib/calendar-grid'
+import { KIND_META } from '@renderer/components/events/event-kind'
 import { formatTimeInZone } from '@renderer/lib/timezone'
 import { cn } from '@renderer/lib/utils'
 
@@ -75,7 +77,7 @@ export function MonthGrid({
               <span className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-hidden">
                 {hits.slice(0, MAX_CHIPS).map((event) => (
                   <span
-                    key={event._id}
+                    key={event.instanceKey}
                     // A chip inside the day button: a nested <button> is invalid HTML,
                     // so this is a span that stops the click from also picking the day.
                     role="button"
@@ -91,14 +93,22 @@ export function MonthGrid({
                         onOpenEvent(event)
                       }
                     }}
-                    className="flex items-center gap-1 truncate rounded bg-primary/10 px-1 py-0.5 text-[10px] text-primary transition-colors hover:bg-primary/20"
+                    // A coloured kind dot carries the type; the chip itself stays neutral
+                    // so a busy day isn't a rainbow.
+                    className="flex items-center gap-1 truncate rounded bg-muted px-1 py-0.5 text-[10px] text-foreground transition-colors hover:bg-accent"
                   >
+                    <span
+                      className={cn('size-1.5 shrink-0 rounded-full', KIND_META[event.kind].dot)}
+                    />
                     {!event.allDay ? (
-                      <span className="shrink-0 font-medium opacity-80">
+                      <span className="shrink-0 font-medium text-muted-foreground">
                         {formatTimeInZone(event.startAt, zone)}
                       </span>
                     ) : null}
                     <span className="truncate">{event.title}</span>
+                    {event.isRecurring ? (
+                      <ArrowsClockwise className="ml-auto size-2.5 shrink-0 text-muted-foreground" />
+                    ) : null}
                   </span>
                 ))}
                 {hits.length > MAX_CHIPS ? (

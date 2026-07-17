@@ -1,15 +1,26 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from 'convex-helpers/react/cache/hooks'
-import { CalendarDots, CaretLeft, CaretRight, List, Plus } from '@phosphor-icons/react'
+import {
+  CalendarDots,
+  CaretDown,
+  CaretLeft,
+  CaretRight,
+  Funnel,
+  List,
+  Plus
+} from '@phosphor-icons/react'
 import { api } from '@convex/_generated/api'
 import { IconButton } from '@renderer/components/common/icon-button'
 import { SidebarToggle } from '@renderer/components/layout/sidebar-toggle'
 import { LoadingBlock } from '@renderer/components/common/loading-block'
 import { CalendarSkeleton } from '@renderer/components/common/skeletons'
 import { Button } from '@renderer/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@renderer/components/ui/popover'
+import { ChannelKindIcon } from '@renderer/components/chat/channel-kind-icon'
 import { EventDetailDialog } from '@renderer/components/events/event-detail-dialog'
 import { EventDialog } from '@renderer/components/events/event-dialog'
 import { EventTime } from '@renderer/components/events/event-time'
+import { EVENT_KINDS, KIND_META, type EventKind } from '@renderer/components/events/event-kind'
 import { MonthGrid } from '@renderer/components/events/month-grid'
 import { buildMonthGrid, type CalendarEvent } from '@renderer/lib/calendar-grid'
 import { partsInZone, safeZone, zoneLabel } from '@renderer/lib/timezone'
@@ -58,6 +69,9 @@ export function EventsPage({ serverId }: { serverId: string }): React.JSX.Elemen
   const [creating, setCreating] = useState<{ seedAt?: number } | null>(null)
   const [editing, setEditing] = useState<CalendarEvent | null>(null)
   const [detailId, setDetailId] = useState<CalendarEvent['_id'] | null>(null)
+  // Client-side filters (type + your RSVP) over the loaded events — no extra query.
+  const [kindFilter, setKindFilter] = useState<'all' | EventKind>('all')
+  const [rsvpFilter, setRsvpFilter] = useState<'all' | 'going' | 'maybe'>('all')
   const setNavOpen = useUiStore((s) => s.setNavOpen)
 
   const days = useMemo(
@@ -77,6 +91,13 @@ export function EventsPage({ serverId }: { serverId: string }): React.JSX.Elemen
     api.events.listUpcoming,
     workspace && view === 'upcoming' ? { workspaceId: workspace._id, limit: 20 } : 'skip'
   )
+
+  const filtersActive = kindFilter !== 'all' || rsvpFilter !== 'all'
+  const matches = (e: { kind: EventKind; myStatus?: string | null }): boolean => {
+    if (kindFilter !== 'all' && e.kind !== kindFilter) return false
+    if (rsvpFilter !== 'all' && e.myStatus !== rsvpFilter) return false
+    return true
+  }
 
   const step = (delta: number): void => {
     const next = month.month + delta
@@ -101,6 +122,17 @@ export function EventsPage({ serverId }: { serverId: string }): React.JSX.Elemen
         </span>
 
         <div className="ml-auto flex shrink-0 items-center gap-1">
+          <EventFilters
+            kindFilter={kindFilter}
+            onKindFilter={setKindFilter}
+            rsvpFilter={rsvpFilter}
+            onRsvpFilter={setRsvpFilter}
+            active={filtersActive}
+            onClear={() => {
+              setKindFilter('all')
+              setRsvpFilter('all')
+            }}
+          />
           <ViewTab label="Month" active={view === 'month'} onClick={() => setView('month')} />
           <ViewTab
             label="Upcoming"
@@ -123,9 +155,11 @@ export function EventsPage({ serverId }: { serverId: string }): React.JSX.Elemen
             <IconButton label="Next month" onClick={() => step(1)}>
               <CaretRight className="size-4" />
             </IconButton>
-            <span className="ml-1 text-sm font-semibold">
-              {MONTHS[month.month - 1]} {month.year}
-            </span>
+            <MonthYearPicker
+              year={month.year}
+              month={month.month}
+              onPick={(year, m) => setCursor({ year, month: m })}
+            />
             <button
               type="button"
               onClick={() => setCursor(partsInZone(Date.now(), zone))}
@@ -140,7 +174,7 @@ export function EventsPage({ serverId }: { serverId: string }): React.JSX.Elemen
           ) : (
             <MonthGrid
               days={days}
-              events={monthEvents}
+              events={monthEvents.filter(matches)}
               zone={zone}
               onPickDay={(day) => setCreating({ seedAt: day.startAt })}
               onOpenEvent={(event) => setDetailId(event._id)}
@@ -152,25 +186,36 @@ export function EventsPage({ serverId }: { serverId: string }): React.JSX.Elemen
           <div className="mx-auto flex min-h-full max-w-2xl flex-col gap-2 p-4">
             {upcoming === undefined ? (
               <LoadingBlock />
-            ) : upcoming.length === 0 ? (
+            ) : upcoming.filter(matches).length === 0 ? (
               <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 text-center">
                 <span className="mb-1 flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                  <CalendarDots className="size-5" />
+                  {filtersActive ? (
+                    <Funnel className="size-5" />
+                  ) : (
+                    <CalendarDots className="size-5" />
+                  )}
                 </span>
-                <p className="text-sm font-medium">Nothing coming up</p>
+                <p className="text-sm font-medium">
+                  {filtersActive ? 'No matching events' : 'Nothing coming up'}
+                </p>
                 <p className="max-w-72 text-xs text-muted-foreground">
-                  Schedule a standup, a review, or a call — everyone sees it in their own time zone.
+                  {filtersActive
+                    ? 'No upcoming events match your filters. Try clearing them.'
+                    : 'Schedule a standup, a review, or a call — everyone sees it in their own time zone.'}
                 </p>
               </div>
             ) : (
-              upcoming.map((event) => (
+              upcoming.filter(matches).map((event) => (
                 <button
-                  key={event._id}
+                  key={event.instanceKey}
                   type="button"
                   onClick={() => setDetailId(event._id)}
                   className="flex flex-col gap-1 rounded-lg border p-3 text-left transition-colors hover:bg-accent"
                 >
                   <span className="flex items-center gap-2">
+                    <span
+                      className={cn('size-2 shrink-0 rounded-full', KIND_META[event.kind].dot)}
+                    />
                     <span className="min-w-0 flex-1 truncate text-sm font-semibold">
                       {event.title}
                     </span>
@@ -186,9 +231,18 @@ export function EventsPage({ serverId }: { serverId: string }): React.JSX.Elemen
                     allDay={event.allDay}
                     timezone={event.timezone}
                   />
-                  <span className="text-xs text-muted-foreground">
-                    {event.channelName ? `#${event.channelName} · ` : ''}
-                    {event.going} going
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    {event.channelName ? (
+                      <>
+                        <ChannelKindIcon
+                          kind={event.channelKind ?? 'voice'}
+                          className="size-3 shrink-0"
+                        />
+                        <span className="truncate">{event.channelName}</span>
+                        <span>·</span>
+                      </>
+                    ) : null}
+                    {event.going} going{event.repeat !== 'none' ? ' · repeats' : ''}
                   </span>
                 </button>
               ))
@@ -224,15 +278,15 @@ export function EventsPage({ serverId }: { serverId: string }): React.JSX.Elemen
 
       <EventDetailDialog
         eventId={detailId}
+        workspaceSlug={serverId}
         open={detailId !== null}
         onOpenChange={(next) => !next && setDetailId(null)}
-        onEdit={() => {
-          const found =
-            (monthEvents ?? []).find((event) => event._id === detailId) ??
-            (upcoming ?? []).find((event) => event._id === detailId) ??
-            null
+        onEdit={(event) => {
+          // Edit the SERIES, not the clicked occurrence — `event` comes from
+          // `events.get` (un-expanded), so its `startAt` is the series origin. Re-finding
+          // an expanded occurrence here would re-anchor the whole series to that date.
           setDetailId(null)
-          setEditing(found)
+          setEditing(event)
         }}
       />
     </div>
@@ -259,6 +313,231 @@ function ViewTab({
           : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
       )}
     >
+      {label}
+    </button>
+  )
+}
+
+const SHORT_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec'
+]
+
+/** The `Month Year` label, but a button that opens a jump-to-any-month picker —
+ *  a year stepper over a 3×4 grid of months, so you're never more than two
+ *  clicks from any month without spamming the arrows. */
+function MonthYearPicker({
+  year,
+  month,
+  onPick
+}: {
+  year: number
+  month: number
+  onPick: (year: number, month: number) => void
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  // The year the grid is showing — seeded from the current cursor, steppable
+  // without committing until you pick a month.
+  const [viewYear, setViewYear] = useState(year)
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) setViewYear(year)
+      }}
+    >
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            className="ml-1 flex items-center gap-1 rounded-md px-2 py-1 text-sm font-semibold transition-colors hover:bg-accent"
+          >
+            {MONTHS[month - 1]} {year}
+            <CaretDown className="size-3 text-muted-foreground" />
+          </button>
+        }
+      />
+      <PopoverContent align="start" className="w-56 p-2">
+        <div className="mb-2 flex items-center justify-between">
+          <IconButton label="Previous year" onClick={() => setViewYear((y) => y - 1)}>
+            <CaretLeft className="size-4" />
+          </IconButton>
+          <span className="text-sm font-semibold">{viewYear}</span>
+          <IconButton label="Next year" onClick={() => setViewYear((y) => y + 1)}>
+            <CaretRight className="size-4" />
+          </IconButton>
+        </div>
+        <div className="grid grid-cols-3 gap-1">
+          {SHORT_MONTHS.map((label, i) => {
+            const active = viewYear === year && i + 1 === month
+            return (
+              <button
+                key={label}
+                type="button"
+                onClick={() => {
+                  onPick(viewYear, i + 1)
+                  setOpen(false)
+                }}
+                className={cn(
+                  'rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
+                  active
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                )}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/** Filter the calendar by event **type** and by your own **RSVP** — both applied
+ *  client-side over the already-loaded events, so opening the filter costs no
+ *  round-trip. A dot on the funnel marks that filters are active. */
+function EventFilters({
+  kindFilter,
+  onKindFilter,
+  rsvpFilter,
+  onRsvpFilter,
+  active,
+  onClear
+}: {
+  kindFilter: 'all' | EventKind
+  onKindFilter: (value: 'all' | EventKind) => void
+  rsvpFilter: 'all' | 'going' | 'maybe'
+  onRsvpFilter: (value: 'all' | 'going' | 'maybe') => void
+  active: boolean
+  onClear: () => void
+}): React.JSX.Element {
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            aria-label="Filter events"
+            className={cn(
+              'relative flex size-8 items-center justify-center rounded-md transition-colors hover:bg-accent',
+              active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <Funnel className="size-4" weight={active ? 'fill' : 'regular'} />
+            {active ? (
+              <span className="absolute right-1 top-1 size-1.5 rounded-full bg-primary" />
+            ) : null}
+          </button>
+        }
+      />
+      <PopoverContent align="end" className="w-64 p-3">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="text-sm font-semibold">Filters</span>
+          {active ? (
+            <button
+              type="button"
+              onClick={onClear}
+              className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
+
+        <FilterGroup label="Type">
+          <FilterChip
+            label="Any"
+            active={kindFilter === 'all'}
+            onClick={() => onKindFilter('all')}
+          />
+          {EVENT_KINDS.map((k) => (
+            <FilterChip
+              key={k}
+              label={KIND_META[k].label}
+              dot={KIND_META[k].dot}
+              active={kindFilter === k}
+              onClick={() => onKindFilter(k)}
+            />
+          ))}
+        </FilterGroup>
+
+        <FilterGroup label="RSVP">
+          <FilterChip
+            label="Any"
+            active={rsvpFilter === 'all'}
+            onClick={() => onRsvpFilter('all')}
+          />
+          <FilterChip
+            label="Going"
+            active={rsvpFilter === 'going'}
+            onClick={() => onRsvpFilter('going')}
+          />
+          <FilterChip
+            label="Maybe"
+            active={rsvpFilter === 'maybe'}
+            onClick={() => onRsvpFilter('maybe')}
+          />
+        </FilterGroup>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function FilterGroup({
+  label,
+  children
+}: {
+  label: string
+  children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <div className="mb-3 last:mb-0">
+      <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <div className="flex flex-wrap gap-1.5">{children}</div>
+    </div>
+  )
+}
+
+function FilterChip({
+  label,
+  active,
+  onClick,
+  dot
+}: {
+  label: string
+  active: boolean
+  onClick: () => void
+  /** Optional coloured dot (the event-kind marker). */
+  dot?: string
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex max-w-full items-center gap-1.5 truncate rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+        active
+          ? 'border-primary bg-primary/10 text-primary'
+          : 'border-transparent bg-muted text-muted-foreground hover:bg-accent hover:text-foreground'
+      )}
+    >
+      {dot ? <span className={cn('size-2 shrink-0 rounded-full', dot)} /> : null}
       {label}
     </button>
   )

@@ -462,6 +462,14 @@ export const TOOLS = [
   }
 ] as const
 
+/** The names of every tool that mutates state — i.e. NOT `readOnlyHint`. Derived from the
+ *  catalog itself, so it can never drift from `TOOLS`. Used to gate the API-write rate limit. */
+const WRITE_TOOLS = new Set<string>(
+  TOOLS.filter((tool) => !('readOnlyHint' in tool.annotations && tool.annotations.readOnlyHint)).map(
+    (tool) => tool.name
+  )
+)
+
 type JsonRpcId = string | number | null
 interface JsonRpcRequest {
   jsonrpc: '2.0'
@@ -551,6 +559,12 @@ export async function callTool(
   args: Record<string, unknown>
 ): Promise<unknown> {
   const workspace = str(args, 'workspace')
+  // Every WRITE tool spends the shared per-actor `apiWrite` budget first (reads are free).
+  // Gated by the tool's own `readOnlyHint`, so a newly-added write tool inherits the limit
+  // with no extra wiring — the same "one catalog" discipline the rest of this file keeps.
+  if (WRITE_TOOLS.has(name)) {
+    await ctx.runMutation(internal.apiTools.spendWriteBudget, { userId })
+  }
   switch (name) {
     // Reads
     case 'list_workspaces':

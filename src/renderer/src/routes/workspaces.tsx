@@ -95,7 +95,7 @@ function WorkspacesPage(): React.JSX.Element {
           className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <WifiSlash className="size-4" />
-          Open your offline workspace
+          Open your local workspace
         </Link>
       </main>
 

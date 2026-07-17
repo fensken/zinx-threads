@@ -472,6 +472,171 @@ describe('events', () => {
       })
     ).toEqual([])
   })
+
+  it('meets in a voice channel OR an external link — never a plain channel, never both', async () => {
+    const { asAlice, workspaceId } = await setupOwner()
+    const startAt = Date.UTC(2026, 6, 20, 13, 0)
+    const endAt = Date.UTC(2026, 6, 20, 14, 0)
+    const base = { workspaceId, startAt, endAt, timezone: 'America/New_York' } as const
+
+    const voice = await asAlice.mutation(api.channels.create, {
+      workspaceId,
+      name: 'standup-call',
+      kind: 'voice'
+    })
+    const chat = await asAlice.mutation(api.channels.create, {
+      workspaceId,
+      name: 'general-chat',
+      kind: 'chat'
+    })
+
+    // A voice channel is a valid place to meet.
+    const withVoice = await asAlice.mutation(api.events.create, {
+      ...base,
+      title: 'Standup',
+      channelId: voice
+    })
+    // A non-voice channel is not — the whole point is you can jump into the call.
+    await expect(
+      asAlice.mutation(api.events.create, { ...base, title: 'Nope', channelId: chat })
+    ).rejects.toThrow()
+
+    // An external link is the other option, normalised to https.
+    const withLink = await asAlice.mutation(api.events.create, {
+      ...base,
+      title: 'Zoom sync',
+      url: 'zoom.us/j/123'
+    })
+
+    const detailVoice = await asAlice.query(api.events.get, { eventId: withVoice })
+    expect(detailVoice!.event.channelName).toBe('standup-call')
+    expect(detailVoice!.event.url).toBeUndefined()
+
+    const detailLink = await asAlice.query(api.events.get, { eventId: withLink })
+    expect(detailLink!.event.url).toBe('https://zoom.us/j/123')
+    expect(detailLink!.event.channelId).toBeUndefined()
+
+    // Switching a voice event to a link clears the channel (one place, not both).
+    await asAlice.mutation(api.events.update, { eventId: withVoice, url: 'meet.google.com/abc' })
+    const switched = await asAlice.query(api.events.get, { eventId: withVoice })
+    expect(switched!.event.url).toBe('https://meet.google.com/abc')
+    expect(switched!.event.channelId).toBeUndefined()
+
+    // Clearing the link (null) leaves the event with no place.
+    await asAlice.mutation(api.events.update, { eventId: withVoice, url: null })
+    const cleared = await asAlice.query(api.events.get, { eventId: withVoice })
+    expect(cleared!.event.url).toBeUndefined()
+    expect(cleared!.event.channelId).toBeUndefined()
+  })
+
+  it('expands a recurring series into per-occurrence rows on read', async () => {
+    const { asAlice, workspaceId } = await setupOwner()
+    // Mon Jul 6 2026, 09:00 EDT = 13:00 UTC. No DST switch this month, so a weekly
+    // step preserves the wall-clock exactly (+7 days).
+    const startAt = Date.UTC(2026, 6, 6, 13, 0)
+    const endAt = Date.UTC(2026, 6, 6, 14, 0)
+    const eventId = await asAlice.mutation(api.events.create, {
+      workspaceId,
+      title: 'Weekly sync',
+      startAt,
+      endAt,
+      timezone: 'America/New_York',
+      kind: 'meeting',
+      repeat: 'weekly',
+      repeatUntil: Date.UTC(2026, 6, 28)
+    })
+
+    // Jul 6, 13, 20, 27 — four occurrences, all sharing the series id but with distinct
+    // instance keys and per-occurrence start times a week apart.
+    const occ = await asAlice.query(api.events.listRange, {
+      workspaceId,
+      from: Date.UTC(2026, 6, 1),
+      to: Date.UTC(2026, 7, 1)
+    })
+    expect(occ).toHaveLength(4)
+    expect(occ.every((o) => o._id === eventId)).toBe(true)
+    expect(new Set(occ.map((o) => o.instanceKey)).size).toBe(4)
+    expect(occ.every((o) => o.kind === 'meeting' && o.repeat === 'weekly' && o.isRecurring)).toBe(
+      true
+    )
+    expect(occ[1].startAt - occ[0].startAt).toBe(7 * 24 * 60 * 60 * 1000)
+
+    // `get` returns the SERIES itself (no expansion) — editing is whole-series.
+    const detail = await asAlice.query(api.events.get, { eventId })
+    expect(detail!.event.startAt).toBe(startAt)
+    expect(detail!.event.repeat).toBe('weekly')
+
+    // Turning recurrence off makes it a single occurrence again.
+    await asAlice.mutation(api.events.update, { eventId, repeat: 'none' })
+    const once = await asAlice.query(api.events.listRange, {
+      workspaceId,
+      from: Date.UTC(2026, 6, 1),
+      to: Date.UTC(2026, 7, 1)
+    })
+    expect(once).toHaveLength(1)
+    expect(once[0].repeat).toBe('none')
+  })
+
+  it('keeps a same-day timed repeatUntil, and does not repeat forever past it', async () => {
+    const { asAlice, workspaceId } = await setupOwner()
+    // Daily 09:00 EDT (13:00 UTC) on Jul 20, bounded to Jul 20 — `repeatUntil` names a DAY
+    // (stored at midnight), which is BEFORE the 09:00 start. The bound must still cover that
+    // day's occurrence (not be dropped as "before the start"), and the series must NOT run on.
+    const startAt = Date.UTC(2026, 6, 20, 13, 0)
+    const endAt = Date.UTC(2026, 6, 20, 14, 0)
+    await asAlice.mutation(api.events.create, {
+      workspaceId,
+      title: 'One-day daily',
+      startAt,
+      endAt,
+      timezone: 'America/New_York',
+      kind: 'meeting',
+      repeat: 'daily',
+      repeatUntil: Date.UTC(2026, 6, 20)
+    })
+
+    // The start day shows exactly one occurrence (the bound was kept, not dropped).
+    const sameDay = await asAlice.query(api.events.listRange, {
+      workspaceId,
+      from: Date.UTC(2026, 6, 20),
+      to: Date.UTC(2026, 6, 21)
+    })
+    expect(sameDay).toHaveLength(1)
+
+    // A week on: nothing. The bound held — it did NOT silently become an infinite series.
+    const later = await asAlice.query(api.events.listRange, {
+      workspaceId,
+      from: Date.UTC(2026, 6, 27),
+      to: Date.UTC(2026, 6, 28)
+    })
+    expect(later).toHaveLength(0)
+  })
+
+  it("finds today's occurrences of a long-running daily series (fast-forward)", async () => {
+    const { asAlice, workspaceId } = await setupOwner()
+    // A daily 12:00 UTC series that began ~2.5 years before the query window. The expansion
+    // must FAST-FORWARD to the range (skipping whole steps, then aligning) — a naive
+    // step-from-origin with a fixed iteration cap would drop the *current* occurrences.
+    const startAt = Date.UTC(2024, 0, 1, 12, 0)
+    const endAt = Date.UTC(2024, 0, 1, 13, 0)
+    await asAlice.mutation(api.events.create, {
+      workspaceId,
+      title: 'Daily standup',
+      startAt,
+      endAt,
+      timezone: 'UTC',
+      kind: 'meeting',
+      repeat: 'daily'
+    })
+    // Jul 20, 21, 22 2026 — three 12:00-UTC occurrences in the window. Exactly three (not two)
+    // proves the fast-forward lands on, not past, the first in-range occurrence.
+    const occ = await asAlice.query(api.events.listRange, {
+      workspaceId,
+      from: Date.UTC(2026, 6, 20),
+      to: Date.UTC(2026, 6, 23)
+    })
+    expect(occ).toHaveLength(3)
+  })
 })
 
 describe('the inbox belongs to the user, not a workspace', () => {

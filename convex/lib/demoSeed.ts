@@ -25,25 +25,27 @@ export type DefaultGroup = (typeof DEFAULT_GROUPS)[number]
 export const DEFAULT_CHANNEL = {
   name: 'general',
   kind: 'chat' as const,
-  emoji: '💬',
   topic: 'Workspace-wide chatter',
   order: -1
 }
 
+// No decorative `emoji` on seeded channels: the kind icon (#/page/kanban/voice) is the
+// channel's identity, and the "Add a channel" flow doesn't set one — so seeding emojis
+// only made the sample channels look inconsistent with the ones you create. (The
+// `channels.emoji` field still exists; nothing sets it via the UI today.)
 export const DEMO_CHANNELS: Array<{
   name: string
   kind: DemoKind
-  emoji?: string
   topic?: string
   group: DefaultGroup
 }> = [
   // No `general` here — that's `DEFAULT_CHANNEL`, seeded ungrouped above the groups.
-  { name: 'welcome', kind: 'chat', emoji: '👋', group: 'Text Channels' },
+  { name: 'welcome', kind: 'chat', group: 'Text Channels' },
   { name: 'zinx', kind: 'chat', topic: 'Everything about the app', group: 'Text Channels' },
   { name: 'business-talks', kind: 'chat', group: 'Text Channels' },
-  { name: 'roadmap', kind: 'page', emoji: '🗺️', group: 'Docs' },
-  { name: 'handbook', kind: 'page', emoji: '📘', group: 'Docs' },
-  { name: 'meeting-notes', kind: 'page', emoji: '📝', group: 'Docs' },
-  { name: 'sprint-board', kind: 'kanban', emoji: '📋', group: 'Project' },
+  { name: 'roadmap', kind: 'page', group: 'Docs' },
+  { name: 'handbook', kind: 'page', group: 'Docs' },
+  { name: 'meeting-notes', kind: 'page', group: 'Docs' },
+  { name: 'sprint-board', kind: 'kanban', group: 'Project' },
   { name: 'General', kind: 'voice', group: 'Voice' }
 ]

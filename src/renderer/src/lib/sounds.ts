@@ -246,6 +246,17 @@ export function playScreenShareStopSound(): void {
   ])
 }
 
+/** Push-to-talk key **pressed** — a soft, short blip as the mic opens. These fire on
+ *  every press/release while you hold the key, so they're the gentlest cues in the set. */
+export function playPttOnSound(): void {
+  play([{ frequency: E4, at: 0, gain: 0.2, attack: 0.006, release: 0.1, cutoff: 1800, sub: 0.35 }])
+}
+
+/** Push-to-talk key **released** — a lower, shorter blip as the mic closes. */
+export function playPttOffSound(): void {
+  play([{ frequency: A3, at: 0, gain: 0.2, attack: 0.006, release: 0.1, cutoff: 900, sub: 0.55 }])
+}
+
 /** Used by the settings slider: play the notification sound so you can hear what you're
  *  setting the volume to, instead of adjusting it blind. */
 export function previewNotificationSound(): void {

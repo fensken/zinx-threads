@@ -1,7 +1,8 @@
 import { ConvexError, v } from 'convex/values'
 import { action, internalQuery, mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
-import { getCurrentUser, getMembership, requireUser } from './lib/auth'
+import type { Id } from './_generated/dataModel'
+import { getChannelAccess, getCurrentUser, getMembership, requireUser } from './lib/auth'
 
 // Voice/video calls run on a self-hosted LiveKit SFU (open-source, no participant
 // cap). LiveKit needs a signed JWT per participant per room; we mint it here so
@@ -70,16 +71,16 @@ export const canJoin = internalQuery({
   args: { channelId: v.id('channels') },
   handler: async (ctx, { channelId }) => {
     const user = await requireUser(ctx)
-    const channel = await ctx.db.get(channelId)
-    if (!channel) throw new ConvexError('Channel not found')
-    if (channel.kind !== 'voice') throw new ConvexError('This is not a voice channel')
-    const membership = await getMembership(ctx, channel.workspaceId, user._id)
-    if (!membership) throw new ConvexError('Not a member of this workspace')
+    // `getChannelAccess` enforces private-channel membership — an admin who isn't in a
+    // private voice channel can't mint a token to join it.
+    const access = await getChannelAccess(ctx, channelId, user._id)
+    if (!access) throw new ConvexError('You do not have access to this channel')
+    if (access.channel.kind !== 'voice') throw new ConvexError('This is not a voice channel')
     return {
       roomName: channelId as string,
       identity: user._id as string,
       // Effective name = per-workspace nickname ?? global name (never the email id).
-      name: membership.displayName ?? user.name ?? 'Member'
+      name: access.membership?.displayName ?? user.name ?? 'Member'
     }
   }
 })
@@ -118,9 +119,11 @@ export const setPresence = mutation({
   },
   handler: async (ctx, { channelId, muted, deafened, videoOn, screenSharing }) => {
     const user = await requireUser(ctx)
-    const channel = await ctx.db.get(channelId)
-    if (!channel || channel.kind !== 'voice') return
-    if (!(await getMembership(ctx, channel.workspaceId, user._id))) return
+    // Access-gated, not just membership: you can't report presence in a private voice
+    // channel you're not a member of.
+    const access = await getChannelAccess(ctx, channelId, user._id)
+    if (!access || access.channel.kind !== 'voice') return
+    const channel = access.channel
 
     const existing = await ctx.db
       .query('voicePresence')
@@ -169,6 +172,19 @@ export const listByWorkspace = query({
       .withIndex('by_workspace', (q) => q.eq('workspaceId', workspaceId))
       .collect()
 
+    // A private voice channel's participants must not leak to a non-member. Resolve
+    // access once per distinct channel (cached), and drop rows in channels the caller
+    // can't see — the same rule the sidebar's channel list already applies.
+    const access = new Map<string, boolean>()
+    const canSee = async (channelId: Id<'channels'>): Promise<boolean> => {
+      const key = channelId as string
+      const hit = access.get(key)
+      if (hit !== undefined) return hit
+      const allowed = (await getChannelAccess(ctx, channelId, user._id)) !== null
+      access.set(key, allowed)
+      return allowed
+    }
+
     const out: Array<{
       channelId: string
       userId: string
@@ -182,6 +198,7 @@ export const listByWorkspace = query({
     }> = []
     for (const row of rows) {
       if (now - row.updatedAt >= PRESENCE_TTL_MS) continue
+      if (!(await canSee(row.channelId))) continue
       const member = await ctx.db.get(row.userId)
       if (!member) continue
       out.push({

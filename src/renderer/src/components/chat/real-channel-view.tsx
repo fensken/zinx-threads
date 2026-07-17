@@ -196,7 +196,15 @@ export function RealChannelView({
         entries: outbox,
         channelId: id,
         serverMessages: messagesData,
-        author: me && { userId: me.userId, name: me.name, color: me.color, avatarUrl: me.avatarUrl }
+        author: me && {
+          userId: me.userId,
+          name: me.name,
+          color: me.color,
+          avatarUrl: me.avatarUrl,
+          presence: me.presence,
+          statusEmoji: me.statusEmoji,
+          statusText: me.statusText
+        }
       }),
     [outbox, id, messagesData, me]
   )

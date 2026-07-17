@@ -10,6 +10,7 @@ import {
 } from './lib/auth'
 import { MESSAGE_PAGE, enrichMessages, resolveAuthors } from './lib/messages'
 import { getMyChannelIds } from './lib/channelMembers'
+import { listRealChannels } from './lib/channels'
 import { internal } from './_generated/api'
 
 /** Threads shown in the workspace-wide flyout / per channel. */
@@ -297,10 +298,10 @@ async function visibleChannelFilter(
   // Only PRIVATE channels need a membership check — but a guest needs one for every
   // channel, so for them the "restricted" set is everything.
   const restricted = new Set<string>()
-  const channels = await ctx.db
-    .query('channels')
-    .withIndex('by_workspace', (q) => q.eq('workspaceId', workspaceId))
-    .collect()
+  // `listRealChannels` (one range per real kind) instead of a `by_workspace` + `.collect()`
+  // scan, which also reads every DM row in the workspace — thousands at scale — to throw
+  // them away. Threads never live in a DM, so DMs are irrelevant here anyway.
+  const channels = await listRealChannels(ctx, workspaceId)
   for (const channel of channels) {
     if (role === 'guest' || channel.visibility === 'private') {
       restricted.add(channel._id as string)

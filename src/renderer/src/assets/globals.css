@@ -432,3 +432,39 @@
     0 0 0 2px var(--speaking),
     0 0 14px var(--speaking-glow);
 }
+
+/* Voice channel "atmosphere" — slow drifting gradient blobs behind the pre-join empty
+   state (Discord's playful animated voice background, in our theme). Pure CSS so it costs
+   no JS; `prefers-reduced-motion` freezes it. Used by `voice-room.tsx`'s `VoiceAtmosphere`. */
+@keyframes voice-drift-a {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(9%, -7%) scale(1.15);
+  }
+}
+@keyframes voice-drift-b {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1.1);
+  }
+  50% {
+    transform: translate(-11%, 9%) scale(0.92);
+  }
+}
+@keyframes voice-drift-c {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    transform: translate(-42%, -58%) scale(1.2);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-blob {
+    animation: none !important;
+  }
+}

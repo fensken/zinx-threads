@@ -34,7 +34,14 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // resource anyone signed in could draw on without limit — an unattached upload isn't
   // swept for 24h, so a loop could park a lot of bytes in the bucket before the cron
   // noticed. The burst covers dragging a folder of screenshots into the composer.
-  upload: { kind: 'token bucket', rate: 60, period: MINUTE, capacity: 30 }
+  upload: { kind: 'token bucket', rate: 60, period: MINUTE, capacity: 30 },
+
+  // Every API/MCP/bot **write** (create/edit/delete channel · event · task · column ·
+  // page, react, mark-read) spends a shared per-token budget, so an automation can't
+  // hammer creates and pile up rows/channels. Generous enough for legitimate scripting
+  // (bulk-creating a board's tasks, a bot reacting to a burst) — sustained ~2/s with a
+  // burst of 60. Message posts keep their own tighter `sendMessage` limit on top.
+  apiWrite: { kind: 'token bucket', rate: 120, period: MINUTE, capacity: 60 }
 })
 
 // Re-export the time units so callers can express one-off configs consistently.

@@ -51,7 +51,7 @@ function FirstRun(): React.JSX.Element {
           <WifiSlash className="size-7" weight="bold" />
         </span>
         <div>
-          <h1 className="text-xl font-bold">Create an offline workspace</h1>
+          <h1 className="text-xl font-bold">Create a local workspace</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             A private space on this device for pages and boards — no account, works offline.
           </p>

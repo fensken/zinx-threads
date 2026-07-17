@@ -1,5 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, session, desktopCapturer } from 'electron'
 import { join, resolve } from 'path'
+import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerAuthIpc } from './auth'
@@ -79,12 +80,23 @@ function isWebUrl(url: string): boolean {
   }
 }
 
-/** The app's own origin: the dev server, or the packaged `file://` bundle. The main
- *  window may never navigate anywhere else (see the `will-navigate` guard). */
+/** The packaged renderer entry, as a `file://` URL. The main window may load this ONE
+ *  file (the app uses hash history, so only its `#…` fragment ever changes) — never an
+ *  arbitrary `file:` path, which would let a compromised page navigate to a local file. */
+const RENDERER_FILE_PATHNAME = pathToFileURL(
+  join(__dirname, '../renderer/index.html')
+).pathname.toLowerCase()
+
+/** The app's own origin: the dev server, or the packaged renderer file. The main window
+ *  may never navigate anywhere else (see the `will-navigate` guard). */
 function isAppUrl(url: string): boolean {
   try {
     const target = new URL(url)
-    if (target.protocol === 'file:') return true
+    if (target.protocol === 'file:') {
+      // Only the packaged renderer bundle — NOT any local file. Compare the path (dropping
+      // hash/query), case-insensitively for the Windows drive letter.
+      return target.pathname.toLowerCase() === RENDERER_FILE_PATHNAME
+    }
     const dev = process.env['ELECTRON_RENDERER_URL']
     return Boolean(dev) && target.origin === new URL(dev as string).origin
   } catch {

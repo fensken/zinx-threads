@@ -3,6 +3,7 @@ import {
   FolderOpen,
   Gear,
   IdentificationCard,
+  Microphone,
   Monitor,
   Moon,
   Palette,
@@ -14,8 +15,7 @@ import {
   UserCircle,
   UsersThree,
   WarningOctagon,
-  Wrench,
-  X
+  Wrench
 } from '@phosphor-icons/react'
 import { useQuery } from 'convex-helpers/react/cache/hooks'
 import { BRAND } from '@shared/brand'
@@ -33,7 +33,12 @@ import { useSettingsStore, type UiScale } from '@renderer/store/settings-store'
 import { useUiStore, type SettingsSection } from '@renderer/store/ui-store'
 import { Spinner } from '@renderer/components/ui/spinner'
 import { AccountControls } from '@renderer/components/settings/account-controls'
+import {
+  SettingsModalShell,
+  type SettingsNavGroup
+} from '@renderer/components/settings/settings-modal-shell'
 import { SystemPrefsSettings } from '@renderer/components/settings/system-prefs-settings'
+import { VoiceSettings } from '@renderer/components/settings/voice-settings'
 import { DeveloperSettings } from '@renderer/components/settings/developer-settings'
 import { BotsTab } from '@renderer/components/settings/bots-settings'
 import {
@@ -74,22 +79,10 @@ export function SettingsDialog({
 
   if (!open) return null
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 sm:p-6"
-      onClick={() => setOpen(false)}
-    >
-      <div
-        className="flex h-[90dvh] w-full max-w-6xl overflow-hidden rounded-xl border bg-card shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        {authEnabled && workspaceSlug ? (
-          <ConvexSettings workspaceSlug={workspaceSlug} onClose={() => setOpen(false)} />
-        ) : (
-          <SettingsPanes workspace={null} onClose={() => setOpen(false)} />
-        )}
-      </div>
-    </div>
+  return authEnabled && workspaceSlug ? (
+    <ConvexSettings workspaceSlug={workspaceSlug} onClose={() => setOpen(false)} />
+  ) : (
+    <SettingsPanes workspace={null} onClose={() => setOpen(false)} />
   )
 }
 
@@ -126,6 +119,7 @@ function SettingsPanes({
     ...(authEnabled ? [{ id: 'account' as const, label: 'My Account', Icon: UserCircle }] : []),
     { id: 'appearance', label: 'Appearance', Icon: Palette },
     { id: 'notifications', label: 'Notifications', Icon: BellRinging },
+    { id: 'voice', label: 'Audio & video', Icon: Microphone },
     // Desktop only — launch-at-startup + run-in-background (tray). Web has neither.
     ...(platform.systemPrefs.supported()
       ? [{ id: 'startup' as const, label: 'Startup & tray', Icon: Power }]
@@ -149,49 +143,30 @@ function SettingsPanes({
 
   const available = [...userItems, ...wsItems]
   const active = available.some((i) => i.id === section) ? section : available[0].id
-  const activeLabel = available.find((i) => i.id === active)?.label ?? ''
+
+  const groups: SettingsNavGroup[] = [
+    { label: 'User settings', items: userItems },
+    ...(wsItems.length
+      ? [{ label: workspace ? workspace.workspace.name : 'Workspace', items: wsItems }]
+      : [])
+  ]
 
   return (
-    <>
-      <nav className="no-scrollbar w-60 shrink-0 space-y-4 overflow-y-auto border-r bg-sidebar/50 p-3">
-        <NavGroup label="User settings" items={userItems} active={active} onPick={setSection} />
-        {wsItems.length ? (
-          <NavGroup
-            label={workspace ? workspace.workspace.name : 'Workspace'}
-            items={wsItems}
-            active={active}
-            onPick={setSection}
-          />
-        ) : null}
-      </nav>
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center justify-between border-b px-6">
-          <h2 className="truncate text-base font-bold">{activeLabel}</h2>
-          <button
-            type="button"
-            aria-label="Close settings"
-            onClick={onClose}
-            className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
-          >
-            <X className="size-5" />
-          </button>
-        </header>
-
-        <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto p-6">
-          <div className="mx-auto w-full max-w-2xl">
-            {loading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Spinner className="size-4" />
-                Loading…
-              </div>
-            ) : (
-              <SectionContent active={active} workspace={workspace} />
-            )}
-          </div>
+    <SettingsModalShell
+      onClose={onClose}
+      groups={groups}
+      active={active}
+      onSelect={(id) => setSection(id as SettingsSection)}
+    >
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Spinner className="size-4" />
+          Loading…
         </div>
-      </div>
-    </>
+      ) : (
+        <SectionContent active={active} workspace={workspace} />
+      )}
+    </SettingsModalShell>
   )
 }
 
@@ -205,6 +180,7 @@ function SectionContent({
   if (active === 'account') return <AccountControls />
   if (active === 'appearance') return <AppearanceSettings />
   if (active === 'notifications') return <NotificationSettings />
+  if (active === 'voice') return <VoiceSettings />
   if (active === 'startup') return <SystemPrefsSettings />
   if (active === 'developers') return <DeveloperSettings />
   if (active === 'advanced') return <AdvancedSettings />
@@ -235,7 +211,7 @@ function SectionContent({
   )
 }
 
-function AppearanceSettings(): React.JSX.Element {
+export function AppearanceSettings(): React.JSX.Element {
   const theme = useThemeStore((state) => state.theme)
   const setTheme = useThemeStore((state) => state.setTheme)
   const uiScale = useSettingsStore((state) => state.uiScale)
@@ -272,7 +248,7 @@ function AppearanceSettings(): React.JSX.Element {
   )
 }
 
-function NotificationSettings(): React.JSX.Element {
+export function NotificationSettings(): React.JSX.Element {
   const soundEnabled = useSettingsStore((state) => state.soundEnabled)
   const setSoundEnabled = useSettingsStore((state) => state.setSoundEnabled)
   const soundVolume = useSettingsStore((state) => state.soundVolume)
@@ -421,7 +397,7 @@ function AdvancedSettings(): React.JSX.Element {
     <div>
       <Section
         title="Local data"
-        description="Your settings and offline workspaces are saved on this device, inside the app’s data folder."
+        description="Your settings and local workspaces are saved on this device, inside the app’s data folder."
       >
         <Button
           type="button"
@@ -436,44 +412,6 @@ function AdvancedSettings(): React.JSX.Element {
           Open data folder
         </Button>
       </Section>
-    </div>
-  )
-}
-
-function NavGroup({
-  label,
-  items,
-  active,
-  onPick
-}: {
-  label: string
-  items: NavItem[]
-  active: SettingsSection
-  onPick: (section: SettingsSection) => void
-}): React.JSX.Element {
-  return (
-    <div>
-      <p className="mb-1 truncate px-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-        {label}
-      </p>
-      <div className="space-y-0.5">
-        {items.map(({ id, label: itemLabel, Icon }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => onPick(id)}
-            className={cn(
-              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-              active === id
-                ? 'bg-accent font-medium text-foreground'
-                : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
-            )}
-          >
-            <Icon className="size-4 shrink-0" weight={active === id ? 'fill' : 'regular'} />
-            <span className="truncate">{itemLabel}</span>
-          </button>
-        ))}
-      </div>
     </div>
   )
 }

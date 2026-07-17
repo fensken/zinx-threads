@@ -212,7 +212,6 @@ export const create = mutation({
         groupId: groupIds.get(ch.group),
         name: ch.name,
         kind: ch.kind,
-        emoji: ch.emoji,
         topic: ch.topic,
         order: i,
         createdBy: user._id

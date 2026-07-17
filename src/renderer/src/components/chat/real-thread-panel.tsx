@@ -301,7 +301,15 @@ export function ThreadConversation({
         channelId,
         threadId,
         serverMessages: replies,
-        author: me && { userId: me.userId, name: me.name, color: me.color, avatarUrl: me.avatarUrl }
+        author: me && {
+          userId: me.userId,
+          name: me.name,
+          color: me.color,
+          avatarUrl: me.avatarUrl,
+          presence: me.presence,
+          statusEmoji: me.statusEmoji,
+          statusText: me.statusText
+        }
       }),
     [outbox, channelId, threadId, replies, me]
   )

@@ -22,7 +22,7 @@ export function LocalUserBar(): React.JSX.Element {
   return (
     <UserBarShell
       name={profile.name}
-      subtitle="Offline"
+      subtitle="Local"
       menuOpen={menuOpen}
       onMenuOpenChange={setMenuOpen}
       avatar={
@@ -35,7 +35,7 @@ export function LocalUserBar(): React.JSX.Element {
         />
       }
       trailing={
-        <IconButton label="Offline settings" onClick={() => openSettings('profile')}>
+        <IconButton label="Local settings" onClick={() => openSettings('profile')}>
           <Gear className="size-4" />
         </IconButton>
       }
@@ -52,7 +52,7 @@ export function LocalUserBar(): React.JSX.Element {
             />
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-semibold">{profile.name}</div>
-              <div className="truncate text-xs text-muted-foreground">Offline · this device</div>
+              <div className="truncate text-xs text-muted-foreground">Local · this device</div>
             </div>
           </div>
 

@@ -6,11 +6,14 @@ import {
   MicrophoneSlash,
   Monitor,
   PhoneDisconnect,
+  PushPin,
+  SpeakerHigh,
   VideoCamera,
   VideoCameraSlash,
   Waveform
 } from '@phosphor-icons/react'
 import { useVoiceStore } from '@renderer/store/voice-store'
+import { useSettingsStore } from '@renderer/store/settings-store'
 import { useCallControls } from '@renderer/components/voice/use-call-controls'
 import { ScreenSharePicker } from '@renderer/components/voice/screen-share-picker'
 import { DeafenGlyph } from '@renderer/components/voice/deafen-glyph'
@@ -121,16 +124,19 @@ function StripButton({
   )
 }
 
-/** The mic + camera + deafen buttons for the user-bar identity row, each with a
- *  device picker. With a room (real workspace) they drive the live call OR — when
- *  you're not in one — set your persisted pre-call config; a mock build with no
- *  LiveKit falls back to plain config toggles (no device pickers). */
+/** ONE consolidated voice-controls button in the user bar: a single trigger showing your
+ *  live mic/deafen status, which opens a popover with the mic, camera and deafen toggles
+ *  (+ device pickers) — instead of three inline buttons with carets. Discord-style.
+ *
+ *  With a room (real workspace) the toggles drive the live call, or set your persisted
+ *  pre-call config when you're not in one; a mock build with no LiveKit falls back to the
+ *  config toggles without device pickers. */
 export function UserBarMediaButtons(): React.JSX.Element {
   const room = useMaybeRoomContext()
-  return room ? <RoomMediaButtons /> : <PlainConfigButtons />
+  return room ? <RoomMediaMenu /> : <PlainConfigMenu />
 }
 
-function RoomMediaButtons(): React.JSX.Element {
+function RoomMediaMenu(): React.JSX.Element {
   const call = useVoiceStore((state) => state.call)
   const controls = useCallControls()
   const joinMuted = useVoiceStore((state) => state.joinMuted)
@@ -140,205 +146,255 @@ function RoomMediaButtons(): React.JSX.Element {
   const setJoinVideo = useVoiceStore((state) => state.setJoinVideo)
   const setJoinDeafened = useVoiceStore((state) => state.setJoinDeafened)
 
-  // In a call the buttons control the live room; otherwise they set the pre-call
-  // config (applied on your next join). Device pickers work in both states.
   const inCall = Boolean(call)
-  const micOn = inCall ? controls.micOn : !(joinMuted || joinDeafened)
-  const cameraOn = inCall ? controls.cameraOn : joinVideo
-  const deafened = inCall ? controls.deafened : joinDeafened
-
-  const toggleMic = inCall
-    ? controls.toggleMic
-    : (): void => {
-        if (joinDeafened) setJoinDeafened(false)
-        setJoinMuted(!joinMuted)
-      }
-  const toggleCamera = inCall ? controls.toggleCamera : (): void => setJoinVideo(!joinVideo)
-  const toggleDeafen = inCall ? controls.toggleDeafen : (): void => setJoinDeafened(!joinDeafened)
-
   return (
-    <>
-      <MediaButtonWithDevices
-        kind="audioinput"
-        active={micOn}
-        pending={inCall ? controls.micPending : false}
-        onToggle={toggleMic}
-        onIcon={<Microphone className="size-4" />}
-        offIcon={<MicrophoneSlash className="size-4" />}
-        label="Microphone"
-        dangerWhenOff
-      />
-      <MediaButtonWithDevices
-        kind="videoinput"
-        active={cameraOn}
-        pending={inCall ? controls.cameraPending : false}
-        onToggle={toggleCamera}
-        onIcon={<VideoCamera className="size-4" />}
-        offIcon={<VideoCameraSlash className="size-4" />}
-        label="Camera"
-        dangerWhenOff
-      />
-      <IconToggle
-        label={deafened ? 'Undeafen' : 'Deafen'}
-        active={deafened}
-        danger={deafened}
-        onClick={toggleDeafen}
-      >
-        <DeafenGlyph deafened={deafened} className="size-4" />
-      </IconToggle>
-    </>
+    <MediaMenu
+      withDevices
+      micOn={inCall ? controls.micOn : !(joinMuted || joinDeafened)}
+      cameraOn={inCall ? controls.cameraOn : joinVideo}
+      deafened={inCall ? controls.deafened : joinDeafened}
+      micPending={inCall ? controls.micPending : false}
+      cameraPending={inCall ? controls.cameraPending : false}
+      onToggleMic={
+        inCall
+          ? controls.toggleMic
+          : (): void => {
+              if (joinDeafened) setJoinDeafened(false)
+              setJoinMuted(!joinMuted)
+            }
+      }
+      onToggleCamera={inCall ? controls.toggleCamera : (): void => setJoinVideo(!joinVideo)}
+      onToggleDeafen={inCall ? controls.toggleDeafen : (): void => setJoinDeafened(!joinDeafened)}
+    />
   )
 }
 
-/** Mock / no-LiveKit build: just the persisted pre-call config toggles, without the
- *  device pickers (which need a room). */
-function PlainConfigButtons(): React.JSX.Element {
+/** Mock / no-LiveKit build: the persisted pre-call config toggles, without device pickers. */
+function PlainConfigMenu(): React.JSX.Element {
   const joinMuted = useVoiceStore((state) => state.joinMuted)
   const joinVideo = useVoiceStore((state) => state.joinVideo)
   const joinDeafened = useVoiceStore((state) => state.joinDeafened)
   const setJoinMuted = useVoiceStore((state) => state.setJoinMuted)
   const setJoinVideo = useVoiceStore((state) => state.setJoinVideo)
   const setJoinDeafened = useVoiceStore((state) => state.setJoinDeafened)
-  const micOff = joinMuted || joinDeafened
+
+  return (
+    <MediaMenu
+      micOn={!(joinMuted || joinDeafened)}
+      cameraOn={joinVideo}
+      deafened={joinDeafened}
+      onToggleMic={(): void => {
+        if (joinDeafened) setJoinDeafened(false)
+        setJoinMuted(!joinMuted)
+      }}
+      onToggleCamera={(): void => setJoinVideo(!joinVideo)}
+      onToggleDeafen={(): void => setJoinDeafened(!joinDeafened)}
+    />
+  )
+}
+
+/** The mic/camera trigger + popover, with **deafen as a standalone button beside it** —
+ *  deafen is a one-tap "silence everything", so it stays outside the menu. The trigger
+ *  shows your mic status at a glance (muted → red mic-slash, else mic); the popover holds
+ *  the mic + camera toggles, each followed by its device list. */
+function MediaMenu({
+  micOn,
+  cameraOn,
+  deafened,
+  micPending,
+  cameraPending,
+  withDevices,
+  onToggleMic,
+  onToggleCamera,
+  onToggleDeafen
+}: {
+  micOn: boolean
+  cameraOn: boolean
+  deafened: boolean
+  micPending?: boolean
+  cameraPending?: boolean
+  withDevices?: boolean
+  onToggleMic: () => void
+  onToggleCamera: () => void
+  onToggleDeafen: () => void
+}): React.JSX.Element {
+  const pushToTalk = useSettingsStore((state) => state.pushToTalk)
+  const setPushToTalk = useSettingsStore((state) => state.setPushToTalk)
+  const pttLabel = useSettingsStore((state) => state.pushToTalkLabel)
 
   return (
     <>
-      <IconToggle
-        label={micOff ? 'Join unmuted' : 'Join muted'}
-        active={micOff}
-        danger={micOff}
-        onClick={() => {
-          if (joinDeafened) setJoinDeafened(false)
-          setJoinMuted(!joinMuted)
-        }}
-      >
-        {micOff ? <MicrophoneSlash className="size-4" /> : <Microphone className="size-4" />}
-      </IconToggle>
-      <IconToggle
-        label={joinVideo ? 'Join without camera' : 'Join with camera'}
-        active={joinVideo}
-        danger={!joinVideo}
-        onClick={() => setJoinVideo(!joinVideo)}
-      >
-        {joinVideo ? <VideoCamera className="size-4" /> : <VideoCameraSlash className="size-4" />}
-      </IconToggle>
-      <IconToggle
-        label={joinDeafened ? 'Join undeafened' : 'Join deafened'}
-        active={joinDeafened}
-        danger={joinDeafened}
-        onClick={() => setJoinDeafened(!joinDeafened)}
-      >
-        <DeafenGlyph deafened={joinDeafened} className="size-4" />
-      </IconToggle>
+      <Popover>
+        <Tip label={pushToTalk ? 'Voice controls · Push to talk' : 'Voice controls'}>
+          <PopoverTrigger
+            aria-label="Voice controls"
+            className={cn(
+              'flex h-8 items-center gap-0.5 rounded-md px-1.5 transition-colors',
+              micOn
+                ? 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                : 'text-destructive hover:bg-destructive/10'
+            )}
+          >
+            {micOn ? <Microphone className="size-4" /> : <MicrophoneSlash className="size-4" />}
+            {/* Tell normal mode apart from push-to-talk at a glance. */}
+            {pushToTalk ? (
+              <span className="text-[9px] font-bold tracking-wide text-primary">PTT</span>
+            ) : null}
+            <CaretDown className="size-3" weight="bold" />
+          </PopoverTrigger>
+        </Tip>
+        <PopoverContent side="top" align="end" sideOffset={8} className="w-64 p-1">
+          <MenuToggleRow
+            label="Microphone"
+            state={micOn ? 'On' : 'Muted'}
+            active={micOn}
+            danger={!micOn}
+            pending={micPending}
+            onClick={onToggleMic}
+          >
+            {micOn ? <Microphone className="size-4" /> : <MicrophoneSlash className="size-4" />}
+          </MenuToggleRow>
+          {withDevices ? <DeviceOptions kind="audioinput" label="microphone" /> : null}
+
+          <MenuDivider />
+
+          <MenuToggleRow
+            label="Camera"
+            state={cameraOn ? 'On' : 'Off'}
+            active={cameraOn}
+            danger={!cameraOn}
+            pending={cameraPending}
+            onClick={onToggleCamera}
+          >
+            {cameraOn ? (
+              <VideoCamera className="size-4" />
+            ) : (
+              <VideoCameraSlash className="size-4" />
+            )}
+          </MenuToggleRow>
+          {withDevices ? <DeviceOptions kind="videoinput" label="camera" /> : null}
+
+          {withDevices ? (
+            <>
+              <MenuDivider />
+              <div className="flex items-center gap-2.5 px-2 py-1.5 text-sm">
+                <span className="flex size-4 shrink-0 items-center justify-center">
+                  <SpeakerHigh className="size-4" />
+                </span>
+                <span className="flex-1 font-medium">Speaker</span>
+              </div>
+              <DeviceOptions kind="audiooutput" label="speaker" />
+            </>
+          ) : null}
+
+          <MenuDivider />
+
+          {/* Quick input-mode switch — flip push-to-talk on/off without opening Settings. */}
+          <MenuToggleRow
+            label="Push to talk"
+            state={pushToTalk ? pttLabel || 'On' : 'Off'}
+            active={pushToTalk}
+            onClick={() => setPushToTalk(!pushToTalk)}
+          >
+            <PushPin className="size-4" weight={pushToTalk ? 'fill' : 'regular'} />
+          </MenuToggleRow>
+        </PopoverContent>
+      </Popover>
+
+      {/* Deafen — its own button (one tap to silence everything), red when active. */}
+      <Tip label={deafened ? 'Undeafen' : 'Deafen'}>
+        <button
+          type="button"
+          aria-label={deafened ? 'Undeafen' : 'Deafen'}
+          aria-pressed={deafened}
+          onClick={onToggleDeafen}
+          className={cn(
+            'flex size-8 items-center justify-center rounded-md transition-colors',
+            deafened
+              ? 'text-destructive hover:bg-destructive/10'
+              : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+          )}
+        >
+          <DeafenGlyph deafened={deafened} className="size-4" />
+        </button>
+      </Tip>
     </>
   )
 }
 
-/** A media toggle (mic/camera) + a caret that opens the list of input devices of
- *  `kind`, so a user with several mics/cameras can pick which is live from the bar. */
-function MediaButtonWithDevices({
-  kind,
-  active,
-  pending,
-  onToggle,
-  onIcon,
-  offIcon,
+/** A full-width toggle row: icon + label + a trailing state word. Clicking toggles it. */
+function MenuToggleRow({
   label,
-  dangerWhenOff
-}: {
-  kind: 'audioinput' | 'videoinput'
-  active: boolean
-  pending?: boolean
-  onToggle: () => void
-  onIcon: React.ReactNode
-  offIcon: React.ReactNode
-  label: string
-  /** Show the button red when off (mic-muted style). Camera-off stays neutral. */
-  dangerWhenOff?: boolean
-}): React.JSX.Element {
-  const { devices, activeDeviceId, setActiveMediaDevice } = useMediaDeviceSelect({ kind })
-
-  return (
-    <div className="flex items-center">
-      <IconToggle
-        label={label}
-        active={active}
-        danger={dangerWhenOff && !active}
-        onClick={onToggle}
-        disabled={pending}
-      >
-        {active ? onIcon : offIcon}
-      </IconToggle>
-      <Popover>
-        <Tip label={`Choose ${label.toLowerCase()}`}>
-          <PopoverTrigger
-            aria-label={`Choose ${label.toLowerCase()}`}
-            className="flex h-8 items-center rounded-md px-0.5 text-muted-foreground hover:text-foreground"
-          >
-            <CaretDown className="size-3" weight="bold" />
-          </PopoverTrigger>
-        </Tip>
-        <PopoverContent side="top" align="start" className="w-64 p-1">
-          <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">{label}</p>
-          {devices.length === 0 ? (
-            <p className="px-2 py-1.5 text-sm text-muted-foreground">No devices found.</p>
-          ) : (
-            devices.map((device, index) => (
-              <button
-                key={device.deviceId || index}
-                type="button"
-                onClick={() => void setActiveMediaDevice(device.deviceId)}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent"
-              >
-                <Check
-                  className={cn(
-                    'size-4 shrink-0',
-                    device.deviceId === activeDeviceId ? 'opacity-100' : 'opacity-0'
-                  )}
-                  weight="bold"
-                />
-                <span className="truncate">{device.label || `${label} ${index + 1}`}</span>
-              </button>
-            ))
-          )}
-        </PopoverContent>
-      </Popover>
-    </div>
-  )
-}
-
-function IconToggle({
-  label,
+  state,
   active,
   danger,
-  disabled,
+  pending,
   onClick,
   children
 }: {
   label: string
+  state: string
   active?: boolean
   danger?: boolean
-  disabled?: boolean
+  pending?: boolean
   onClick: () => void
   children: React.ReactNode
 }): React.JSX.Element {
   return (
-    <Tip label={label}>
-      <button
-        type="button"
-        aria-label={label}
-        aria-pressed={active}
-        disabled={disabled}
-        onClick={onClick}
-        className={cn(
-          'flex size-8 items-center justify-center rounded-md transition-colors disabled:opacity-50',
-          danger
-            ? 'text-destructive hover:bg-destructive/10'
-            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-        )}
-      >
-        {children}
-      </button>
-    </Tip>
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={active}
+      disabled={pending}
+      onClick={onClick}
+      className={cn(
+        'flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent disabled:opacity-50',
+        danger ? 'text-destructive' : 'text-foreground'
+      )}
+    >
+      <span className="flex size-4 shrink-0 items-center justify-center">{children}</span>
+      <span className="flex-1 text-left font-medium">{label}</span>
+      <span className={cn('text-xs', danger ? 'text-destructive' : 'text-muted-foreground')}>
+        {state}
+      </span>
+    </button>
   )
+}
+
+/** The input-device list for a mic/camera, indented under its toggle. Hidden when there's
+ *  nothing to choose (0 or 1 device). Needs a room (LiveKit device access). */
+function DeviceOptions({
+  kind,
+  label
+}: {
+  kind: 'audioinput' | 'audiooutput' | 'videoinput'
+  label: string
+}): React.JSX.Element | null {
+  const { devices, activeDeviceId, setActiveMediaDevice } = useMediaDeviceSelect({ kind })
+  if (devices.length <= 1) return null
+  return (
+    <div className="mt-0.5 mb-1 pl-2">
+      {devices.map((device, index) => (
+        <button
+          key={device.deviceId || index}
+          type="button"
+          onClick={() => void setActiveMediaDevice(device.deviceId)}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <Check
+            className={cn(
+              'size-3.5 shrink-0',
+              device.deviceId === activeDeviceId ? 'text-primary opacity-100' : 'opacity-0'
+            )}
+            weight="bold"
+          />
+          <span className="truncate">{device.label || `${label} ${index + 1}`}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function MenuDivider(): React.JSX.Element {
+  return <div className="my-1 h-px bg-border" />
 }

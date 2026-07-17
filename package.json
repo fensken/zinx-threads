@@ -1,6 +1,6 @@
 {
   "name": "zinx-threads",
-  "version": "0.0.1-beta.2",
+  "version": "0.0.1-beta.3",
   "description": "Zinx Threads — team chat, docs, and boards in one place.",
   "main": "./out/main/index.js",
   "author": "Zinx Threads",

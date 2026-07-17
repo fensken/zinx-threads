@@ -242,7 +242,14 @@ export function RealChannelView({
                 is loaded (`!hasMore`), so we never claim "the start" above older
                 messages that haven't been fetched yet. Covers the empty channel too. */}
             {!hasMore ? (
-              <ChannelIntro name={channel.name} kind={channel.kind} topic={channel.topic} />
+              <ChannelIntro
+                // A DM's `channel.name` is an internal `dm-<ids>` key — never render it.
+                // The DM passes the participants' title as `displayName`; fall back gently.
+                name={channel.kind === 'dm' ? (displayName ?? 'this conversation') : channel.name}
+                kind={channel.kind}
+                topic={channel.topic}
+                isDm={channel.kind === 'dm'}
+              />
             ) : null}
             {rows.map((row) => {
               if (row.type === 'day') return <DayDivider key={row.key} at={row.at} now={now} />

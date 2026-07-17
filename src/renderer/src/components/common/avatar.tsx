@@ -40,9 +40,13 @@ export function Avatar({
         initials
       )}
       {presence ? (
+        // Size the dot as a FRACTION of the avatar (not a fixed px) so it stays
+        // proportional at every size — a fixed `size-3` was ~60% of a 20px sidebar
+        // avatar. `z-10` keeps it above the image (which, when present, fills the
+        // avatar box), so the dot never disappears behind the photo.
         <PresenceDot
           presence={presence}
-          className={cn('absolute -right-0.5 -bottom-0.5 size-3', ringClassName)}
+          className={cn('absolute -right-0.5 -bottom-0.5 z-10 size-[30%]', ringClassName)}
         />
       ) : null}
     </span>

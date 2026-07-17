@@ -1,0 +1,13 @@
+/* Vidstack player theming — travels with the shared `media-player.tsx` (imported there), so
+   it's available wherever the player renders (page media blocks AND chat attachments). */
+.zinx-media-player {
+  --media-brand: var(--primary);
+  --media-focus-ring-color: var(--ring);
+  width: 100%;
+  max-width: 100%;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.zinx-media-player-audio {
+  border: 1px solid var(--border);
+}

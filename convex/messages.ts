@@ -22,12 +22,17 @@ import { markChannelRead } from './lib/unread'
 import { bumpChannelActivity } from './lib/activity'
 import { applyReaction, summarizeReactionRows } from './lib/reactions'
 import { fanOutNotifications, removeNotificationsForMessage } from './lib/notifications'
-import { markUploadUsed, objectUrl, r2 } from './files'
+import { markUploadUsed, objectUrl, reclaimAttachments } from './files'
 import { rateLimiter } from './rateLimiter'
 import type { Doc } from './_generated/dataModel'
 
 /** Files per message. A capped array on the doc (edited as a unit), so bound it. */
 const MAX_ATTACHMENTS = 10
+/** Per-file ceiling (bytes), mirroring the client's `lib/upload-limits.ts` (50 MB). The
+ *  browser PUTs straight to R2, so this is a **reported-size** re-check — the honest client
+ *  is already capped; this rejects an oversized `size` from a crafted one (the R2 object, if
+ *  it exists, is left unreferenced and the daily sweep reclaims it). */
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
 
 /** Messages in a channel, oldest→newest, each enriched with its author's display
  *  fields + grouped reactions. Null-safe: [] if not a member.
@@ -236,6 +241,9 @@ export const send = mutation({
     if (files.length > MAX_ATTACHMENTS) {
       throw new ConvexError(`A message can have at most ${MAX_ATTACHMENTS} attachments`)
     }
+    if (files.some((file) => file.size > MAX_ATTACHMENT_BYTES)) {
+      throw new ConvexError('That file is too large (max 50 MB)')
+    }
     if (!trimmed && files.length === 0) throw new ConvexError('Cannot send an empty message')
 
     // Resolve each uploaded key to a durable URL (public R2 domain, or a signed
@@ -388,15 +396,8 @@ export const remove = mutation({
       .collect()
     for (const reaction of reactions) await ctx.db.delete(reaction._id)
     await removeNotificationsForMessage(ctx, messageId)
-    // Best-effort R2 cleanup — a stray object is wasted storage, not a failure the
-    // delete should roll back on.
-    for (const attachment of message.attachments ?? []) {
-      try {
-        await r2.deleteObject(ctx, attachment.key)
-      } catch {
-        // ignore
-      }
-    }
+    // Free this message's uploaded files from R2 (shared with the cascade path).
+    await reclaimAttachments(ctx, message.attachments)
     await ctx.db.delete(messageId)
 
     // Deleting a reply must decrement its thread, or the indicator drifts.

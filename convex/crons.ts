@@ -15,4 +15,15 @@ crons.daily(
   internal.cleanup.sweepNotifications
 )
 
+// Weekly GC: reclaim R2 objects for page media that was REMOVED from a page but whose object
+// lingered (a block dropped from a still-live page, so `cleanup.channel` never ran). Guarded
+// hard against deleting live files — public-URL-only, a 7-day grace, and it skips any page it
+// can't fully map. See `files.reconcilePageMedia`.
+crons.weekly(
+  'reconcile page media',
+  { dayOfWeek: 'sunday', hourUTC: 9, minuteUTC: 0 },
+  internal.files.reconcilePageMedia,
+  {}
+)
+
 export default crons

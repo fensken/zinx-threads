@@ -86,6 +86,20 @@ export default defineSchema({
     .index('by_key', ['key'])
     .index('by_created', ['createdAt']),
 
+  /** R2 keys of files uploaded INTO a page (image / video / audio / file blocks). A page
+   *  block stores only the file URL in its BlockNote doc — NOT the key — so, unlike a page
+   *  cover (tracked by `pages.coverKey`), there's nothing on the page row to reclaim on
+   *  delete. This is that missing back-reference: one row per upload, keyed by the page's
+   *  channel, written by `files.resolveUpload`. Deleting the page channel drains these and
+   *  frees the objects (`cleanup.channel`). A removed block's object lingers until the page
+   *  is deleted — the same lifetime as a message's attachments. */
+  pageUploads: defineTable({
+    channelId: v.id('channels'),
+    key: v.string(),
+    createdBy: v.id('users'),
+    createdAt: v.number()
+  }).index('by_channel', ['channelId']),
+
   workspaces: defineTable({
     name: v.string(),
     slug: v.string(),

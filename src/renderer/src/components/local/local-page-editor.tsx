@@ -6,7 +6,7 @@ import {
   parsePageContent,
   type PageDoc
 } from '@renderer/components/page/page-schema'
-import { fileToCoverDataUrl } from '@renderer/lib/local-avatar'
+import { fileToCoverDataUrl, fileToDataUrl } from '@renderer/lib/local-avatar'
 import { useLocalStore } from '@renderer/store/local-store'
 
 /** A local page — the presentational `PageEditor` seeded from + saved to the local
@@ -90,6 +90,17 @@ export function LocalPageEditor({
     [savePageMeta, channelId]
   )
 
+  // A file dropped/selected in a page BLOCK, offline: inline it as a data URL (no server).
+  // Same parity as the online R2 upload — images downscaled, other files capped.
+  const handleUploadFile = useCallback(async (file: File): Promise<string> => {
+    try {
+      return await fileToDataUrl(file)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not embed that file')
+      throw error
+    }
+  }, [])
+
   return (
     <PageEditor
       key={channelId}
@@ -97,6 +108,7 @@ export function LocalPageEditor({
       onContentChange={pushContent}
       onMetaChange={pushMeta}
       onCoverUpload={handleCoverUpload}
+      onUploadFile={handleUploadFile}
       // Offline: a device image works (data URL, above), but Unsplash needs the network,
       // so it stays hidden — gradients / colors / links / upload all work.
       allowNetworkCovers={false}

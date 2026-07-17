@@ -19,7 +19,9 @@
   --bn-colors-selected-background: var(--accent);
   --bn-colors-disabled-text: var(--muted-foreground);
   --bn-colors-disabled-background: var(--muted);
-  --bn-colors-shadow: color-mix(in oklab, var(--foreground) 14%, transparent);
+  /* A drop shadow is a dark scrim in BOTH modes — NOT `--foreground`, which is white in
+     dark mode and would tint BlockNote's shadows into an under-glow. */
+  --bn-colors-shadow: rgba(0, 0, 0, 0.22);
   --bn-colors-border: var(--border);
   --bn-colors-side-menu: var(--muted-foreground);
   --bn-font-family: inherit;
@@ -47,6 +49,16 @@
   background-color: var(--primary);
 }
 
+/* The ariakit variant hardcodes `outline-color: #007acc` on the BASE of every
+   interactive element (it only becomes visible on keyboard focus, but it's still a
+   stray blue). Re-map the base outline colour to our ring token so any focus ring —
+   toolbar button, file-panel tab, link input, popover — is themed, not blue. */
+.bn-ak-button,
+.bn-ak-tab,
+.bn-ak-input,
+.bn-ak-popover,
+.bn-ak-hovercard,
+.bn-ak-primary,
 .bn-ak-button:focus-visible,
 .bn-ak-button[data-focus-visible],
 .bn-ak-tab:focus-visible,
@@ -60,11 +72,83 @@
   outline-color: var(--ring);
 }
 
+/* The editor's LINK mark (`.bn-ak-link` / `.bn-ak-anchor`) is hardcoded `#006bb3` —
+   a raw blue for every hyperlink in a page. Re-map to our `--primary` so links read
+   as the brand colour in both light and dark, matching how chat renders links. */
+.bn-ak-link,
+.bn-ak-anchor,
+.zinx-editor .bn-inline-content a {
+  color: var(--primary);
+}
+
+/* 2b) Every floating BlockNote surface — the block drag-handle menu (Delete / Colors),
+   the color-picker submenu, the link editor, the slash menu, hover cards — to our shadcn
+   popover: our surface, border, radius, shadow. BlockNote portals these to a body-level
+   `.bn-root`, so keep them GLOBAL (unscoped), like the `.bn-ak-*` overrides above. */
+.bn-ak-menu,
+.bn-ak-popover,
+.bn-ak-hovercard {
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  /* A drop shadow is always DARK — a scrim, not a theme colour (`--foreground` is white in
+     dark mode, so a foreground-tinted shadow reads as an under-GLOW there). Black rgba is
+     correct in both modes and is the sanctioned scrim exception to "no hardcoded colours". */
+  box-shadow:
+    0 8px 24px -8px rgba(0, 0, 0, 0.35),
+    0 2px 6px -3px rgba(0, 0, 0, 0.25);
+  /* Keep the drag-handle menu (Delete / Colors), the colour submenu and the link editor
+     within a small viewport. */
+  max-width: min(20rem, calc(100vw - 1rem));
+}
+/* Padding only on dropdown MENUS — popovers hold their own layouts (the link form, the
+   colour grid) and shouldn't get an extra inset. */
+.bn-ak-menu {
+  padding: 0.25rem;
+}
+.bn-ak-menu-item {
+  border-radius: calc(var(--radius) - 2px);
+  padding: 0.32rem 0.5rem;
+}
+.bn-ak-menu-separator {
+  background-color: var(--border);
+}
+
+/* Buttons in the toolbar, menus and side handles → our ghost-button look: quiet by
+   default, `--accent` on hover, `--accent` when the mark is active (bold/italic pressed). */
+.bn-ak-button {
+  color: var(--foreground);
+  border-radius: calc(var(--radius) - 2px);
+}
+.bn-ak-button:hover:not([aria-disabled='true']):not(:disabled),
+.bn-ak-button[data-active],
+.bn-ak-button[aria-pressed='true'],
+.bn-ak-button[data-state='open'] {
+  color: var(--accent-foreground);
+  background-color: var(--accent);
+}
+/* The badges (e.g. the language pill on a code block) + inputs. */
+.bn-ak-badge {
+  color: var(--muted-foreground);
+  background-color: var(--muted);
+  border-radius: calc(var(--radius) - 3px);
+}
+.bn-ak-input {
+  color: var(--foreground);
+  background-color: var(--background);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+}
+
 /* Slash menu: we swap out BlockNote's `size` middleware (see page-editor.tsx), so
    give the menu a fixed, scrollable height here — otherwise its `max-height:inherit`
    resolves to none and it grows unbounded. `flip` then opens it up near the bottom. */
 .bn-root .bn-suggestion-menu {
   max-height: min(22rem, 60dvh);
+  /* Never wider than the viewport — the slash / @ / # menus have long item labels + subtext
+     and would otherwise run off the right edge of a phone. */
+  max-width: min(20rem, calc(100vw - 1rem));
 }
 
 /* 3) Floating formatting toolbar. Match our popover surface, and — since Electron
@@ -107,6 +191,74 @@
   padding-inline: 54px;
 }
 
+/* 4b) Small screens / narrow column. The 54px gutter (for the drag handles) is far too
+   much when the column is narrow — it cramps text and pushes wide blocks (media, embeds)
+   off the right edge. A CONTAINER query (the page is a `@container`) shrinks the padding
+   when the *column* is small — right when the sidebar + members panel squeeze it, not just
+   at small viewports. The drag handles overlap the text a little at this width, which is
+   the accepted trade for readable content on a phone (touch users rarely use them). */
+@container (max-width: 42rem) {
+  .zinx-editor .bn-editor,
+  .zinx-page-head {
+    padding-inline: 1.25rem;
+  }
+}
+@container (max-width: 28rem) {
+  .zinx-editor .bn-editor,
+  .zinx-page-head {
+    padding-inline: 0.75rem;
+  }
+}
+
+/* 4c) Drop the mouse-only editor chrome on small screens / narrow columns. The drag `⠿` +
+   add `+` handles live in the left gutter — with the gutter gone (4b) they overlap the text
+   (see the screenshot), and touch users don't use them (add blocks via the slash menu, format
+   via markdown shortcuts). Hide the **side menu** when the COLUMN is narrow (container query,
+   matching where the gutter disappears). The **formatting toolbar** is portaled to a body-level
+   `.bn-root` — outside the page `@container` — so hide it (and, redundantly, the side menu) on
+   small VIEWPORTS via a media query. `!important` beats BlockNote's inline positioning styles. */
+@container (max-width: 42rem) {
+  .bn-side-menu {
+    display: none !important;
+  }
+}
+@media (max-width: 768px) {
+  .bn-side-menu,
+  .bn-ak-toolbar {
+    display: none !important;
+  }
+}
+
+/* A one-line notice that the full editor lives on a wider screen. Styled once; shown only
+   when the chrome is hidden — the COLUMN is narrow (container query, matching 4b/4c) OR the
+   VIEWPORT is small (media query, matching the toolbar hide above). */
+.zinx-narrow-note {
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+.zinx-narrow-note svg {
+  flex-shrink: 0;
+}
+@container (max-width: 42rem) {
+  .zinx-narrow-note {
+    display: flex;
+  }
+}
+@media (max-width: 768px) {
+  .zinx-narrow-note {
+    display: flex;
+  }
+}
+
 /* 5) Block content BlockNote hardcodes (near-black code block, gray quote, inline
    code) → tokens, so they match the app in both light and dark. */
 .zinx-editor .bn-block-content[data-content-type='codeBlock'] {
@@ -127,6 +279,319 @@
   border-radius: calc(var(--radius) - 2px);
   padding: 0.1em 0.35em;
   font-size: 0.9em;
+}
+
+/* Check-list (to-do) checkboxes are native <input type=checkbox> with no BlockNote
+   styling, so they render the browser's default accent (blue in Chrome). Paint the
+   tick with our brand colour so a checked to-do isn't a stray blue in the page. */
+.zinx-editor [data-content-type='checkListItem'] input[type='checkbox'] {
+  accent-color: var(--primary);
+}
+
+/* 6a) File / media blocks (image / video / audio / file) — Notion-style. The native
+   <audio>/<video> CONTROLS are the browser's and can't be fully restyled, but the
+   placeholder, the file panel and the media frame all can be, which is most of the look. */
+
+/* "Add image / video / audio / file" placeholder → a soft, full-width drop zone. */
+.zinx-editor .bn-add-file-button {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  padding: 0.7rem 0.9rem;
+  gap: 0.6rem;
+  transition:
+    background-color 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+.zinx-editor .bn-add-file-button:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  border-color: var(--ring);
+}
+
+/* Contain + round the image block's media (audio/video use Vidstack — see 6c). */
+.zinx-editor [data-content-type='image'] img,
+.zinx-editor .bn-visual-media {
+  border-radius: var(--radius);
+  max-width: 100%;
+}
+
+/* The file (download) block's name row + any default file preview. */
+.zinx-editor .bn-file-name-with-icon,
+.zinx-editor .bn-file-default-preview {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+/* 6c) Vidstack audio / video players (replace the native <audio>/<video> blocks) +
+   their upload/paste placeholder. Vidstack's default layout is dark and clean; we only
+   nudge its brand colour to ours and round the frame. */
+.zinx-media {
+  width: 100%;
+}
+/* The Vidstack player theming (`.zinx-media-player*`) lives in `common/media-player.css`,
+   loaded with the shared player component (used here AND in chat attachments). */
+
+/* Image block (rendered form). */
+.zinx-media-image {
+  max-width: 100%;
+  border-radius: var(--radius);
+  display: block;
+}
+
+/* File block — a download card. */
+.zinx-file-card {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+  color: var(--foreground);
+  padding: 0.6rem 0.85rem;
+  text-decoration: none;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+.zinx-file-card:hover {
+  background: var(--accent);
+  border-color: var(--ring);
+}
+.zinx-file-icon {
+  flex-shrink: 0;
+  width: 1.35rem;
+  height: 1.35rem;
+  color: var(--muted-foreground);
+}
+.zinx-file-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.zinx-file-download {
+  flex-shrink: 0;
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--muted-foreground);
+}
+
+.zinx-media-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+  padding: 0.9rem 1rem;
+}
+.zinx-media-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  color: var(--muted-foreground);
+}
+.zinx-media-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.zinx-media-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-radius: calc(var(--radius) - 2px);
+  padding: 0.4rem 0.8rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.zinx-media-upload:hover {
+  background: color-mix(in oklab, var(--primary) 90%, black);
+}
+.zinx-media-row {
+  display: flex;
+  /* `min-width: 0` so the paste field can shrink instead of overflowing a narrow column;
+     `min-width: 12rem` used to force it wider than the column and clip. It wraps under the
+     Upload button (the parent is `flex-wrap`) when there isn't room beside it. */
+  flex: 1 1 12rem;
+  min-width: 0;
+  gap: 0.5rem;
+}
+.zinx-media-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+  color: var(--foreground);
+  outline: none;
+}
+.zinx-media-input:focus-visible {
+  border-color: var(--ring);
+}
+.zinx-media-button {
+  flex-shrink: 0;
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  padding: 0.4rem 0.8rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.zinx-media-button:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+/* 6b) Custom video EMBED block (YouTube / Vimeo). */
+.zinx-embed {
+  width: 100%;
+}
+.zinx-embed-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #000;
+  border: 1px solid var(--border);
+}
+.zinx-embed-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.zinx-embed-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+  padding: 0.9rem 1rem;
+}
+.zinx-embed-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  color: var(--muted-foreground);
+}
+.zinx-embed-row {
+  display: flex;
+  gap: 0.5rem;
+}
+.zinx-embed-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+  color: var(--foreground);
+  outline: none;
+}
+.zinx-embed-input:focus-visible {
+  border-color: var(--ring);
+}
+.zinx-embed-button {
+  flex-shrink: 0;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-radius: calc(var(--radius) - 2px);
+  padding: 0.4rem 0.9rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.zinx-embed-button:hover {
+  background: color-mix(in oklab, var(--primary) 90%, black);
+}
+.zinx-embed-fallback {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  padding: 0.8rem 1rem;
+  font-size: 0.9rem;
+}
+.zinx-embed-fallback a {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+/* 6d) @user / #channel mention pills (BlockNote inline content). Mirrors the chat
+   `MentionPill`: a `@` glyph on a person, the channel's KIND icon on a channel, sitting
+   inline-flex with the label. `inline-flex` + `vertical-align: baseline` keeps the icon
+   centred with the text without breaking the paragraph flow. */
+.zinx-mention {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15em;
+  vertical-align: baseline;
+  border-radius: calc(var(--radius) - 3px);
+  padding: 0 0.3em;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+/* Icons scale with the pill text (em-relative) rather than a fixed px, so they follow
+   the UI-scale setting like the rest of the page. */
+.zinx-mention svg {
+  flex-shrink: 0;
+  width: 0.9em;
+  height: 0.9em;
+}
+/* A person → primary tint (chat's user pill). */
+.zinx-mention-user {
+  color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+}
+.zinx-mention-user:hover {
+  background: color-mix(in oklab, var(--primary) 22%, transparent);
+}
+/* A channel → the accent surface (chat's channel pill). */
+.zinx-mention-channel {
+  color: var(--accent-foreground);
+  background: var(--accent);
+}
+.zinx-mention-channel:hover {
+  background: color-mix(in oklab, var(--accent) 70%, transparent);
+}
+/* An unresolved channel (deleted / offline) → muted, non-interactive (chat's fallback). */
+.zinx-mention-unknown {
+  color: var(--muted-foreground);
+  background: var(--muted);
+  cursor: default;
+}
+/* A role mention (`@everyone` / `@admins`) → amber, matching chat's role pill; the
+   `warning` token is the sanctioned categorical colour for "this addresses a group". */
+.zinx-mention-role {
+  color: var(--warning);
+  background: color-mix(in oklab, var(--warning) 15%, transparent);
+  cursor: default;
 }
 
 /* 6) Custom callout block */

@@ -2,7 +2,7 @@ import { v } from 'convex/values'
 import { internalMutation, type MutationCtx } from './_generated/server'
 import { internal } from './_generated/api'
 import type { Doc } from './_generated/dataModel'
-import { r2 } from './files'
+import { r2, reclaimAttachments } from './files'
 
 // Background cascade deletes. The public `remove` mutations (channels/workspaces/
 // threads) delete the top row immediately — so it vanishes from the UI — then
@@ -24,13 +24,7 @@ async function purgeMessage(ctx: MutationCtx, message: Doc<'messages'>): Promise
     .withIndex('by_message', (q) => q.eq('messageId', message._id))
     .collect()
   for (const reaction of reactions) await ctx.db.delete(reaction._id)
-  for (const attachment of message.attachments ?? []) {
-    try {
-      await r2.deleteObject(ctx, attachment.key)
-    } catch {
-      // orphaned object, not a failure
-    }
-  }
+  await reclaimAttachments(ctx, message.attachments)
   await ctx.db.delete(message._id)
 }
 
@@ -113,6 +107,23 @@ export const channel = internalMutation({
       .take(BATCH)
     for (const row of tasks) await ctx.db.delete(row._id)
     if (tasks.length === BATCH) more = true
+
+    // Files uploaded INTO this channel's page (image/video/audio/file blocks). The block
+    // stored only the URL, so this back-reference table (`pageUploads`) is the only way to
+    // reclaim the R2 object on delete. Batched — a media-heavy page can have many.
+    const pageUploads = await ctx.db
+      .query('pageUploads')
+      .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+      .take(BATCH)
+    for (const row of pageUploads) {
+      try {
+        await r2.deleteObject(ctx, row.key)
+      } catch {
+        // orphaned object, not a failure
+      }
+      await ctx.db.delete(row._id)
+    }
+    if (pageUploads.length === BATCH) more = true
 
     // Small, bounded sets — drain them once the big ones are done so we don't keep
     // re-reading them every batch.

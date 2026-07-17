@@ -40,7 +40,9 @@ import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@renderer/components/ui/popover'
 import { Spinner } from '@renderer/components/ui/spinner'
+import { toast } from 'sonner'
 import { formatBytes } from '@renderer/lib/format-bytes'
+import { MAX_UPLOAD_LABEL, withinUploadLimit } from '@renderer/lib/upload-limits'
 import { convexEnabled } from '@renderer/lib/auth-client'
 import { docToMarkdown, markdownToHtml } from '@renderer/lib/tiptap-markdown'
 import {
@@ -370,12 +372,11 @@ function ChatComposerRoot({
     content: initialMarkdown ? markdownToHtml(initialMarkdown) : undefined,
     editorProps: {
       attributes: { class: 'chat-prose' },
-      // Paste an image (screenshot, copied file) → upload it as an attachment
-      // instead of letting ProseMirror try to inline it. Text paste is untouched.
+      // Paste a file of ANY type (a screenshot, or a file copied in the OS file manager) →
+      // upload it as an attachment instead of letting ProseMirror try to inline it. Text
+      // paste is untouched (no files on the clipboard → return false, editor handles it).
       handlePaste: (_view, event) => {
-        const files = Array.from(event.clipboardData?.files ?? []).filter((f) =>
-          f.type.startsWith('image/')
-        )
+        const files = Array.from(event.clipboardData?.files ?? [])
         if (files.length === 0) return false
         attachFilesRef.current(files)
         return true
@@ -437,6 +438,11 @@ function ChatComposerRoot({
       if (!onUpload) return
       const list = Array.from(files)
       for (const file of list) {
+        // Keep total storage bounded — reject oversized files before they touch R2.
+        if (!withinUploadLimit(file.size)) {
+          toast.error(`"${file.name}" is larger than ${MAX_UPLOAD_LABEL}`)
+          continue
+        }
         const id = crypto.randomUUID()
         const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined
         setAttachments((prev) => {

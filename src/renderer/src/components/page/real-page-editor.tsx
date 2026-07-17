@@ -13,6 +13,7 @@ import {
 } from '@renderer/components/page/page-schema'
 import { PageSkeleton } from '@renderer/components/common/skeletons'
 import { errorMessage } from '@renderer/lib/convex-error'
+import { MAX_UPLOAD_LABEL, withinUploadLimit } from '@renderer/lib/upload-limits'
 import { useDebouncedCallback } from '@renderer/lib/use-debounced-callback'
 
 /** Long enough that a burst of typing is one write, short enough that a quick
@@ -71,6 +72,7 @@ function PageSurface({
   const saveMeta = useMutation(api.pages.saveMeta)
   const uploadFile = useUploadFile(api.files)
   const setCoverUpload = useMutation(api.pages.setCoverUpload)
+  const resolveUpload = useMutation(api.files.resolveUpload)
   const [state, setState] = useState<SaveState>('idle')
   const [error, setError] = useState<string | null>(null)
 
@@ -119,6 +121,22 @@ function PageSurface({
     mergeMeta
   )
 
+  // A file dropped/selected in a page BLOCK (image / file / audio / video): upload to R2,
+  // then adopt it + resolve a durable URL (`files.resolveUpload`). BlockNote stores that
+  // URL in the block; the page autosaves the content around it. BlockNote surfaces upload
+  // errors in the block itself, so we just let it throw.
+  const uploadBlockFile = useCallback(
+    async (file: File): Promise<string> => {
+      // Keep total storage bounded. BlockNote surfaces this throw in the block.
+      if (!withinUploadLimit(file.size)) {
+        throw new Error(`That file is larger than ${MAX_UPLOAD_LABEL}`)
+      }
+      const key = await uploadFile(file)
+      return await resolveUpload({ key, channelId })
+    },
+    [uploadFile, resolveUpload, channelId]
+  )
+
   // Cover upload persists itself (`setCoverUpload` resolves the URL + tracks the
   // R2 key + deletes the previous cover). Returns the URL for the local preview.
   const uploadCover = useCallback(
@@ -148,6 +166,7 @@ function PageSurface({
         onContentChange={pushContent}
         onMetaChange={pushMeta}
         onCoverUpload={uploadCover}
+        onUploadFile={uploadBlockFile}
       />
     </div>
   )

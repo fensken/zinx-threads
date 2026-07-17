@@ -21,6 +21,28 @@ export async function fileToCoverDataUrl(file: File, maxWidth = 1600): Promise<s
   }
 }
 
+/** How large a non-image file may be to inline as a data URL in a **local** page. A data
+ *  URL lives in the on-disk page JSON and is re-serialized on every save, so a big video
+ *  would bloat every write — capped rather than unbounded. */
+const LOCAL_EMBED_MAX = 8 * 1024 * 1024
+
+/** Read ANY file into a **data URL** for local (offline) embedding in a page block —
+ *  images are downscaled (reusing the cover path); other files (audio, pdf, …) are
+ *  base64-inlined as-is, up to `LOCAL_EMBED_MAX`. The offline counterpart of the R2
+ *  upload the online page editor uses; keeps everything on-device. */
+export async function fileToDataUrl(file: File): Promise<string> {
+  if (file.type.startsWith('image/')) return fileToCoverDataUrl(file)
+  if (file.size > LOCAL_EMBED_MAX) {
+    throw new Error('That file is too large to embed locally (max 8 MB)')
+  }
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(new Error('Could not read that file'))
+    reader.readAsDataURL(file)
+  })
+}
+
 /** Read an image file and return a small, square JPEG **data URL** (downscaled to
  *  `size`px, cover-cropped), so a locally-picked avatar fits comfortably in
  *  localStorage — no upload / server needed. Throws for a non-image. */

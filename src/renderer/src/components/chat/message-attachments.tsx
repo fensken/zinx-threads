@@ -1,10 +1,16 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { ArrowsOut, DownloadSimple, File as FileIcon } from '@phosphor-icons/react'
 import { platform } from '@renderer/lib/platform'
 import { downloadFile } from '@renderer/lib/download-file'
 import { formatBytes } from '@renderer/lib/format-bytes'
 import { ImageLightbox } from '@renderer/components/chat/image-lightbox'
+import { Spinner } from '@renderer/components/ui/spinner'
 import { cn } from '@renderer/lib/utils'
+
+/** Vidstack is heavy (~300 kB) and chat is in the MAIN bundle, so the player is lazy — it
+ *  loads only when a message actually carries audio/video, keeping it out of the entry chunk.
+ *  Shared with the page editor's media blocks (`common/media-player.tsx`). */
+const LazyMediaPlayer = lazy(() => import('@renderer/components/common/media-player'))
 
 export interface RenderedAttachment {
   key: string
@@ -30,22 +36,43 @@ export function MessageAttachments({
   return (
     <>
       <div className={cn('mt-1.5 flex flex-wrap gap-2', pending && 'opacity-70')}>
-        {attachments.map((attachment) =>
-          attachment.contentType.startsWith('image/') && attachment.url ? (
-            <ImageThumb
-              key={attachment.key + attachment.url}
-              attachment={attachment}
-              pending={pending}
-              onOpen={() => setZoomed(attachment)}
-            />
-          ) : (
-            <FileChip
-              key={attachment.key + attachment.name}
-              attachment={attachment}
-              pending={pending}
-            />
-          )
-        )}
+        {attachments.map((attachment) => {
+          const type = attachment.contentType
+          const key = attachment.key + attachment.url + attachment.name
+          if (type.startsWith('image/') && attachment.url) {
+            return (
+              <ImageThumb
+                key={key}
+                attachment={attachment}
+                pending={pending}
+                onOpen={() => setZoomed(attachment)}
+              />
+            )
+          }
+          // Delivered audio/video → an inline (lazy) player. While pending (local, uploading)
+          // there's no server URL yet, so it falls through to the dimmed file chip.
+          if (
+            (type.startsWith('video/') || type.startsWith('audio/')) &&
+            attachment.url &&
+            !pending
+          ) {
+            const kind = type.startsWith('video/') ? 'video' : 'audio'
+            return (
+              <div key={key} className={cn('w-full', kind === 'video' ? 'max-w-md' : 'max-w-sm')}>
+                <Suspense
+                  fallback={
+                    <div className="flex h-10 items-center gap-2 rounded-lg border bg-muted px-3 text-xs text-muted-foreground">
+                      <Spinner className="size-3.5" /> Loading player…
+                    </div>
+                  }
+                >
+                  <LazyMediaPlayer kind={kind} src={attachment.url} title={attachment.name} />
+                </Suspense>
+              </div>
+            )
+          }
+          return <FileChip key={key} attachment={attachment} pending={pending} />
+        })}
       </div>
       {zoomed ? (
         <ImageLightbox src={zoomed.url} name={zoomed.name} onClose={() => setZoomed(null)} />

@@ -63,8 +63,11 @@ export function WindowControls(): React.JSX.Element | null {
         label="Close"
         onClick={() => platform.windowControls.close()}
         className="hover:bg-destructive hover:text-white"
+        // The X is DIAGONAL — `crispEdges` (right for the orthogonal glyphs above) turns
+        // its strokes into a stair-stepped, lopsided cross. Draw it anti-aliased instead.
+        smooth
       >
-        <path d="M0.5 0.5l9.5 9.5M10 0.5L0.5 10" />
+        <path d="M0.75 0.75 9.75 9.75M9.75 0.75 0.75 9.75" strokeLinecap="round" />
       </ControlButton>
     </div>
   )
@@ -74,11 +77,15 @@ function ControlButton({
   label,
   onClick,
   className,
+  smooth = false,
   children
 }: {
   label: string
   onClick: () => void
   className?: string
+  /** Anti-alias the glyph instead of pixel-snapping it — for DIAGONAL strokes (the close
+   *  X), which `crispEdges` would leave jagged. Orthogonal glyphs stay crisp. */
+  smooth?: boolean
   children: React.ReactNode
 }): React.JSX.Element {
   return (
@@ -104,9 +111,11 @@ function ControlButton({
         fill="none"
         stroke="currentColor"
         strokeWidth="1"
-        // Crisp 1px strokes: these glyphs are drawn on a pixel grid, and anti-aliasing
-        // them into a soft grey is exactly what makes hand-drawn controls look cheap.
-        shapeRendering="crispEdges"
+        // Orthogonal glyphs (minimise line, maximise box) sit on the pixel grid, so pixel-
+        // snap them — anti-aliasing a 1px horizontal/vertical line into soft grey is exactly
+        // what makes hand-drawn controls look cheap. A DIAGONAL glyph is the opposite: snap
+        // it and it stair-steps, so the X asks for `geometricPrecision`.
+        shapeRendering={smooth ? 'geometricPrecision' : 'crispEdges'}
         aria-hidden
       >
         {children}

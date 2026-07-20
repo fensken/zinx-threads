@@ -35,6 +35,11 @@ export function channelConnectUrl(token: string): string {
   return `${base()}/connect/${encodeURIComponent(token)}`
 }
 
+/** Public submission link for a form channel (`/f/<token>`). */
+export function formSubmitUrl(token: string): string {
+  return `${base()}/f/${encodeURIComponent(token)}`
+}
+
 /** A `zinx://` deep link for an in-app route path (`/invite/abc` → `zinx://invite/abc`).
  *  Powers the web "Open in the desktop app" affordance — the desktop app registers as
  *  the OS handler for the `zinx://` scheme (see src/main/index.ts). */

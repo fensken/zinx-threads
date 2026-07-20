@@ -3,6 +3,7 @@ import { convexTest } from 'convex-test'
 import { register as registerRateLimiter } from '@convex-dev/rate-limiter/test'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from './_generated/api'
+import type { Id } from './_generated/dataModel'
 import schema from './schema'
 
 const modules = import.meta.glob('./**/*.ts')
@@ -755,12 +756,11 @@ describe('scale invariants', () => {
       kind: 'chat'
     })
 
-    const watermarkOf = async (channelId: string) =>
+    const watermarkOf = async (channelId: Id<'channels'>) =>
       await t.run(async (ctx) => {
         const row = await ctx.db
           .query('channelActivity')
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .withIndex('by_channel', (q) => q.eq('channelId', channelId as any))
+          .withIndex('by_channel', (q) => q.eq('channelId', channelId))
           .unique()
         // `t.run` marshals `undefined` across the boundary as `null` — normalise.
         return row?.lastMessageAt ?? null

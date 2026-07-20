@@ -356,6 +356,8 @@ export const edit = mutation({
     await requireChannelAccess(ctx, message.channelId, user._id)
     const trimmed = body.trim()
     if (!trimmed) throw new ConvexError('Message cannot be empty')
+    // No-op edit: don't stamp "(edited)" or re-notify every viewer for an unchanged body.
+    if (trimmed === message.body) return
     await ctx.db.patch(messageId, { body: trimmed, editedAt: Date.now() })
   }
 })

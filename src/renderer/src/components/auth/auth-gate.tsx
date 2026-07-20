@@ -16,6 +16,10 @@ export function AuthGate({ children }: { children: React.ReactNode }): React.JSX
   // The developer docs are public — a person evaluating the API or connecting an AI reads
   // them before they have (or need) an account.
   if (pathname.startsWith('/docs')) return <>{children}</>
+  // A public form (`/f/<token>`) is fillable by anyone with the link — no account needed
+  // (the submit still enforces `requireSignIn` per form). Must bypass the gate or an
+  // anonymous respondent would hit the sign-in wall.
+  if (pathname.startsWith('/f/')) return <>{children}</>
   if (!authEnabled) return <>{children}</>
 
   return (

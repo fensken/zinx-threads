@@ -15,6 +15,16 @@ crons.daily(
   internal.cleanup.sweepNotifications
 )
 
+// Enterprise message-retention: hard-delete channel messages older than each workspace's
+// `messageRetentionDays` policy. No-op for workspaces without a policy. Batched +
+// self-rescheduling per workspace/channel — see `retention.enforce`.
+crons.daily(
+  'enforce message retention',
+  { hourUTC: 7, minuteUTC: 0 },
+  internal.retention.enforce,
+  {}
+)
+
 // Weekly GC: reclaim R2 objects for page media that was REMOVED from a page but whose object
 // lingered (a block dropped from a still-live page, so `cleanup.channel` never ran). Guarded
 // hard against deleting live files — public-URL-only, a 7-day grace, and it skips any page it

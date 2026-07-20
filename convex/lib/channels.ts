@@ -4,7 +4,15 @@ import type { QueryCtx } from '../_generated/server'
 /** The kinds that are actually *channels* — everything a workspace lists in its
  *  sidebar. Deliberately NOT `dm`: a DM is a channel row, but it belongs to its two
  *  participants, not to the workspace. */
-export const CHANNEL_KINDS = ['chat', 'voice', 'page', 'kanban', 'whiteboard'] as const
+export const CHANNEL_KINDS = [
+  'chat',
+  'voice',
+  'page',
+  'kanban',
+  'whiteboard',
+  'database',
+  'form'
+] as const
 
 /**
  * Every channel in a workspace, **excluding DMs**, reading only the rows it returns.

@@ -30,7 +30,7 @@ const TOOLS = [
     name: 'list_channels',
     args: 'workspace',
     kind: 'read',
-    desc: 'The channels you can see, each with its kind (chat / voice / page / kanban / whiteboard) and whether you can post.'
+    desc: 'The channels you can see, each with its kind (chat / voice / page / kanban / whiteboard / database / form) and whether you can post.'
   },
   {
     name: 'list_members',
@@ -86,6 +86,24 @@ const TOOLS = [
     kind: 'read',
     desc: 'A whiteboard channel’s scene (Excalidraw element JSON + shape count). Read-only — drawn in the app.'
   },
+  {
+    name: 'get_database',
+    args: 'workspace, channel',
+    kind: 'read',
+    desc: 'A database channel’s fields (id + type) and records (id + values), for create_record / update_record.'
+  },
+  {
+    name: 'get_form',
+    args: 'workspace, channel',
+    kind: 'read',
+    desc: 'A form channel’s schema (title, fields, required) and its response count.'
+  },
+  {
+    name: 'list_responses',
+    args: 'workspace, channel',
+    kind: 'read',
+    desc: 'A form channel’s submissions, each with its id, timestamp and answer values.'
+  },
   // Messages
   {
     name: 'post_message',
@@ -122,7 +140,7 @@ const TOOLS = [
     name: 'create_channel',
     args: 'workspace, name, kind, private?',
     kind: 'write',
-    desc: 'Create a channel (chat / voice / page / kanban / whiteboard), optionally private.'
+    desc: 'Create a channel (chat / voice / page / kanban / whiteboard / database / form), optionally private.'
   },
   // Events
   {
@@ -183,7 +201,21 @@ const TOOLS = [
     args: 'workspace, channel, title?, text?',
     kind: 'write',
     desc: 'Set a page channel’s title and/or text (plain text; rich editing is in the app).'
-  }
+  },
+  // Database (records)
+  {
+    name: 'create_record',
+    args: 'workspace, channel, values?',
+    kind: 'write',
+    desc: 'Add a record to a database. values is keyed by field id (from get_database).'
+  },
+  {
+    name: 'update_record',
+    args: 'record, values',
+    kind: 'write',
+    desc: 'Update a record’s cells (id from get_database). Only the fields you pass change.'
+  },
+  { name: 'delete_record', args: 'record', kind: 'write', desc: 'Delete a database record.' }
 ] as const
 
 /** The `.convex.site` origin's REST base — the same deployment as the MCP endpoint. */

@@ -257,7 +257,11 @@ export function LocalSidebar(): React.JSX.Element {
               const ch = channelMap.get(id)
               return ch ? (
                 <SortableItem key={id} id={id}>
-                  <ChannelRow channel={ch} groups={groups} />
+                  <ChannelRow
+                    channel={ch}
+                    groups={groups}
+                    onCreateChannel={(groupId) => setCreateIn({ groupId })}
+                  />
                 </SortableItem>
               ) : null
             })}
@@ -269,7 +273,11 @@ export function LocalSidebar(): React.JSX.Element {
               if (!g) return null
               return (
                 <SortableItem key={gid} id={gid}>
-                  <ChannelGroup group={g} onAddChannel={() => setCreateIn({ groupId: g.id })}>
+                  <ChannelGroup
+                    group={g}
+                    onAddChannel={() => setCreateIn({ groupId: g.id })}
+                    onCreateGroup={() => setNewGroup('')}
+                  >
                     <SortableContext
                       items={buckets[gid] ?? []}
                       strategy={verticalListSortingStrategy}
@@ -278,7 +286,12 @@ export function LocalSidebar(): React.JSX.Element {
                         const ch = channelMap.get(id)
                         return ch ? (
                           <SortableItem key={id} id={id}>
-                            <ChannelRow channel={ch} groups={groups} nested />
+                            <ChannelRow
+                              channel={ch}
+                              groups={groups}
+                              nested
+                              onCreateChannel={(groupId) => setCreateIn({ groupId })}
+                            />
                           </SortableItem>
                         ) : null
                       })}
@@ -389,11 +402,13 @@ function SortableItem({
 function ChannelRow({
   channel,
   groups,
-  nested
+  nested,
+  onCreateChannel
 }: {
   channel: LocalChannel
   groups: LocalGroup[]
   nested?: boolean
+  onCreateChannel: (groupId?: string) => void
 }): React.JSX.Element {
   const rename = useLocalStore((state) => state.renameChannel)
   const remove = useLocalStore((state) => state.deleteChannel)
@@ -448,6 +463,11 @@ function ChannelRow({
           />
         </ContextMenuTrigger>
         <ContextMenuContent className="w-52">
+          <ContextMenuItem onClick={() => onCreateChannel(channel.groupId)}>
+            <Plus className="text-muted-foreground" weight="bold" />
+            Add a page or board
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuItem onClick={() => setEditing(true)}>
             <PencilSimple className="text-muted-foreground" />
             Rename
@@ -502,10 +522,12 @@ function ChannelRow({
 function ChannelGroup({
   group,
   onAddChannel,
+  onCreateGroup,
   children
 }: {
   group: LocalGroup
   onAddChannel: () => void
+  onCreateGroup: () => void
   children: React.ReactNode
 }): React.JSX.Element {
   const rename = useLocalStore((state) => state.renameGroup)
@@ -518,6 +540,7 @@ function ChannelGroup({
       onRename={(name) => rename(group.id, name)}
       onDelete={() => remove(group.id)}
       onAddChannel={onAddChannel}
+      onCreateGroup={onCreateGroup}
     >
       {children}
     </SidebarGroup>

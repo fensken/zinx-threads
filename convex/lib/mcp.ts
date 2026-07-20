@@ -23,7 +23,7 @@ export const PROTOCOL_VERSION = '2025-06-18'
 
 const PRIORITY = ['lowest', 'low', 'medium', 'high', 'highest']
 const RSVP = ['going', 'maybe', 'declined', 'invited']
-const CHANNEL_KIND = ['chat', 'voice', 'page', 'kanban', 'whiteboard']
+const CHANNEL_KIND = ['chat', 'voice', 'page', 'kanban', 'whiteboard', 'database', 'form']
 
 /** The tools. Each `inputSchema` is JSON Schema — the exact contract a client fills in.
  *  `annotations` are MCP hints (`readOnlyHint: false` → the client defaults it to needing
@@ -41,7 +41,7 @@ export const TOOLS = [
   {
     name: 'list_channels',
     description:
-      'List the channels the user can see in a workspace, each with its kind (chat / voice / page / kanban / whiteboard), visibility, and whether the user can post. Only channels the user has access to are returned.',
+      'List the channels the user can see in a workspace, each with its kind (chat / voice / page / kanban / whiteboard / database / form), visibility, and whether the user can post. Only channels the user has access to are returned.',
     inputSchema: {
       type: 'object',
       properties: { workspace: { type: 'string', description: 'The workspace slug.' } },
@@ -177,6 +177,51 @@ export const TOOLS = [
     },
     annotations: { readOnlyHint: true }
   },
+  {
+    name: 'get_database',
+    description:
+      'Get a database channel’s fields (each with its id and type) and its records (each with its id and values keyed by field id). Pass those ids to create_record / update_record / delete_record.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspace: { type: 'string', description: 'The workspace slug.' },
+        channel: { type: 'string', description: 'The database channel name.' }
+      },
+      required: ['workspace', 'channel'],
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: true }
+  },
+  {
+    name: 'get_form',
+    description:
+      'Get a form channel’s schema — its title, description, fields (each with its id, name, type and whether it’s required) and how many responses it has.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspace: { type: 'string', description: 'The workspace slug.' },
+        channel: { type: 'string', description: 'The form channel name.' }
+      },
+      required: ['workspace', 'channel'],
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: true }
+  },
+  {
+    name: 'list_responses',
+    description:
+      'List a form channel’s submissions — each with its id, timestamp and answer values keyed by field id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspace: { type: 'string', description: 'The workspace slug.' },
+        channel: { type: 'string', description: 'The form channel name.' }
+      },
+      required: ['workspace', 'channel'],
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: true }
+  },
   // --- Messages ------------------------------------------------------------
   {
     name: 'post_message',
@@ -253,7 +298,7 @@ export const TOOLS = [
   {
     name: 'create_channel',
     description:
-      'Create a channel in a workspace, as the user. kind is one of chat, voice, page, kanban, whiteboard.',
+      'Create a channel in a workspace, as the user. kind is one of chat, voice, page, kanban, whiteboard, database, form.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -459,15 +504,66 @@ export const TOOLS = [
       additionalProperties: false
     },
     annotations: { readOnlyHint: false, destructiveHint: false }
+  },
+  // --- Database (records) --------------------------------------------------
+  {
+    name: 'create_record',
+    description:
+      'Add a record (row) to a database channel, as the user. `values` is an object keyed by field id (from get_database), e.g. {"<fieldId>": "Acme"}.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspace: { type: 'string', description: 'The workspace slug.' },
+        channel: { type: 'string', description: 'The database channel name.' },
+        values: {
+          type: 'object',
+          description: 'Cell values keyed by field id.',
+          additionalProperties: true
+        }
+      },
+      required: ['workspace', 'channel'],
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false }
+  },
+  {
+    name: 'update_record',
+    description:
+      'Update a database record’s cells. Provide its id (from get_database) and `values` keyed by field id — only those cells change; a null or empty value clears a cell.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        record: { type: 'string', description: 'The record id.' },
+        values: {
+          type: 'object',
+          description: 'Cell values keyed by field id.',
+          additionalProperties: true
+        }
+      },
+      required: ['record', 'values'],
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false }
+  },
+  {
+    name: 'delete_record',
+    description: 'Delete a database record. Irreversible.',
+    inputSchema: {
+      type: 'object',
+      properties: { record: { type: 'string', description: 'The record id.' } },
+      required: ['record'],
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true }
   }
 ] as const
 
 /** The names of every tool that mutates state — i.e. NOT `readOnlyHint`. Derived from the
  *  catalog itself, so it can never drift from `TOOLS`. Used to gate the API-write rate limit. */
 const WRITE_TOOLS = new Set<string>(
-  TOOLS.filter((tool) => !('readOnlyHint' in tool.annotations && tool.annotations.readOnlyHint)).map(
-    (tool) => tool.name
-  )
+  TOOLS.filter(
+    (tool) => !('readOnlyHint' in tool.annotations && tool.annotations.readOnlyHint)
+  ).map((tool) => tool.name)
 )
 
 type JsonRpcId = string | number | null
@@ -618,6 +714,24 @@ export async function callTool(
         slug: workspace,
         channel: str(args, 'channel')
       })
+    case 'get_database':
+      return ctx.runQuery(internal.apiTools.databaseFor, {
+        userId,
+        slug: workspace,
+        channel: str(args, 'channel')
+      })
+    case 'get_form':
+      return ctx.runQuery(internal.apiTools.formSchemaFor, {
+        userId,
+        slug: workspace,
+        channel: str(args, 'channel')
+      })
+    case 'list_responses':
+      return ctx.runQuery(internal.apiTools.formResponsesFor, {
+        userId,
+        slug: workspace,
+        channel: str(args, 'channel')
+      })
     // Messages
     case 'post_message':
       return ctx.runMutation(internal.apiTools.postMessageFor, {
@@ -752,6 +866,25 @@ export async function callTool(
         title: optStr(args, 'title'),
         text: optStr(args, 'text')
       })
+    // Database records
+    case 'create_record':
+      return ctx.runMutation(internal.apiTools.createRecordFor, {
+        userId,
+        slug: workspace,
+        channel: str(args, 'channel'),
+        values: cellValues(args)
+      })
+    case 'update_record':
+      return ctx.runMutation(internal.apiTools.updateRecordFor, {
+        userId,
+        record: str(args, 'record'),
+        values: cellValues(args) ?? {}
+      })
+    case 'delete_record':
+      return ctx.runMutation(internal.apiTools.deleteRecordFor, {
+        userId,
+        record: str(args, 'record')
+      })
     default:
       throw new Error(`Unknown tool: ${name}`)
   }
@@ -773,6 +906,29 @@ function optBool(args: Record<string, unknown>, key: string): boolean | undefine
 function optStrArray(args: Record<string, unknown>, key: string): string[] | undefined {
   const value = args[key]
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : undefined
+}
+/** Coerce a tool's untrusted `values` object into the cell shapes the DB accepts
+ *  (string / number / boolean / string[] / null) — dropping anything else, so a crafted
+ *  payload can't smuggle an object or nested array into a record. */
+function cellValues(
+  args: Record<string, unknown>
+): Record<string, string | number | boolean | string[] | null> | undefined {
+  const raw = args.values
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined
+  const out: Record<string, string | number | boolean | string[] | null> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (
+      value === null ||
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    ) {
+      out[key] = value
+    } else if (Array.isArray(value)) {
+      out[key] = value.filter((v): v is string => typeof v === 'string')
+    }
+  }
+  return out
 }
 function priority(
   args: Record<string, unknown>

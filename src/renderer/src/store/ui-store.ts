@@ -44,6 +44,9 @@ export type SettingsSection =
   | 'ws-general'
   | 'ws-members'
   | 'ws-bots'
+  | 'ws-analytics'
+  | 'ws-audit'
+  | 'ws-compliance'
   | 'ws-danger'
 
 interface UiState {

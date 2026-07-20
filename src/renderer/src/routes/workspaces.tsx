@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation } from 'convex/react'
 import { useQuery } from 'convex-helpers/react/cache/hooks'
-import { Plus, WifiSlash } from '@phosphor-icons/react'
+import { HardDrives, Plus } from '@phosphor-icons/react'
 import { api } from '@convex/_generated/api'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -14,6 +14,7 @@ import { SettingsDialog } from '@renderer/components/settings/settings-dialog'
 import { LogoWordmark } from '@renderer/components/layout/logo'
 import { errorMessage } from '@renderer/lib/convex-error'
 import { parseInviteCode } from '@renderer/lib/invite-links'
+import { isElectron } from '@renderer/lib/platform'
 
 export const Route = createFileRoute('/workspaces')({
   component: WorkspacesPage
@@ -89,14 +90,18 @@ function WorkspacesPage(): React.JSX.Element {
           <JoinByCode />
         </div>
 
-        {/* Local, no-account pages + boards that work offline. */}
-        <Link
-          to="/local"
-          className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <WifiSlash className="size-4" />
-          Open your local workspace
-        </Link>
+        {/* No-account, device-local pages + boards — DESKTOP ONLY: it persists to disk
+            and hosts the local AI assistant, neither of which a browser tab can do, so
+            local mode isn't offered on web (same as the sign-in page). */}
+        {isElectron ? (
+          <Link
+            to="/local"
+            className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <HardDrives className="size-4" />
+            Use local mode — no account, stays on this device
+          </Link>
+        ) : null}
       </main>
 
       <CreateWorkspaceDialog open={createOpen} onOpenChange={setCreateOpen} />

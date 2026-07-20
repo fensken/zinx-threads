@@ -6,6 +6,14 @@ import {
   type KanbanTask,
   type TaskFields
 } from '@renderer/components/kanban/board-types'
+import type {
+  CellValue,
+  DbField,
+  DbFieldType,
+  DbRecord,
+  DbView
+} from '@renderer/components/database/database-types'
+import { mapImportedCell } from '@renderer/lib/database-import'
 
 /**
  * The **offline workspace(s)** — standalone, no-auth, local-only workspaces. Mirrors
@@ -20,7 +28,7 @@ import {
  * web it falls back to one localStorage blob. The store starts empty with
  * `hydrated: false` and is filled by `ensureLocalDataLoaded()`.
  */
-export type LocalChannelKind = 'page' | 'kanban' | 'whiteboard'
+export type LocalChannelKind = 'page' | 'kanban' | 'whiteboard' | 'database'
 
 /** Sentinel bucket key for channels not in any group (mirrors the live sidebar). */
 export const LOCAL_UNGROUPED = '__ungrouped__'
@@ -74,6 +82,14 @@ export interface LocalBoard {
   columns: BoardColumn[]
 }
 
+/** The offline twin of a `database` channel — the same fields/records/views shape the
+ *  Convex tables hold, keyed by channel id (like `pages`/`boards`/`whiteboards`). */
+export interface LocalDatabase {
+  fields: DbField[]
+  records: DbRecord[]
+  views: DbView[]
+}
+
 /** Persisted after a sidebar drag settles — the group order + each bucket's channels. */
 export interface SidebarOrder {
   groupIds: string[]
@@ -104,6 +120,8 @@ export interface LocalWorkspaceExport {
   pages: Record<string, LocalPage>
   boards: Record<string, LocalBoard>
   whiteboards: Record<string, LocalWhiteboard>
+  /** Optional so an export written before database channels existed still imports. */
+  databases?: Record<string, LocalDatabase>
 }
 
 /** The persisted data slice (everything except `hydrated` + the actions) — what
@@ -117,6 +135,7 @@ export interface LocalData {
   pages: Record<string, LocalPage>
   boards: Record<string, LocalBoard>
   whiteboards: Record<string, LocalWhiteboard>
+  databases: Record<string, LocalDatabase>
 }
 
 interface LocalState extends LocalData {
@@ -154,6 +173,25 @@ interface LocalState extends LocalData {
     patch: { title?: string; icon?: string | null; cover?: string | null; coverY?: number }
   ) => void
 
+  createDbField: (
+    channelId: string,
+    input: { name: string; type: DbFieldType; options?: DbField['options'] }
+  ) => void
+  updateDbField: (
+    channelId: string,
+    fieldId: string,
+    input: { name: string; type: DbFieldType; options?: DbField['options'] }
+  ) => void
+  deleteDbField: (channelId: string, fieldId: string) => void
+  updateDbView: (channelId: string, viewId: string, config: DbView['config']) => void
+  createDbView: (channelId: string, input: { name: string; type: DbView['type'] }) => void
+  renameDbView: (channelId: string, viewId: string, name: string) => void
+  deleteDbView: (channelId: string, viewId: string) => void
+  createDbRecord: (channelId: string, values?: Record<string, CellValue>) => void
+  updateDbCell: (channelId: string, recordId: string, fieldId: string, value: CellValue) => void
+  deleteDbRecord: (channelId: string, recordId: string) => void
+  importDbRows: (channelId: string, headers: string[], rows: string[][]) => void
+
   createColumn: (channelId: string, title: string) => void
   renameColumn: (channelId: string, columnId: string, title: string) => void
   deleteColumn: (channelId: string, columnId: string) => void
@@ -172,6 +210,34 @@ function defaultColumns(): BoardColumn[] {
   return DEFAULT_BOARD_COLUMNS.map((title) => ({ id: uid(), title, tasks: [] }))
 }
 
+/** Seed a fresh local database — mirrors `convex/lib/databaseSeed.ts` (Name/Status/Notes
+ *  + a Grid view and a Board view grouped by Status). */
+function defaultDatabase(): LocalDatabase {
+  const statusId = uid()
+  return {
+    fields: [
+      { id: uid(), name: 'Name', type: 'text', order: 0 },
+      {
+        id: statusId,
+        name: 'Status',
+        type: 'select',
+        options: [
+          { id: 'todo', label: 'To do', color: '#94a3b8' },
+          { id: 'doing', label: 'In progress', color: '#3b82f6' },
+          { id: 'done', label: 'Done', color: '#22c55e' }
+        ],
+        order: 1
+      },
+      { id: uid(), name: 'Notes', type: 'text', order: 2 }
+    ],
+    records: [],
+    views: [
+      { id: uid(), name: 'Grid', type: 'grid', order: 0 },
+      { id: uid(), name: 'Board', type: 'kanban', config: { groupByFieldId: statusId }, order: 1 }
+    ]
+  }
+}
+
 export const useLocalStore = create<LocalState>()((set) => ({
   workspaces: [],
   currentWorkspaceId: null,
@@ -181,6 +247,7 @@ export const useLocalStore = create<LocalState>()((set) => ({
   pages: {},
   whiteboards: {},
   boards: {},
+  databases: {},
   hydrated: false,
 
   createWorkspace: (name): string => {
@@ -225,10 +292,12 @@ export const useLocalStore = create<LocalState>()((set) => ({
       const pages = { ...state.pages }
       const boards = { ...state.boards }
       const whiteboards = { ...state.whiteboards }
+      const databases = { ...state.databases }
       for (const channelId of channelIds) {
         delete pages[channelId]
         delete boards[channelId]
         delete whiteboards[channelId]
+        delete databases[channelId]
       }
       const workspaces = state.workspaces.filter((w) => w.id !== id)
       return {
@@ -239,7 +308,8 @@ export const useLocalStore = create<LocalState>()((set) => ({
         groups: state.groups.filter((g) => g.workspaceId !== id),
         pages,
         boards,
-        whiteboards
+        whiteboards,
+        databases
       }
     })
   },
@@ -257,11 +327,13 @@ export const useLocalStore = create<LocalState>()((set) => ({
     const pages: Record<string, LocalPage> = {}
     const boards: Record<string, LocalBoard> = {}
     const whiteboards: Record<string, LocalWhiteboard> = {}
+    const databases: Record<string, LocalDatabase> = {}
     const channels: LocalChannel[] = payload.channels.map((channel) => {
       const id = uid()
       if (payload.pages[channel.id]) pages[id] = payload.pages[channel.id]
       if (payload.boards[channel.id]) boards[id] = payload.boards[channel.id]
       if (payload.whiteboards[channel.id]) whiteboards[id] = payload.whiteboards[channel.id]
+      if (payload.databases?.[channel.id]) databases[id] = payload.databases[channel.id]
       return {
         id,
         workspaceId: wsId,
@@ -288,7 +360,8 @@ export const useLocalStore = create<LocalState>()((set) => ({
       groups: [...state.groups, ...groups],
       pages: { ...state.pages, ...pages },
       boards: { ...state.boards, ...boards },
-      whiteboards: { ...state.whiteboards, ...whiteboards }
+      whiteboards: { ...state.whiteboards, ...whiteboards },
+      databases: { ...state.databases, ...databases }
     }))
     return wsId
   },
@@ -307,7 +380,13 @@ export const useLocalStore = create<LocalState>()((set) => ({
 
   createChannel: (name, kind, groupId): string => {
     const id = uid()
-    const trimmed = name.trim() || (kind === 'page' ? 'Untitled page' : 'Untitled board')
+    const trimmed =
+      name.trim() ||
+      (kind === 'page'
+        ? 'Untitled page'
+        : kind === 'database'
+          ? 'Untitled table'
+          : 'Untitled board')
     set((state) => {
       const workspaceId = state.currentWorkspaceId
       if (!workspaceId) return {}
@@ -329,7 +408,9 @@ export const useLocalStore = create<LocalState>()((set) => ({
         boards:
           kind === 'kanban'
             ? { ...state.boards, [id]: { columns: defaultColumns() } }
-            : state.boards
+            : state.boards,
+        databases:
+          kind === 'database' ? { ...state.databases, [id]: defaultDatabase() } : state.databases
       }
     })
     return id
@@ -348,14 +429,17 @@ export const useLocalStore = create<LocalState>()((set) => ({
       const pages = { ...state.pages }
       const boards = { ...state.boards }
       const whiteboards = { ...state.whiteboards }
+      const databases = { ...state.databases }
       delete pages[id]
       delete boards[id]
       delete whiteboards[id]
+      delete databases[id]
       return {
         channels: state.channels.filter((channel) => channel.id !== id),
         pages,
         boards,
-        whiteboards
+        whiteboards,
+        databases
       }
     })
   },
@@ -472,6 +556,236 @@ export const useLocalStore = create<LocalState>()((set) => ({
       if (patch.cover !== undefined) next.cover = patch.cover ?? undefined
       if (patch.coverY !== undefined) next.coverY = patch.coverY
       return { pages: { ...state.pages, [channelId]: next } }
+    })
+  },
+
+  createDbField: (channelId, input): void => {
+    set((state) => {
+      const db = state.databases[channelId]
+      if (!db) return {}
+      const field: DbField = {
+        id: uid(),
+        name: input.name.trim().slice(0, 100) || 'Field',
+        type: input.type,
+        options: input.options,
+        order: db.fields.length
+      }
+      return {
+        databases: {
+          ...state.databases,
+          [channelId]: { ...db, fields: [...db.fields, field] }
+        }
+      }
+    })
+  },
+
+  updateDbField: (channelId, fieldId, input): void => {
+    set((state) => {
+      const db = state.databases[channelId]
+      if (!db) return {}
+      const field = db.fields.find((f) => f.id === fieldId)
+      if (!field) return {}
+      const prevType = field.type
+      const nextType = input.type
+      // Migrate cells only for the select↔multiSelect conversions (mirrors the backend).
+      let records = db.records
+      if (prevType === 'select' && nextType === 'multiSelect') {
+        records = db.records.map((r) => {
+          const cell = r.values[fieldId]
+          if (typeof cell === 'string' && cell) {
+            return { ...r, values: { ...r.values, [fieldId]: [cell] } }
+          }
+          return r
+        })
+      } else if (prevType === 'multiSelect' && nextType === 'select') {
+        records = db.records.map((r) => {
+          const cell = r.values[fieldId]
+          if (Array.isArray(cell)) {
+            const values = { ...r.values }
+            if (cell[0]) values[fieldId] = cell[0]
+            else delete values[fieldId]
+            return { ...r, values }
+          }
+          return r
+        })
+      }
+      return {
+        databases: {
+          ...state.databases,
+          [channelId]: {
+            ...db,
+            records,
+            fields: db.fields.map((f) =>
+              f.id === fieldId
+                ? {
+                    ...f,
+                    name: input.name.trim().slice(0, 100) || 'Field',
+                    type: input.type,
+                    options: input.options
+                  }
+                : f
+            )
+          }
+        }
+      }
+    })
+  },
+
+  deleteDbField: (channelId, fieldId): void => {
+    set((state) => {
+      const db = state.databases[channelId]
+      if (!db) return {}
+      return {
+        databases: {
+          ...state.databases,
+          [channelId]: { ...db, fields: db.fields.filter((f) => f.id !== fieldId) }
+        }
+      }
+    })
+  },
+
+  updateDbView: (channelId, viewId, config): void => {
+    set((state) => {
+      const db = state.databases[channelId]
+      if (!db) return {}
+      return {
+        databases: {
+          ...state.databases,
+          [channelId]: {
+            ...db,
+            views: db.views.map((v) => (v.id === viewId ? { ...v, config } : v))
+          }
+        }
+      }
+    })
+  },
+
+  createDbView: (channelId, input): void => {
+    set((state) => {
+      const db = state.databases[channelId]
+      if (!db) return {}
+      const view: DbView = {
+        id: uid(),
+        name: input.name.trim().slice(0, 60) || 'View',
+        type: input.type,
+        order: db.views.length
+      }
+      return {
+        databases: { ...state.databases, [channelId]: { ...db, views: [...db.views, view] } }
+      }
+    })
+  },
+
+  renameDbView: (channelId, viewId, name): void => {
+    set((state) => {
+      const db = state.databases[channelId]
+      if (!db) return {}
+      return {
+        databases: {
+          ...state.databases,
+          [channelId]: {
+            ...db,
+            views: db.views.map((v) =>
+              v.id === viewId ? { ...v, name: name.trim().slice(0, 60) || 'View' } : v
+            )
+          }
+        }
+      }
+    })
+  },
+
+  deleteDbView: (channelId, viewId): void => {
+    set((state) => {
+      const db = state.databases[channelId]
+      if (!db || db.views.length <= 1) return {}
+      return {
+        databases: {
+          ...state.databases,
+          [channelId]: { ...db, views: db.views.filter((v) => v.id !== viewId) }
+        }
+      }
+    })
+  },
+
+  createDbRecord: (channelId, values): void => {
+    set((state) => {
+      const db = state.databases[channelId]
+      if (!db) return {}
+      const record: DbRecord = { id: uid(), values: values ?? {}, order: db.records.length }
+      return {
+        databases: {
+          ...state.databases,
+          [channelId]: { ...db, records: [...db.records, record] }
+        }
+      }
+    })
+  },
+
+  updateDbCell: (channelId, recordId, fieldId, value): void => {
+    set((state) => {
+      const db = state.databases[channelId]
+      if (!db) return {}
+      return {
+        databases: {
+          ...state.databases,
+          [channelId]: {
+            ...db,
+            records: db.records.map((record) => {
+              if (record.id !== recordId) return record
+              const nextValues = { ...record.values }
+              if (value === null || value === '') delete nextValues[fieldId]
+              else nextValues[fieldId] = value
+              return { ...record, values: nextValues }
+            })
+          }
+        }
+      }
+    })
+  },
+
+  deleteDbRecord: (channelId, recordId): void => {
+    set((state) => {
+      const db = state.databases[channelId]
+      if (!db) return {}
+      return {
+        databases: {
+          ...state.databases,
+          [channelId]: { ...db, records: db.records.filter((r) => r.id !== recordId) }
+        }
+      }
+    })
+  },
+
+  importDbRows: (channelId, headers, rows): void => {
+    set((state) => {
+      const db = state.databases[channelId]
+      if (!db) return {}
+      const fields = [...db.fields]
+      // Resolve each header to a field, creating a text field for an unknown header.
+      const headerFields = headers.map((header) => {
+        const clean = header.trim()
+        let field = fields.find((f) => f.name.toLowerCase() === clean.toLowerCase())
+        if (!field) {
+          field = { id: uid(), name: clean || 'Field', type: 'text', order: fields.length }
+          fields.push(field)
+        }
+        return field
+      })
+      // Local mode has no members, so `user` columns can't be matched.
+      const newRecords: DbRecord[] = rows.map((row, index) => {
+        const values: Record<string, CellValue> = {}
+        headerFields.forEach((field, i) => {
+          const mapped = mapImportedCell(field, row[i] ?? '', [])
+          if (mapped !== undefined) values[field.id] = mapped
+        })
+        return { id: uid(), values, order: db.records.length + index }
+      })
+      return {
+        databases: {
+          ...state.databases,
+          [channelId]: { ...db, fields, records: [...db.records, ...newRecords] }
+        }
+      }
     })
   },
 

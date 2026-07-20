@@ -90,6 +90,10 @@ interface ChatComposerProps {
   onRemoveUpload?: (key: string) => void
   /** `field` mode only: the Markdown, on every keystroke. */
   onChange?: (markdown: string) => void
+  /** `message` mode only: fired on every edit, so the assembly can broadcast a
+   *  throttled "typing…" ping (the composer doesn't throttle — the caller's hook
+   *  does). Wire the matching "stopped" into `onSubmit`. */
+  onTyping?: () => void
   onCancel?: () => void
   autoFocus?: boolean
   /** Edge-triggered focus: the editor grabs focus when it first mounts (opening a
@@ -131,6 +135,7 @@ function ChatComposerRoot({
   onUpload,
   onRemoveUpload,
   onChange,
+  onTyping,
   onCancel,
   autoFocus,
   focusKey,
@@ -396,6 +401,18 @@ function ChatComposerRoot({
       editor.off('update', emit)
     }
   }, [editor, mode, onChange])
+
+  // `message` mode fires a "typing…" ping on each edit (throttled by the caller's
+  // hook). Same subscribe-in-an-effect shape as `onChange`, so the callback can't
+  // go stale and the editor isn't rebuilt when it changes identity.
+  useEffect(() => {
+    if (!editor || mode !== 'message' || !onTyping) return
+    const emit = (): void => onTyping()
+    editor.on('update', emit)
+    return () => {
+      editor.off('update', emit)
+    }
+  }, [editor, mode, onTyping])
 
   // TipTap applies `autofocus` only when the editor is *created*, and the channel
   // composer isn't remounted when you hit Reply — so without this the "Replying

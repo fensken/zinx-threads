@@ -19,7 +19,9 @@ type Kind = Doc<'notifications'>['kind']
  *  filtered out downstream (a hand-crafted body can't notify a stranger). */
 function mentionedUserIds(body: string): string[] {
   const ids = new Set<string>()
-  const re = /zinx:\/\/user\/([A-Za-z0-9_]+)/g
+  // Same id charset as `lib/mention.ts` HREF_RE (includes `-`), so the fan-out and
+  // `mentionsUser` agree on exactly which ids a body mentions.
+  const re = /zinx:\/\/user\/([A-Za-z0-9_-]+)/g
   let match: RegExpExecArray | null
   while ((match = re.exec(body))) ids.add(match[1])
   return [...ids]

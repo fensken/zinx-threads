@@ -117,8 +117,35 @@ export default defineSchema({
      *  reader still sees their own local time beside it. Set at creation (defaulted
      *  from the creator's browser) and editable by an owner/admin. */
     timezone: v.optional(v.string()),
+    /** Enterprise message-retention policy (days). When set, a daily cron hard-deletes
+     *  channel messages older than this — the "we can't keep data forever for
+     *  compliance" control. Absent / 0 = keep everything (the default). DMs are exempt
+     *  (personal), and the deletion reuses the same cascade as a manual message delete. */
+    messageRetentionDays: v.optional(v.number()),
     organizationId: v.optional(v.string()) // WorkOS Organization id (enterprise)
   }).index('by_slug', ['slug']),
+
+  // Enterprise **audit log** — an append-only trail of administrative actions, the
+  // control a security/compliance team asks for first ("who changed what, when").
+  // Written by `lib/audit.ts` `recordAudit` from the mutations that matter (role
+  // changes, member removals, channel/workspace create+delete, bots, invites, policy
+  // changes, data exports). A human-readable `summary` is stored AT WRITE TIME so the
+  // viewer never does read-time joins to render a row (and it stays correct even after
+  // the target is deleted — the whole point of an audit trail). `targetId` is a plain
+  // string, not a typed id, because it references many tables (and may be a since-deleted row).
+  auditLogs: defineTable({
+    workspaceId: v.id('workspaces'),
+    actorId: v.id('users'),
+    /** Dotted action key, e.g. `member.role_changed`, `channel.deleted`. */
+    action: v.string(),
+    targetType: v.optional(v.string()),
+    targetId: v.optional(v.string()),
+    /** Human-readable, resolved at write time — the only text the viewer renders. */
+    summary: v.string(),
+    createdAt: v.number()
+  })
+    .index('by_workspace_created', ['workspaceId', 'createdAt'])
+    .index('by_workspace_action_created', ['workspaceId', 'action', 'createdAt']),
 
   workspaceMembers: defineTable({
     workspaceId: v.id('workspaces'),
@@ -234,6 +261,12 @@ export default defineSchema({
       v.literal('page'),
       v.literal('kanban'),
       v.literal('whiteboard'),
+      // An Airtable-style typed record set with multiple views (grid/kanban/calendar/
+      // gallery). `kanban` is effectively one view of the same idea; this generalizes it.
+      v.literal('database'),
+      // A public/private form that collects responses (Typeform-style). Reuses the same
+      // field types as `database`; submissions land in `formResponses`.
+      v.literal('form'),
       v.literal('dm')
     ),
     /** DM only: the participant ids, deduped + sorted + joined. It's what makes a
@@ -628,6 +661,21 @@ export default defineSchema({
     .index('by_workspace', ['workspaceId'])
     .index('by_channel', ['channelId']),
 
+  // Ephemeral "someone is typing…" state — the same client-reported, self-expiring
+  // shape as `voicePresence`. One row per (user, channel): the composer upserts it
+  // (throttled) while you type and deletes it on send/blur; `listByChannel` drops any
+  // row older than the TTL, so a crashed client leaves at most one row that vanishes
+  // from the query within seconds. NOT durable state — never read for anything but the
+  // live indicator, so it needs no cascade beyond the channel's own cleanup.
+  typingStatus: defineTable({
+    userId: v.id('users'),
+    workspaceId: v.id('workspaces'),
+    channelId: v.id('channels'),
+    updatedAt: v.number()
+  })
+    .index('by_channel', ['channelId'])
+    .index('by_user_channel', ['userId', 'channelId']),
+
   // Calendar events.
   //
   // **Every instant is a UTC epoch-ms number** (`startAt`/`endAt`) — a wall-clock
@@ -723,6 +771,138 @@ export default defineSchema({
     updatedBy: v.id('users'),
     updatedAt: v.number()
   }).index('by_channel', ['channelId']),
+
+  // ── Database channels (Airtable-style) ─────────────────────────────────────
+  // A `database` channel is a typed record set rendered through one or more views
+  // (grid/kanban/calendar/gallery). Three tables, NOT one JSON blob: unlike a page's
+  // opaque BlockNote document, a database's records are queried, sorted and reordered
+  // individually, so they need rows. `kanban` is effectively a single-view special
+  // case of this; the two share the field-type vocabulary (`lib/database.ts`).
+  databaseFields: defineTable({
+    channelId: v.id('channels'),
+    name: v.string(),
+    type: v.union(
+      v.literal('text'),
+      v.literal('longText'),
+      v.literal('number'),
+      v.literal('select'),
+      v.literal('multiSelect'),
+      v.literal('checkbox'),
+      v.literal('date'),
+      v.literal('user'),
+      v.literal('url')
+    ),
+    /** select / multiSelect only — the allowed options (capped in `database.ts`). */
+    options: v.optional(
+      v.array(v.object({ id: v.string(), label: v.string(), color: v.optional(v.string()) }))
+    ),
+    order: v.number()
+  }).index('by_channel', ['channelId']),
+
+  databaseRecords: defineTable({
+    channelId: v.id('channels'),
+    /** Cell values keyed by fieldId (like `kanbanTasks` holds its own fields). Each cell
+     *  is one of the primitive shapes a field type produces; the field decides how to
+     *  read it, and `database.ts` validates at the edge. Bounded by `MAX_RECORDS`. */
+    values: v.record(
+      v.string(),
+      v.union(v.string(), v.number(), v.boolean(), v.array(v.string()), v.null())
+    ),
+    order: v.number(),
+    createdBy: v.id('users'),
+    createdAt: v.number()
+  }).index('by_channel_order', ['channelId', 'order']),
+
+  databaseViews: defineTable({
+    channelId: v.id('channels'),
+    name: v.string(),
+    type: v.union(
+      v.literal('grid'),
+      v.literal('kanban'),
+      v.literal('calendar'),
+      v.literal('gallery')
+    ),
+    /** Per-view display config. All ids are `databaseFields` ids (stored as strings). */
+    config: v.optional(
+      v.object({
+        groupByFieldId: v.optional(v.string()),
+        sortFieldId: v.optional(v.string()),
+        sortDir: v.optional(v.union(v.literal('asc'), v.literal('desc'))),
+        hiddenFieldIds: v.optional(v.array(v.string())),
+        dateFieldId: v.optional(v.string())
+      })
+    ),
+    order: v.number()
+  }).index('by_channel', ['channelId']),
+
+  // ── Form channels (Typeform-style) ─────────────────────────────────────────
+  // A `form` channel collects responses through a public (or member-only) submission
+  // page at `/f/<publicToken>`. It owns its own field set (same vocabulary as a
+  // database) + settings; each submission is a `formResponses` row. The owner views
+  // responses through the same grid the database uses.
+  forms: defineTable({
+    workspaceId: v.id('workspaces'),
+    channelId: v.id('channels'),
+    title: v.string(),
+    description: v.optional(v.string()),
+    fields: v.array(
+      v.object({
+        id: v.string(),
+        name: v.string(),
+        type: v.union(
+          v.literal('text'),
+          v.literal('longText'),
+          v.literal('number'),
+          v.literal('select'),
+          v.literal('multiSelect'),
+          v.literal('checkbox'),
+          v.literal('switch'),
+          v.literal('radio'),
+          v.literal('range'),
+          v.literal('date'),
+          v.literal('time'),
+          v.literal('email'),
+          v.literal('phone'),
+          v.literal('url')
+        ),
+        required: v.optional(v.boolean()),
+        options: v.optional(v.array(v.object({ id: v.string(), label: v.string() })))
+      })
+    ),
+    /** Who may submit:
+     *  - `public` — anyone with the link, no account needed.
+     *  - `authenticated` — any signed-in user of the app.
+     *  - `workspace` — only members of this form's workspace.
+     *  Absent = fall back to the legacy `requireSignIn` (true → authenticated, else public). */
+    audience: v.optional(
+      v.union(v.literal('public'), v.literal('authenticated'), v.literal('workspace'))
+    ),
+    /** Legacy flag, superseded by `audience`. Kept optional so old rows still validate. */
+    requireSignIn: v.optional(v.boolean()),
+    /** After this instant no more submissions are accepted (UTC ms). */
+    closesAt: v.optional(v.number()),
+    /** Shown after a successful submit. */
+    confirmationMessage: v.optional(v.string()),
+    /** The public submission secret (`/f/<publicToken>`). Regenerated to revoke a link. */
+    publicToken: v.string(),
+    updatedAt: v.number()
+  })
+    .index('by_channel', ['channelId'])
+    .index('by_public_token', ['publicToken']),
+
+  formResponses: defineTable({
+    formId: v.id('forms'),
+    channelId: v.id('channels'),
+    /** The submitter, when they were signed in — absent for an anonymous public submit. */
+    submittedBy: v.optional(v.id('users')),
+    values: v.record(
+      v.string(),
+      v.union(v.string(), v.number(), v.boolean(), v.array(v.string()), v.null())
+    ),
+    submittedAt: v.number()
+  })
+    .index('by_form', ['formId'])
+    .index('by_channel', ['channelId']),
 
   // Who's coming. A row per (event, user) rather than an array on the event: RSVPs
   // are written one at a time, by different people, and the list grows.

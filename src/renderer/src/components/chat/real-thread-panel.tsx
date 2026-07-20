@@ -226,16 +226,31 @@ export function ThreadConversation({
   const toggleReaction = useMutation(api.messages.toggleReaction).withOptimisticUpdate(
     (store, { messageId, emoji }) => {
       const current = store.getQuery(api.threads.listMessages, { threadId })
-      if (!current) return
-      store.setQuery(
-        api.threads.listMessages,
-        { threadId },
-        current.map((message) =>
-          message._id === messageId
-            ? { ...message, reactions: toggleLocalReaction(message.reactions, emoji) }
-            : message
+      if (current) {
+        store.setQuery(
+          api.threads.listMessages,
+          { threadId },
+          current.map((message) =>
+            message._id === messageId
+              ? { ...message, reactions: toggleLocalReaction(message.reactions, emoji) }
+              : message
+          )
         )
-      )
+      }
+      // The ROOT message is served by `threads.get` (it has `threadRootId`, not `threadId`, so
+      // `listMessages` never returns it) — flip it there too, else reacting to the root lags a
+      // round-trip while the replies flip instantly.
+      const detail = store.getQuery(api.threads.get, { threadId })
+      if (detail?.root && detail.root._id === messageId) {
+        store.setQuery(
+          api.threads.get,
+          { threadId },
+          {
+            ...detail,
+            root: { ...detail.root, reactions: toggleLocalReaction(detail.root.reactions, emoji) }
+          }
+        )
+      }
     }
   )
 

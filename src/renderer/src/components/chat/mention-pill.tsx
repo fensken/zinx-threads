@@ -32,6 +32,17 @@ export function MentionPill({
   if (parsed.kind === 'user') {
     const member = directory?.memberById(parsed.id)
     const name = member?.name ?? fallbackLabel.replace(/^@/, '')
+    // No directory (e.g. a mention inside a form description on the public /f/<token> page):
+    // render a flat, non-interactive pill — a profile popover there would show misleading
+    // "no longer a member" copy to an anonymous respondent.
+    if (!directory) {
+      return (
+        <span className={cn(PILL, 'bg-primary/10 text-primary')}>
+          <At className="size-3" weight="bold" />
+          {name}
+        </span>
+      )
+    }
     return (
       <UserProfilePopover
         userId={parsed.id}

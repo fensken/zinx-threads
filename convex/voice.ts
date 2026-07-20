@@ -25,9 +25,8 @@ function jsonToBase64Url(value: unknown): string {
   return bytesToBase64Url(new TextEncoder().encode(JSON.stringify(value)))
 }
 
-/** Mint a LiveKit access token (a standard HS256 JWT with a `video` grant),
- *  signed with Web Crypto so this stays in Convex's default runtime — no
- *  `livekit-server-sdk` (Node) dependency. */
+/** Mint a LiveKit access token (a standard HS256 JWT with a `video` grant), signed with
+ *  Web Crypto so this stays in Convex's default runtime — no `livekit-server-sdk` dep. */
 async function mintAccessToken(opts: {
   apiKey: string
   apiSecret: string
@@ -43,8 +42,6 @@ async function mintAccessToken(opts: {
     iss: opts.apiKey,
     sub: opts.identity,
     name: opts.name,
-    // LiveKit VideoGrant: join this one room, publish + subscribe (audio, video,
-    // screen share) + data messages.
     video: {
       room: opts.roomName,
       roomJoin: true,
@@ -75,7 +72,9 @@ export const canJoin = internalQuery({
     // private voice channel can't mint a token to join it.
     const access = await getChannelAccess(ctx, channelId, user._id)
     if (!access) throw new ConvexError('You do not have access to this channel')
-    if (access.channel.kind !== 'voice') throw new ConvexError('This is not a voice channel')
+    if (access.channel.kind !== 'voice') {
+      throw new ConvexError('This channel has no call')
+    }
     return {
       roomName: channelId as string,
       identity: user._id as string,

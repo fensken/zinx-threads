@@ -15,7 +15,8 @@ import { PaletteDialog, type PaletteItem } from '@renderer/components/layout/com
 const KIND_LABEL: Record<LocalChannelKind, string> = {
   page: 'Page',
   kanban: 'Board',
-  whiteboard: 'Whiteboard'
+  whiteboard: 'Whiteboard',
+  database: 'Table'
 }
 
 export function LocalCommandPalette(): React.JSX.Element | null {

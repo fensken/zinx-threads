@@ -18,6 +18,7 @@ import { Route as LocalIndexRouteImport } from './routes/local.index'
 import { Route as WWorkspaceIdRouteImport } from './routes/w.$workspaceId'
 import { Route as LocalChannelIdRouteImport } from './routes/local.$channelId'
 import { Route as InviteCodeRouteImport } from './routes/invite.$code'
+import { Route as FTokenRouteImport } from './routes/f.$token'
 import { Route as ConnectTokenRouteImport } from './routes/connect.$token'
 import { Route as WWorkspaceIdIndexRouteImport } from './routes/w.$workspaceId.index'
 import { Route as WWorkspaceIdInboxRouteImport } from './routes/w.$workspaceId.inbox'
@@ -71,6 +72,11 @@ const LocalChannelIdRoute = LocalChannelIdRouteImport.update({
 const InviteCodeRoute = InviteCodeRouteImport.update({
   id: '/invite/$code',
   path: '/invite/$code',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FTokenRoute = FTokenRouteImport.update({
+  id: '/f/$token',
+  path: '/f/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ConnectTokenRoute = ConnectTokenRouteImport.update({
@@ -127,6 +133,7 @@ export interface FileRoutesByFullPath {
   '/local': typeof LocalRouteWithChildren
   '/workspaces': typeof WorkspacesRoute
   '/connect/$token': typeof ConnectTokenRoute
+  '/f/$token': typeof FTokenRoute
   '/invite/$code': typeof InviteCodeRoute
   '/local/$channelId': typeof LocalChannelIdRoute
   '/w/$workspaceId': typeof WWorkspaceIdRouteWithChildren
@@ -146,6 +153,7 @@ export interface FileRoutesByTo {
   '/docs': typeof DocsRoute
   '/workspaces': typeof WorkspacesRoute
   '/connect/$token': typeof ConnectTokenRoute
+  '/f/$token': typeof FTokenRoute
   '/invite/$code': typeof InviteCodeRoute
   '/local/$channelId': typeof LocalChannelIdRoute
   '/local': typeof LocalIndexRoute
@@ -166,6 +174,7 @@ export interface FileRoutesById {
   '/local': typeof LocalRouteWithChildren
   '/workspaces': typeof WorkspacesRoute
   '/connect/$token': typeof ConnectTokenRoute
+  '/f/$token': typeof FTokenRoute
   '/invite/$code': typeof InviteCodeRoute
   '/local/$channelId': typeof LocalChannelIdRoute
   '/w/$workspaceId': typeof WWorkspaceIdRouteWithChildren
@@ -188,6 +197,7 @@ export interface FileRouteTypes {
     | '/local'
     | '/workspaces'
     | '/connect/$token'
+    | '/f/$token'
     | '/invite/$code'
     | '/local/$channelId'
     | '/w/$workspaceId'
@@ -207,6 +217,7 @@ export interface FileRouteTypes {
     | '/docs'
     | '/workspaces'
     | '/connect/$token'
+    | '/f/$token'
     | '/invite/$code'
     | '/local/$channelId'
     | '/local'
@@ -226,6 +237,7 @@ export interface FileRouteTypes {
     | '/local'
     | '/workspaces'
     | '/connect/$token'
+    | '/f/$token'
     | '/invite/$code'
     | '/local/$channelId'
     | '/w/$workspaceId'
@@ -247,6 +259,7 @@ export interface RootRouteChildren {
   LocalRoute: typeof LocalRouteWithChildren
   WorkspacesRoute: typeof WorkspacesRoute
   ConnectTokenRoute: typeof ConnectTokenRoute
+  FTokenRoute: typeof FTokenRoute
   InviteCodeRoute: typeof InviteCodeRoute
   WWorkspaceIdRoute: typeof WWorkspaceIdRouteWithChildren
 }
@@ -314,6 +327,13 @@ declare module '@tanstack/react-router' {
       path: '/invite/$code'
       fullPath: '/invite/$code'
       preLoaderRoute: typeof InviteCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/f/$token': {
+      id: '/f/$token'
+      path: '/f/$token'
+      fullPath: '/f/$token'
+      preLoaderRoute: typeof FTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/connect/$token': {
@@ -428,6 +448,7 @@ const rootRouteChildren: RootRouteChildren = {
   LocalRoute: LocalRouteWithChildren,
   WorkspacesRoute: WorkspacesRoute,
   ConnectTokenRoute: ConnectTokenRoute,
+  FTokenRoute: FTokenRoute,
   InviteCodeRoute: InviteCodeRoute,
   WWorkspaceIdRoute: WWorkspaceIdRouteWithChildren,
 }

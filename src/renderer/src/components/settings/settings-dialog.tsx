@@ -1,5 +1,7 @@
 import {
   BellRinging,
+  ChartBar,
+  ClockCounterClockwise,
   FolderOpen,
   Gear,
   IdentificationCard,
@@ -10,6 +12,7 @@ import {
   Plugs,
   Power,
   Robot,
+  ShieldCheck,
   Sun,
   TextAa,
   UserCircle,
@@ -41,6 +44,9 @@ import { SystemPrefsSettings } from '@renderer/components/settings/system-prefs-
 import { VoiceSettings } from '@renderer/components/settings/voice-settings'
 import { DeveloperSettings } from '@renderer/components/settings/developer-settings'
 import { BotsTab } from '@renderer/components/settings/bots-settings'
+import { AnalyticsTab } from '@renderer/components/settings/analytics-settings'
+import { AuditLogTab } from '@renderer/components/settings/audit-log-settings'
+import { ComplianceTab } from '@renderer/components/settings/compliance-settings'
 import {
   DangerTab,
   GeneralTab,
@@ -131,12 +137,21 @@ function SettingsPanes({
       ? [{ id: 'advanced' as const, label: 'Advanced', Icon: Wrench }]
       : [])
   ]
+  const wsCanManage = workspace?.role === 'owner' || workspace?.role === 'admin'
   const wsItems: NavItem[] = workspace
     ? [
         { id: 'ws-profile', label: 'My profile', Icon: IdentificationCard },
         { id: 'ws-general', label: 'General', Icon: Gear },
         { id: 'ws-members', label: 'Members', Icon: UsersThree },
         { id: 'ws-bots', label: 'Bots', Icon: Robot },
+        // Admin/compliance surfaces — owner/admin only (each backend query is gated too).
+        ...(wsCanManage
+          ? [
+              { id: 'ws-analytics' as const, label: 'Analytics', Icon: ChartBar },
+              { id: 'ws-audit' as const, label: 'Audit log', Icon: ClockCounterClockwise },
+              { id: 'ws-compliance' as const, label: 'Compliance', Icon: ShieldCheck }
+            ]
+          : []),
         { id: 'ws-danger', label: 'Danger zone', Icon: WarningOctagon }
       ]
     : []
@@ -202,6 +217,17 @@ function SectionContent({
     return <MembersTab workspaceId={workspace.workspace._id} canManage={canManage} />
   }
   if (active === 'ws-bots') return <BotsTab workspace={workspace.workspace} canManage={canManage} />
+  if (active === 'ws-analytics' && canManage)
+    return <AnalyticsTab workspaceId={workspace.workspace._id} />
+  if (active === 'ws-audit' && canManage)
+    return <AuditLogTab workspaceId={workspace.workspace._id} />
+  if (active === 'ws-compliance' && canManage)
+    return (
+      <ComplianceTab
+        workspaceId={workspace.workspace._id}
+        retentionDays={workspace.workspace.messageRetentionDays}
+      />
+    )
   return (
     <DangerTab
       workspaceId={workspace.workspace._id}

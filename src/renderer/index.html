@@ -19,14 +19,15 @@
          desktop and web builds. Uploaded images load from R2's public domain,
          already covered by `img-src https:`; page-block **audio/video** load over
          `media-src https:` (added for R2-hosted media); the page editor's **video-embed
-         block** iframes YouTube/Vimeo, allowed by a tight `frame-src`. `connect-src` also allows the LiveKit
+         block** and **world interactive objects** iframe external sites, allowed by
+         `frame-src https:` (embeds are sandboxed). `connect-src` also allows the LiveKit
          signaling websocket — `ws://localhost:7880` for a local `livekit-server
          --dev`; for a self-hosted prod server ADD its `wss://<your-livekit-host>`
          here (WebRTC media itself is UDP and not CSP-gated). Narrow the wildcards
          to your exact deployment / AuthKit / R2 / LiveKit domain in prod. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' blob: https:; frame-src https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; worker-src 'self' blob:; connect-src 'self' blob: https://*.convex.cloud wss://*.convex.cloud https://*.convex.site https://api.workos.com https://*.workos.com https://*.authkit.app https://cdn.jsdelivr.net https://*.r2.cloudflarestorage.com https://*.r2.dev ws://localhost:7880 wss://localhost:7880 wss://*.livekit.cloud https://*.livekit.cloud; form-action 'self' https://*.workos.com https://*.authkit.app"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' blob: https:; frame-src https:; worker-src 'self' blob:; connect-src 'self' blob: https://*.convex.cloud wss://*.convex.cloud https://*.convex.site https://api.workos.com https://*.workos.com https://*.authkit.app https://cdn.jsdelivr.net https://*.r2.cloudflarestorage.com https://*.r2.dev ws://localhost:7880 wss://localhost:7880 wss://*.livekit.cloud https://*.livekit.cloud; form-action 'self' https://*.workos.com https://*.authkit.app"
     />
   </head>
 

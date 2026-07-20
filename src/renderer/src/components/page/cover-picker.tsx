@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { HexColorInput, HexColorPicker } from 'react-colorful'
 import { UploadSimple, X } from '@phosphor-icons/react'
+import { toast } from 'sonner'
 import { cn } from '@renderer/lib/utils'
 import { COVER_GRADIENTS } from '@renderer/components/page/cover-data'
 import { UnsplashPicker } from '@renderer/components/pickers/unsplash-picker'
@@ -33,7 +34,12 @@ export function CoverPicker({
   const fileInput = useRef<HTMLInputElement>(null)
 
   const upload = async (file: File): Promise<void> => {
-    if (!onUpload || file.size > MAX_UPLOAD_BYTES) return
+    if (!onUpload) return
+    // Tell the user why nothing happened — a silent drop reads as a broken button.
+    if (file.size > MAX_UPLOAD_BYTES) {
+      toast.error('That image is too large (max 10 MB).')
+      return
+    }
     setUploading(true)
     try {
       await onUpload(file)

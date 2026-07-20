@@ -19,6 +19,7 @@ export function ChannelComposer({
   onSend,
   onUpload,
   onRemoveUpload,
+  onTyping,
   replyTo,
   onCancelReply
 }: {
@@ -26,6 +27,9 @@ export function ChannelComposer({
   /** Overrides the default `Message #channel` (the thread panel says "Reply in …"). */
   placeholder?: string
   onSend: (markdown: string, attachments?: OutboxAttachment[]) => void | Promise<void>
+  /** Broadcast a (throttled) "typing…" ping on each edit. Present only on the real
+   *  path; the matching "stopped" is fired by the caller inside `onSend`. */
+  onTyping?: () => void
   /** Upload a picked file to R2 → its object key. Present only on the real path;
    *  without it the Attach button hides (mock / no-backend). */
   onUpload?: (file: File) => Promise<string>
@@ -49,6 +53,7 @@ export function ChannelComposer({
         onSubmit={onSend}
         onUpload={onUpload}
         onRemoveUpload={onRemoveUpload}
+        onTyping={onTyping}
         // Focus the box on mount (opening a channel or thread) and again whenever a
         // reply target is set/cleared — the composer isn't remounted between those.
         focusKey={replyTo?._id ?? 'compose'}

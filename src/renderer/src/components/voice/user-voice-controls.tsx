@@ -164,7 +164,17 @@ function RoomMediaMenu(): React.JSX.Element {
             }
       }
       onToggleCamera={inCall ? controls.toggleCamera : (): void => setJoinVideo(!joinVideo)}
-      onToggleDeafen={inCall ? controls.toggleDeafen : (): void => setJoinDeafened(!joinDeafened)}
+      onToggleDeafen={
+        inCall
+          ? controls.toggleDeafen
+          : (): void => {
+              const next = !joinDeafened
+              setJoinDeafened(next)
+              // Deafened implies mic-off (mirror the in-call toggleDeafen) — otherwise the next
+              // join connects with the mic live while the UI shows you deafened/muted.
+              if (next) setJoinMuted(true)
+            }
+      }
     />
   )
 }

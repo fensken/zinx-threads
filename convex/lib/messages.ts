@@ -42,9 +42,24 @@ export function bodyIsSilent(body: string): boolean {
  *  mention count (via `computeWorkspaceUnread`), since both call through here. */
 export function mentionsUser(body: string, userId: string, isModerator: boolean): boolean {
   if (bodyIsSilent(body)) return false
-  if (body.includes(`zinx://user/${userId}`)) return true
+  if (bodyMentionsUserId(body, userId)) return true
   if (body.includes('zinx://group/everyone')) return true
   return isModerator && body.includes('zinx://group/admins')
+}
+
+/** True when the body contains a `zinx://user/<userId>` link at a token boundary — i.e. `<id>`
+ *  is a WHOLE id, not a prefix of a longer one. A raw `includes()` would let one id that is a
+ *  string-prefix of another falsely match, and this must agree with the fan-out reader in
+ *  `lib/notifications.ts` (same `[A-Za-z0-9_-]` id charset as `lib/mention.ts` `HREF_RE`). */
+export function bodyMentionsUserId(body: string, userId: string): boolean {
+  const token = `zinx://user/${userId}`
+  for (let from = 0; ; ) {
+    const at = body.indexOf(token, from)
+    if (at === -1) return false
+    const next = body[at + token.length]
+    if (next === undefined || !/[A-Za-z0-9_-]/.test(next)) return true
+    from = at + token.length
+  }
 }
 
 /** An author's display fields, resolved once per distinct user. The effective
@@ -209,6 +224,78 @@ export async function enrichMessages(
  *  and private channels the caller isn't in, which are dropped after the index ranks them. */
 export const SEARCH_RESULTS = 20
 export const SEARCH_SCAN = 50
+/** When operators (`from:`/`in:`/`has:`/`before:`/`after:`) narrow the results, scan deeper
+ *  so the post-filter still has material to keep `SEARCH_RESULTS`. */
+export const SEARCH_SCAN_FILTERED = 200
+
+/** The operator filters parsed out of a Slack-style search query. */
+export interface SearchFilters {
+  /** Author name substring (`from:alice`). */
+  from?: string
+  /** Channel-name substring (`in:general`). */
+  in?: string
+  /** `has:link` / `has:file` / `has:image`. */
+  has?: 'link' | 'file' | 'image'
+  /** `before:YYYY-MM-DD` — exclusive upper bound (epoch ms). */
+  before?: number
+  /** `after:YYYY-MM-DD` — inclusive lower bound (epoch ms). */
+  after?: number
+}
+
+/**
+ * Parse Slack-style search operators out of a raw query. Returns the leftover free-text
+ * `term` plus the structured `filters`. Unknown `word:value` tokens are treated as plain
+ * text (so `http://` etc. aren't eaten). Shared by the palette and the MCP tool via
+ * `searchMessagesForUser`, so both understand the same operators.
+ */
+export function parseSearchQuery(raw: string): { term: string; filters: SearchFilters } {
+  const filters: SearchFilters = {}
+  const rest: string[] = []
+  for (const token of raw.split(/\s+/)) {
+    const match = /^(from|in|has|before|after):(.+)$/i.exec(token)
+    if (!match) {
+      if (token) rest.push(token)
+      continue
+    }
+    const key = match[1].toLowerCase()
+    const value = match[2]
+    if (key === 'from') filters.from = value.replace(/^@/, '').toLowerCase()
+    else if (key === 'in') filters.in = value.replace(/^#/, '').toLowerCase()
+    else if (key === 'has') {
+      const v = value.toLowerCase()
+      if (v === 'link' || v === 'file' || v === 'image') filters.has = v
+      else rest.push(token)
+    } else if (key === 'before' || key === 'after') {
+      const parsed = Date.parse(value)
+      if (Number.isNaN(parsed)) rest.push(token)
+      else filters[key] = parsed
+    }
+  }
+  return { term: rest.join(' ').trim(), filters }
+}
+
+const LINK_RE = /https?:\/\/\S+/i
+/** Does a hit satisfy the non-text operators? (Text is handled by the search index.) */
+function matchesFilters(
+  message: Doc<'messages'>,
+  filters: SearchFilters,
+  channelLabel: string,
+  authorName: string
+): boolean {
+  if (filters.from && !authorName.toLowerCase().includes(filters.from)) return false
+  if (filters.in && !channelLabel.toLowerCase().includes(filters.in)) return false
+  if (filters.before !== undefined && message.createdAt >= filters.before) return false
+  if (filters.after !== undefined && message.createdAt < filters.after) return false
+  if (filters.has === 'link' && !LINK_RE.test(message.body)) return false
+  if (filters.has === 'file' && !(message.attachments && message.attachments.length > 0)) return false
+  if (
+    filters.has === 'image' &&
+    !message.attachments?.some((a) => a.contentType.startsWith('image/'))
+  ) {
+    return false
+  }
+  return true
+}
 
 /** One shape for a full-text search hit — returned to the chat palette AND to the MCP
  *  `search_messages` tool, so the two can never diverge on what a caller may see. */
@@ -242,15 +329,25 @@ export async function searchMessagesForUser(
   workspaceId: Id<'workspaces'>,
   term: string
 ): Promise<SearchHit[]> {
-  const trimmed = term.trim()
+  const { term: trimmed, filters } = parseSearchQuery(term)
+  // A text term is still required — the search index can't range without one. Operators
+  // refine that text query (Slack's model when you type only operators is a different,
+  // scan-based path we don't take here).
   if (!trimmed) return []
+
+  const hasFilters =
+    filters.from !== undefined ||
+    filters.in !== undefined ||
+    filters.has !== undefined ||
+    filters.before !== undefined ||
+    filters.after !== undefined
 
   const hits = await ctx.db
     .query('messages')
     .withSearchIndex('search_body', (q) =>
       q.search('body', trimmed).eq('workspaceId', workspaceId).eq('threadId', undefined)
     )
-    .take(SEARCH_SCAN)
+    .take(hasFilters ? SEARCH_SCAN_FILTERED : SEARCH_SCAN)
 
   const myDmIds = new Set(
     (await getMyDmChannels(ctx, workspaceId, user._id)).map((c) => c._id as string)
@@ -291,6 +388,11 @@ export async function searchMessagesForUser(
     }
     const channelInfo = channelCache.get(key)
     if (!channelInfo?.visible) continue
+
+    if (hasFilters) {
+      const authorName = authors.get(message.authorId)?.name ?? 'Unknown'
+      if (!matchesFilters(message, filters, channelInfo.label, authorName)) continue
+    }
 
     results.push({
       _id: message._id,

@@ -23,6 +23,7 @@ import { ChannelKindIcon } from '@renderer/components/chat/channel-kind-icon'
 import { KIND_META, type EventKind } from '@renderer/components/events/event-kind'
 import { EventTime } from '@renderer/components/events/event-time'
 import type { CalendarEvent } from '@renderer/lib/calendar-grid'
+import { MarkdownMessage } from '@renderer/components/chat/markdown-message'
 import { errorMessage } from '@renderer/lib/convex-error'
 import { initialsOf } from '@renderer/lib/initials'
 import { platform } from '@renderer/lib/platform'
@@ -153,9 +154,7 @@ export function EventDetailDialog({
                 </div>
 
                 {detail.event.description ? (
-                  <p className="text-sm whitespace-pre-wrap text-foreground">
-                    {detail.event.description}
-                  </p>
+                  <MarkdownMessage content={detail.event.description} />
                 ) : null}
 
                 <div className="space-y-2">

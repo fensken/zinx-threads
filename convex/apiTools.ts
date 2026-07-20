@@ -18,6 +18,8 @@ import { removeNotificationsForMessage } from './lib/notifications'
 import { applyReaction, summarizeReactionRows } from './lib/reactions'
 import { rateLimiter } from './rateLimiter'
 import { seedBoardColumns } from './lib/boardSeed'
+import { seedDatabase } from './lib/databaseSeed'
+import { seedForm } from './lib/formSeed'
 import { taskPriority } from './schema'
 import { rsvpStatus } from './events'
 
@@ -603,7 +605,15 @@ export const markReadFor = internalMutation({
   }
 })
 
-const CREATABLE_KINDS = new Set(['chat', 'voice', 'page', 'kanban', 'whiteboard'])
+const CREATABLE_KINDS = new Set([
+  'chat',
+  'voice',
+  'page',
+  'kanban',
+  'whiteboard',
+  'database',
+  'form'
+])
 
 /** `create_channel` — create a channel in a workspace, as the actor (never a guest). */
 export const createChannelFor = internalMutation({
@@ -619,7 +629,7 @@ export const createChannelFor = internalMutation({
     if (!resolved) throw new ConvexError(`Workspace "${slug}" not found or you are not a member`)
     if (resolved.membership.role === 'guest') throw new ConvexError('Guests cannot create channels')
     if (!CREATABLE_KINDS.has(kind)) {
-      throw new ConvexError('kind must be chat, voice, page, kanban or whiteboard')
+      throw new ConvexError('kind must be chat, voice, page, kanban, whiteboard, database or form')
     }
     const clean = name
       .trim()
@@ -656,8 +666,14 @@ export const createChannelFor = internalMutation({
         addedAt: Date.now()
       })
     }
+    // Seed the new channel the same way the in-app `channels.create` does, so an API/bot/MCP
+    // caller gets a working board/table/form rather than an empty, half-initialised channel.
     if (kind === 'kanban') {
       await seedBoardColumns(ctx, { workspaceId: resolved.workspaceId, channelId, userId })
+    } else if (kind === 'database') {
+      await seedDatabase(ctx, { channelId })
+    } else if (kind === 'form') {
+      await seedForm(ctx, { workspaceId: resolved.workspaceId, channelId, title: unique })
     }
     return { id: channelId, name: unique, kind }
   }
@@ -1013,6 +1029,181 @@ export const setPageFor = internalMutation({
       updatedBy: userId
     })
     return { channel: channel.name, created: true }
+  }
+})
+
+// ===========================================================================
+// DATABASE + FORM channels
+// ===========================================================================
+
+const MAX_DB_RECORDS_API = 500
+const MAX_FORM_RESPONSES_API = 500
+/** One cell / response value — the same primitive shapes the schema stores. */
+const apiCellValue = v.union(v.string(), v.number(), v.boolean(), v.array(v.string()), v.null())
+
+/** Resolve a `database` channel the actor can see, by (slug, channel name). */
+async function requireDatabaseChannel(
+  ctx: ReaderCtx,
+  userId: Id<'users'>,
+  slug: string,
+  channelName: string
+): Promise<Doc<'channels'>> {
+  const resolved = await resolveVisibleChannel(ctx, userId, slug, channelName)
+  if (!resolved) throw new ConvexError(`No channel "${channelName}" you can see in "${slug}"`)
+  if (resolved.channel.kind !== 'database') throw new ConvexError('That channel is not a database')
+  return resolved.channel
+}
+
+/** Resolve a database record by id, checking channel access. */
+async function requireRecord(
+  ctx: ReaderCtx,
+  userId: Id<'users'>,
+  recordStr: string
+): Promise<Doc<'databaseRecords'>> {
+  const id = ctx.db.normalizeId('databaseRecords', recordStr)
+  if (!id) throw new ConvexError('Unknown record id')
+  const record = await ctx.db.get(id)
+  if (!record) throw new ConvexError('Record not found')
+  await requireChannelAccess(ctx, record.channelId, userId)
+  return record
+}
+
+/** `get_database` — a database channel's fields (with ids + types) and its records (with ids +
+ *  values), so a write tool can reference them. */
+export const databaseFor = internalQuery({
+  args: { userId: v.id('users'), slug: v.string(), channel: v.string() },
+  handler: async (ctx, { userId, slug, channel: channelName }) => {
+    const resolved = await resolveVisibleChannel(ctx, userId, slug, channelName)
+    if (!resolved || resolved.channel.kind !== 'database') return null
+    const [fields, records] = await Promise.all([
+      ctx.db
+        .query('databaseFields')
+        .withIndex('by_channel', (q) => q.eq('channelId', resolved.channel._id))
+        .collect(),
+      ctx.db
+        .query('databaseRecords')
+        .withIndex('by_channel_order', (q) => q.eq('channelId', resolved.channel._id))
+        .take(MAX_DB_RECORDS_API)
+    ])
+    return {
+      channel: resolved.channel.name,
+      fields: fields
+        .sort((a, b) => a.order - b.order)
+        .map((f) => ({
+          id: f._id,
+          name: f.name,
+          type: f.type,
+          options: f.options?.map((o) => ({ id: o.id, label: o.label }))
+        })),
+      records: records.map((r) => ({ id: r._id, values: r.values }))
+    }
+  }
+})
+
+/** `create_record` — add a record to a database, as the actor. `values` is keyed by field id. */
+export const createRecordFor = internalMutation({
+  args: {
+    userId: v.id('users'),
+    slug: v.string(),
+    channel: v.string(),
+    values: v.optional(v.record(v.string(), apiCellValue))
+  },
+  handler: async (ctx, { userId, slug, channel: channelName, values }) => {
+    const channel = await requireDatabaseChannel(ctx, userId, slug, channelName)
+    const count = (
+      await ctx.db
+        .query('databaseRecords')
+        .withIndex('by_channel_order', (q) => q.eq('channelId', channel._id))
+        .take(MAX_DB_RECORDS_API)
+    ).length
+    if (count >= MAX_DB_RECORDS_API) throw new ConvexError('This table is full')
+    const id = await ctx.db.insert('databaseRecords', {
+      channelId: channel._id,
+      values: values ?? {},
+      order: count,
+      createdBy: userId,
+      createdAt: Date.now()
+    })
+    return { id, created: true }
+  }
+})
+
+/** `update_record` — merge new cell values into a record. Only the fields you pass change; a
+ *  null/empty value clears that cell. */
+export const updateRecordFor = internalMutation({
+  args: {
+    userId: v.id('users'),
+    record: v.string(),
+    values: v.record(v.string(), apiCellValue)
+  },
+  handler: async (ctx, { userId, record: recordStr, values }) => {
+    const record = await requireRecord(ctx, userId, recordStr)
+    const next = { ...record.values }
+    for (const [fieldId, value] of Object.entries(values)) {
+      if (value === null || value === '') delete next[fieldId]
+      else next[fieldId] = value
+    }
+    await ctx.db.patch(record._id, { values: next })
+    return { id: record._id, updated: true }
+  }
+})
+
+/** `delete_record` — remove a database record. Irreversible. */
+export const deleteRecordFor = internalMutation({
+  args: { userId: v.id('users'), record: v.string() },
+  handler: async (ctx, { userId, record: recordStr }) => {
+    const record = await requireRecord(ctx, userId, recordStr)
+    await ctx.db.delete(record._id)
+    return { id: record._id, deleted: true }
+  }
+})
+
+/** `get_form` — a form channel's schema (title + fields) and its response count. */
+export const formSchemaFor = internalQuery({
+  args: { userId: v.id('users'), slug: v.string(), channel: v.string() },
+  handler: async (ctx, { userId, slug, channel: channelName }) => {
+    const resolved = await resolveVisibleChannel(ctx, userId, slug, channelName)
+    if (!resolved || resolved.channel.kind !== 'form') return null
+    const form = await ctx.db
+      .query('forms')
+      .withIndex('by_channel', (q) => q.eq('channelId', resolved.channel._id))
+      .unique()
+    if (!form) return null
+    const responses = await ctx.db
+      .query('formResponses')
+      .withIndex('by_form', (q) => q.eq('formId', form._id))
+      .take(MAX_FORM_RESPONSES_API)
+    return {
+      channel: resolved.channel.name,
+      title: form.title,
+      description: form.description,
+      fields: form.fields.map((f) => ({ id: f.id, name: f.name, type: f.type, required: f.required })),
+      responseCount: responses.length
+    }
+  }
+})
+
+/** `list_responses` — a form channel's submissions (id, timestamp, values). */
+export const formResponsesFor = internalQuery({
+  args: { userId: v.id('users'), slug: v.string(), channel: v.string() },
+  handler: async (ctx, { userId, slug, channel: channelName }) => {
+    const resolved = await resolveVisibleChannel(ctx, userId, slug, channelName)
+    if (!resolved || resolved.channel.kind !== 'form') return []
+    const form = await ctx.db
+      .query('forms')
+      .withIndex('by_channel', (q) => q.eq('channelId', resolved.channel._id))
+      .unique()
+    if (!form) return []
+    const responses = await ctx.db
+      .query('formResponses')
+      .withIndex('by_form', (q) => q.eq('formId', form._id))
+      .order('desc')
+      .take(MAX_FORM_RESPONSES_API)
+    return responses.map((r) => ({
+      id: r._id,
+      submittedAt: r.submittedAt,
+      values: r.values
+    }))
   }
 })
 

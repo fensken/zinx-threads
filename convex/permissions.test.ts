@@ -450,15 +450,22 @@ describe('private non-chat channels (pages / boards / whiteboards / voice)', () 
 
     // Bob (a member) joins the call.
     await asBob.mutation(api.voice.setPresence, { channelId })
-    const inChannel = (rows: { channelId: string }[]) => rows.filter((r) => r.channelId === channelId)
+    const inChannel = (rows: { channelId: string }[]) =>
+      rows.filter((r) => r.channelId === channelId)
 
     // Alice (in the channel) sees him; Carol (admin, outside) sees nobody in it.
-    expect(inChannel(await asAlice.query(api.voice.listByWorkspace, { workspaceId }))).toHaveLength(1)
-    expect(inChannel(await asCarol.query(api.voice.listByWorkspace, { workspaceId }))).toHaveLength(0)
+    expect(inChannel(await asAlice.query(api.voice.listByWorkspace, { workspaceId }))).toHaveLength(
+      1
+    )
+    expect(inChannel(await asCarol.query(api.voice.listByWorkspace, { workspaceId }))).toHaveLength(
+      0
+    )
 
     // Carol can't even report presence into it (no row is created).
     await asCarol.mutation(api.voice.setPresence, { channelId })
-    expect(inChannel(await asAlice.query(api.voice.listByWorkspace, { workspaceId }))).toHaveLength(1)
+    expect(inChannel(await asAlice.query(api.voice.listByWorkspace, { workspaceId }))).toHaveLength(
+      1
+    )
   })
 })
 

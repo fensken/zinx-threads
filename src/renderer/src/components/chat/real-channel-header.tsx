@@ -3,6 +3,7 @@ import {
   CalendarDots,
   List,
   MagnifyingGlass,
+  Question,
   PushPin,
   Scribble,
   Sliders,
@@ -27,6 +28,7 @@ import { UpcomingEventsList } from '@renderer/components/events/upcoming-events-
 import { ThreadsDialog } from '@renderer/components/chat/threads-dialog'
 import { ChannelConnectionsDialog } from '@renderer/components/chat/share-channel-dialog'
 import { ChannelConnectionPill } from '@renderer/components/chat/channel-connection-pill'
+import { ChannelHelpDialog } from '@renderer/components/chat/channel-help-dialog'
 
 /** Convex-backed channel header — mirrors the demo `ChannelHeader`: hamburger
  *  (mobile), channel icon + name + topic, and the Search / Threads / Inbox /
@@ -49,6 +51,7 @@ export function RealChannelHeader({
 }): React.JSX.Element {
   const [connectionsOpen, setConnectionsOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
   const memberListOpen = useUiStore((s) => s.memberListOpen)
   const toggleMemberList = useUiStore((s) => s.toggleMemberList)
   const threadsOpen = useUiStore((s) => s.threadsOpen)
@@ -184,6 +187,9 @@ export function RealChannelHeader({
           ) : null}
         </div>
 
+        <IconButton label="About this channel" onClick={() => setHelpOpen(true)}>
+          <Question className="size-5" />
+        </IconButton>
         <IconButton label="Members" active={memberListOpen} onClick={toggleMemberList}>
           <Users className="size-5" />
         </IconButton>
@@ -197,6 +203,14 @@ export function RealChannelHeader({
           </IconButton>
         ) : null}
       </div>
+
+      {/* "What is this channel and how do I use it?" — permission-aware. */}
+      <ChannelHelpDialog
+        channel={channel}
+        canManage={canManage}
+        open={helpOpen}
+        onOpenChange={setHelpOpen}
+      />
 
       {/* Threads for THIS channel — the only entry point (they're no longer listed in
           the sidebar), shaped like the pinned-messages dialog. */}

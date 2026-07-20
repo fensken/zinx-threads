@@ -4,6 +4,8 @@ import { api } from '@convex/_generated/api'
 import type { Id } from '@convex/_generated/dataModel'
 import { Spinner } from '@renderer/components/ui/spinner'
 import { RealBoardView } from '../kanban/real-board-view'
+import { RealDatabaseView } from '@renderer/components/database/real-database-view'
+import { RealFormEditor } from '@renderer/components/form/real-form-editor'
 import { RealChannelView } from '@renderer/components/chat/real-channel-view'
 import { RealChannelHeader } from '@renderer/components/chat/real-channel-header'
 import { ChannelDirectoryScope } from '@renderer/components/chat/channel-directory-scope'
@@ -82,6 +84,14 @@ export function RealChannelPage({
       </Suspense>
     ) : channel.kind === 'kanban' ? (
       <RealBoardView key={channel._id} channel={channel} />
+    ) : channel.kind === 'database' ? (
+      <RealDatabaseView key={channel._id} channel={channel} />
+    ) : channel.kind === 'form' ? (
+      <RealFormEditor
+        key={channel._id}
+        channel={channel}
+        canManage={!isGuest && (resolved?.role === 'owner' || resolved?.role === 'admin')}
+      />
     ) : channel.kind === 'whiteboard' ? (
       <Suspense
         fallback={

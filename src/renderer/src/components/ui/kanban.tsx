@@ -62,7 +62,7 @@ interface KanbanContextProps<T> {
   modifiers?: Modifiers
 }
 
-const KanbanContext = createContext<KanbanContextProps<any>>({
+const KanbanContext = createContext<KanbanContextProps<unknown>>({
   columns: {},
   setColumns: () => {},
   getItemId: () => '',
@@ -392,7 +392,7 @@ function Kanban<T>({
   }
 
   return (
-    <KanbanContext.Provider value={contextValue}>
+    <KanbanContext.Provider value={contextValue as KanbanContextProps<unknown>}>
       <DndContext
         sensors={sensors}
         collisionDetection={kanbanCollisionDetection}

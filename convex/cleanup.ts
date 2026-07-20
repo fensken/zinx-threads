@@ -108,6 +108,22 @@ export const channel = internalMutation({
     for (const row of tasks) await ctx.db.delete(row._id)
     if (tasks.length === BATCH) more = true
 
+    // Database channel: its records can be many, so batch them like messages.
+    const dbRecords = await ctx.db
+      .query('databaseRecords')
+      .withIndex('by_channel_order', (q) => q.eq('channelId', channelId))
+      .take(BATCH)
+    for (const row of dbRecords) await ctx.db.delete(row._id)
+    if (dbRecords.length === BATCH) more = true
+
+    // Form responses — likewise unbounded, batch them.
+    const formResponses = await ctx.db
+      .query('formResponses')
+      .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+      .take(BATCH)
+    for (const row of formResponses) await ctx.db.delete(row._id)
+    if (formResponses.length === BATCH) more = true
+
     // Files uploaded INTO this channel's page (image/video/audio/file blocks). The block
     // stored only the URL, so this back-reference table (`pageUploads`) is the only way to
     // reclaim the R2 object on delete. Batched — a media-heavy page can have many.
@@ -163,6 +179,33 @@ export const channel = internalMutation({
         .withIndex('by_channel', (q) => q.eq('channelId', channelId))
         .unique()
       if (whiteboard) await ctx.db.delete(whiteboard._id)
+
+      // Ephemeral typing rows — self-expiring and few, but drop them with the channel
+      // so nothing lingers.
+      const typing = await ctx.db
+        .query('typingStatus')
+        .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+        .collect()
+      for (const row of typing) await ctx.db.delete(row._id)
+
+      // Database channel schema — fields + views (bounded sets; records drained above).
+      const dbFields = await ctx.db
+        .query('databaseFields')
+        .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+        .collect()
+      for (const row of dbFields) await ctx.db.delete(row._id)
+      const dbViews = await ctx.db
+        .query('databaseViews')
+        .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+        .collect()
+      for (const row of dbViews) await ctx.db.delete(row._id)
+
+      // Form channel — one row (responses drained above).
+      const form = await ctx.db
+        .query('forms')
+        .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+        .unique()
+      if (form) await ctx.db.delete(form._id)
 
       // Cross-workspace shares of this channel (bounded by MAX_SHARE_GUESTS) — the
       // guests lose access with the channel. Their per-channel reads/notifications
@@ -387,6 +430,19 @@ export const workspace = internalMutation({
       await ctx.db.delete(member._id)
     }
     if (members.length === BATCH) {
+      await ctx.scheduler.runAfter(0, internal.cleanup.workspace, { workspaceId })
+      return
+    }
+
+    // Audit log — append-only and unbounded over a workspace's life, so batch it like
+    // the other growing tables. (A compliance export is expected to have already run
+    // before deletion; nothing here preserves it.)
+    const audits = await ctx.db
+      .query('auditLogs')
+      .withIndex('by_workspace_created', (q) => q.eq('workspaceId', workspaceId))
+      .take(BATCH)
+    for (const row of audits) await ctx.db.delete(row._id)
+    if (audits.length === BATCH) {
       await ctx.scheduler.runAfter(0, internal.cleanup.workspace, { workspaceId })
       return
     }

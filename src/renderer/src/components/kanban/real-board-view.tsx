@@ -7,7 +7,9 @@ import { api } from '@convex/_generated/api'
 import type { Doc, Id } from '@convex/_generated/dataModel'
 import { useWorkspaceDirectory } from '@renderer/components/chat/workspace-directory-context'
 import { BoardSkeleton } from '@renderer/components/common/skeletons'
+import { SaveStatus } from '@renderer/components/common/save-status'
 import { errorMessage } from '@renderer/lib/convex-error'
+import { useSaveStatus } from '@renderer/lib/use-save-status'
 import { initialsOf } from '@renderer/lib/initials'
 import type { KanbanTask } from '@renderer/components/kanban/board-types'
 import { BoardView } from './board-view'
@@ -29,11 +31,15 @@ export function RealBoardView({ channel }: { channel: Doc<'channels'> }): React.
   const removeColumn = useMutation(api.boards.removeColumn)
   const seedDefaultColumns = useMutation(api.boards.seedDefaultColumns)
   const reorder = useMutation(api.boards.reorder)
+  const { state: saveState, track } = useSaveStatus()
 
-  /** Surface Convex errors instead of swallowing the rejection. */
-  const guard = useCallback((action: Promise<unknown>, fallback: string): void => {
-    void action.catch((error) => toast.error(errorMessage(error, fallback)))
-  }, [])
+  /** Drive the "Saving…" pill + surface Convex errors instead of swallowing the rejection. */
+  const guard = useCallback(
+    (action: Promise<unknown>, fallback: string): void => {
+      void track(action).catch((error) => toast.error(errorMessage(error, fallback)))
+    },
+    [track]
+  )
 
   const members = useMemo<BoardMember[]>(
     () =>
@@ -64,57 +70,60 @@ export function RealBoardView({ channel }: { channel: Doc<'channels'> }): React.
   if (board === undefined) return <BoardSkeleton />
 
   return (
-    <BoardView
-      columns={columns}
-      members={members}
-      currentUserId={currentUserId}
-      onCreateTask={(columnId, fields) =>
-        guard(
-          createTask({ columnId: columnId as Id<'kanbanColumns'>, ...toArgs(fields) }),
-          'Could not create the task'
-        )
-      }
-      onUpdateTask={(taskId, fields) =>
-        guard(
-          updateTask({ taskId: taskId as Id<'kanbanTasks'>, ...toArgs(fields) }),
-          'Could not save the task'
-        )
-      }
-      onDeleteTask={(taskId) =>
-        guard(removeTask({ taskId: taskId as Id<'kanbanTasks'> }), 'Could not delete the task')
-      }
-      onCreateColumn={(title) =>
-        guard(createColumn({ channelId: channel._id, title }), 'Could not create the column')
-      }
-      onRenameColumn={(columnId, title) =>
-        guard(
-          renameColumn({ columnId: columnId as Id<'kanbanColumns'>, title }),
-          'Could not rename the column'
-        )
-      }
-      onDeleteColumn={(columnId) =>
-        guard(
-          removeColumn({ columnId: columnId as Id<'kanbanColumns'> }),
-          'Could not delete the column'
-        )
-      }
-      onUseDefaultColumns={() =>
-        guard(seedDefaultColumns({ channelId: channel._id }), 'Could not add the default columns')
-      }
-      onReorder={({ columnIds, taskIdsByColumn }) =>
-        guard(
-          reorder({
-            channelId: channel._id,
-            columnOrder: columnIds as Id<'kanbanColumns'>[],
-            buckets: columnIds.map((columnId) => ({
-              columnId: columnId as Id<'kanbanColumns'>,
-              taskIds: (taskIdsByColumn[columnId] ?? []) as Id<'kanbanTasks'>[]
-            }))
-          }),
-          'Could not save the new order'
-        )
-      }
-    />
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+      <BoardView
+        columns={columns}
+        members={members}
+        currentUserId={currentUserId}
+        onCreateTask={(columnId, fields) =>
+          guard(
+            createTask({ columnId: columnId as Id<'kanbanColumns'>, ...toArgs(fields) }),
+            'Could not create the task'
+          )
+        }
+        onUpdateTask={(taskId, fields) =>
+          guard(
+            updateTask({ taskId: taskId as Id<'kanbanTasks'>, ...toArgs(fields) }),
+            'Could not save the task'
+          )
+        }
+        onDeleteTask={(taskId) =>
+          guard(removeTask({ taskId: taskId as Id<'kanbanTasks'> }), 'Could not delete the task')
+        }
+        onCreateColumn={(title) =>
+          guard(createColumn({ channelId: channel._id, title }), 'Could not create the column')
+        }
+        onRenameColumn={(columnId, title) =>
+          guard(
+            renameColumn({ columnId: columnId as Id<'kanbanColumns'>, title }),
+            'Could not rename the column'
+          )
+        }
+        onDeleteColumn={(columnId) =>
+          guard(
+            removeColumn({ columnId: columnId as Id<'kanbanColumns'> }),
+            'Could not delete the column'
+          )
+        }
+        onUseDefaultColumns={() =>
+          guard(seedDefaultColumns({ channelId: channel._id }), 'Could not add the default columns')
+        }
+        onReorder={({ columnIds, taskIdsByColumn }) =>
+          guard(
+            reorder({
+              channelId: channel._id,
+              columnOrder: columnIds as Id<'kanbanColumns'>[],
+              buckets: columnIds.map((columnId) => ({
+                columnId: columnId as Id<'kanbanColumns'>,
+                taskIds: (taskIdsByColumn[columnId] ?? []) as Id<'kanbanTasks'>[]
+              }))
+            }),
+            'Could not save the new order'
+          )
+        }
+      />
+      <SaveStatus state={saveState} />
+    </div>
   )
 }
 

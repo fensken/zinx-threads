@@ -141,6 +141,13 @@ function PageSurface({
   // R2 key + deletes the previous cover). Returns the URL for the local preview.
   const uploadCover = useCallback(
     async (file: File): Promise<string> => {
+      // Backstop the picker's own limit so no cover path can leak an unbounded upload to R2.
+      if (!withinUploadLimit(file.size)) {
+        const message = `That image is larger than ${MAX_UPLOAD_LABEL}`
+        setState('error')
+        setError(message)
+        throw new Error(message)
+      }
       setState('saving')
       try {
         const key = await uploadFile(file)

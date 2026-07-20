@@ -8,6 +8,7 @@ import {
   getMembership,
   requireUser
 } from './lib/auth'
+import { recordAudit } from './lib/audit'
 
 /** Members of a workspace (member-only), each with the user's display fields. */
 export const listByWorkspace = query({
@@ -138,6 +139,16 @@ export const updateRole = mutation({
     // rows survive, so a guest keeps the rooms they were named in; promoting them back
     // restores the rest.
     await ctx.db.patch(memberId, { role })
+
+    const targetUser = await ctx.db.get(target.userId)
+    await recordAudit(ctx, {
+      workspaceId: target.workspaceId,
+      actorId: user._id,
+      action: 'member.role_changed',
+      targetType: 'user',
+      targetId: target.userId as string,
+      summary: `Changed ${targetUser?.name ?? targetUser?.email ?? 'a member'}'s role from ${target.role} to ${role}`
+    })
   }
 })
 
@@ -169,11 +180,20 @@ export const remove = mutation({
       throw new ConvexError('Only owners and admins can remove members')
     }
     if (target.role === 'owner') throw new ConvexError("You can't remove the owner")
+    const targetUser = await ctx.db.get(target.userId)
     await ctx.db.delete(memberId)
     // Drop their read markers + inbox for this workspace (their messages stay).
     await ctx.scheduler.runAfter(0, internal.cleanup.member, {
       workspaceId: target.workspaceId,
       userId: target.userId
+    })
+    await recordAudit(ctx, {
+      workspaceId: target.workspaceId,
+      actorId: user._id,
+      action: 'member.removed',
+      targetType: 'user',
+      targetId: target.userId as string,
+      summary: `Removed ${targetUser?.name ?? targetUser?.email ?? 'a member'} from the workspace`
     })
   }
 })

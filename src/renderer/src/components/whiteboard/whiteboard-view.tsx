@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Excalidraw } from '@excalidraw/excalidraw'
-import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
+import type {
+  ExcalidrawImperativeAPI,
+  ExcalidrawInitialDataState
+} from '@excalidraw/excalidraw/types'
 import { Check, WarningCircle } from '@phosphor-icons/react'
 import { Spinner } from '@renderer/components/ui/spinner'
 import { canvasBackground } from '@renderer/lib/excalidraw-theme'
@@ -83,8 +86,9 @@ export function WhiteboardView({
         excalidrawAPI={(instance) => (api.current = instance)}
         theme={isDark ? 'dark' : 'light'}
         initialData={{
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          elements: initial as any,
+          // Elements are stored opaquely (`readonly unknown[]`) and handed straight back to
+          // Excalidraw — cast to its own element type at the boundary rather than inspecting them.
+          elements: initial as ExcalidrawInitialDataState['elements'],
           appState: { viewBackgroundColor: canvasBackground(isDark) ?? undefined },
           scrollToContent: true
         }}

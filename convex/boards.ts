@@ -156,11 +156,14 @@ export const createColumn = mutation({
       throw new ConvexError(`A board can have at most ${MAX_COLUMNS} columns`)
     }
 
+    // max(order)+1, not count — after a middle column is deleted, `count` would collide with
+    // an existing column's order and land the new column in an arbitrary spot until a drag.
+    const nextOrder = existing.reduce((max, c) => Math.max(max, c.order + 1), 0)
     return await ctx.db.insert('kanbanColumns', {
       workspaceId: channel.workspaceId,
       channelId,
       title: clean,
-      order: existing.length,
+      order: nextOrder,
       createdBy: userId
     })
   }
@@ -202,13 +205,16 @@ export const createTask = mutation({
       .take(MAX_TASKS + 1)
     if (siblings.length >= MAX_TASKS) throw new ConvexError('This board is full')
 
+    // max(order)+1, not count — so a task added after a middle card was deleted doesn't collide
+    // with an existing card's order.
+    const nextOrder = siblings.reduce((max, t) => Math.max(max, t.order + 1), 0)
     const now = Date.now()
     return await ctx.db.insert('kanbanTasks', {
       workspaceId: column.workspaceId,
       channelId: column.channelId,
       columnId,
       ...clean,
-      order: siblings.length,
+      order: nextOrder,
       createdBy: userId,
       createdAt: now,
       updatedAt: now
@@ -256,9 +262,11 @@ export const reorder = mutation({
     // Gate on membership + `kind === 'kanban'`; nothing else is needed from it.
     await requireBoardAccess(ctx, channelId)
 
+    // Only patch rows whose position actually changed — a no-op write still re-notifies every
+    // board subscriber, so re-stamping the whole board on a single-card drag is wasteful.
     for (let i = 0; i < columnOrder.length; i++) {
       const column = await ctx.db.get(columnOrder[i])
-      if (column && column.channelId === channelId) {
+      if (column && column.channelId === channelId && column.order !== i) {
         await ctx.db.patch(columnOrder[i], { order: i })
       }
     }
@@ -271,7 +279,11 @@ export const reorder = mutation({
       }
       for (let i = 0; i < bucket.taskIds.length; i++) {
         const task = await ctx.db.get(bucket.taskIds[i])
-        if (task && task.channelId === channelId) {
+        if (
+          task &&
+          task.channelId === channelId &&
+          (task.columnId !== bucket.columnId || task.order !== i)
+        ) {
           await ctx.db.patch(bucket.taskIds[i], { columnId: bucket.columnId, order: i })
         }
       }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CaretRight, PencilSimple, Plus, Trash } from '@phosphor-icons/react'
+import { CaretRight, FolderPlus, PencilSimple, Plus, Trash } from '@phosphor-icons/react'
 import { Button } from '@renderer/components/ui/button'
 import { ConfirmDialog } from '@renderer/components/common/confirm-dialog'
 import { RenameField } from '@renderer/components/chat/rename-field'
@@ -137,6 +137,7 @@ export function SidebarGroup({
   onRename,
   onDelete,
   onAddChannel,
+  onCreateGroup,
   children
 }: {
   name: string
@@ -147,6 +148,9 @@ export function SidebarGroup({
   onRename: (name: string) => void
   onDelete: () => void | Promise<void>
   onAddChannel: () => void
+  /** Create a NEW group (sibling of this one). Optional — the context menu shows a
+   *  "Create group" item only when supplied, so a sidebar without groups can omit it. */
+  onCreateGroup?: () => void
   children: React.ReactNode
 }): React.JSX.Element {
   const [collapsed, setCollapsed] = useState(false)
@@ -201,6 +205,12 @@ export function SidebarGroup({
               <Plus className="text-muted-foreground" weight="bold" />
               {addLabel}
             </ContextMenuItem>
+            {onCreateGroup ? (
+              <ContextMenuItem onClick={onCreateGroup}>
+                <FolderPlus className="text-muted-foreground" />
+                Create group
+              </ContextMenuItem>
+            ) : null}
             <ContextMenuItem onClick={() => setEditing(true)}>
               <PencilSimple className="text-muted-foreground" />
               Rename group

@@ -225,6 +225,19 @@ export function parsePageContent(content: string | undefined): PartialBlock[] | 
   try {
     const parsed: unknown = JSON.parse(content)
     if (!Array.isArray(parsed) || parsed.length === 0) return undefined
+    // Shape-check before handing it to BlockNote — a valid-JSON array that isn't a block array
+    // (e.g. `[1,2,3]`, `[null]`, blocks missing a `type`) would otherwise throw during editor
+    // creation and take the whole page channel down. Start empty instead.
+    const looksLikeBlocks = parsed.every(
+      (block) =>
+        typeof block === 'object' &&
+        block !== null &&
+        typeof (block as { type?: unknown }).type === 'string'
+    )
+    if (!looksLikeBlocks) {
+      console.error('Stored page document is not a block array; starting empty.')
+      return undefined
+    }
     return parsed as PartialBlock[]
   } catch {
     console.error('Could not parse the stored page document; starting empty.')

@@ -9,6 +9,8 @@ import { ConfirmDialog } from '@renderer/components/common/confirm-dialog'
 import { Spinner } from '@renderer/components/ui/spinner'
 import { ChannelIntro } from '@renderer/components/chat/channel-intro'
 import { ChannelComposer } from '@renderer/components/chat/channel-composer'
+import { TypingIndicator } from '@renderer/components/chat/typing-indicator'
+import { useChannelTyping } from '@renderer/lib/use-channel-typing'
 import { ReadOnlyNotice } from '@renderer/components/chat/read-only-notice'
 import {
   Conversation,
@@ -177,7 +179,12 @@ export function RealChannelView({
    *  Discord and Slack behave. Awaiting the mutation here was actively harmful:
    *  offline, Convex neither resolves nor rejects it, so the draft-restore never
    *  fired and the text simply vanished. */
+  // Live "…is typing" — the composer pings on each edit (throttled by the hook);
+  // sending clears it for others instantly rather than waiting out the TTL.
+  const { typingUsers, notifyTyping, notifyStopped } = useChannelTyping(id)
+
   const submit = (body: string, attachments?: OutboxAttachment[]): void => {
+    notifyStopped()
     enqueue({
       clientId: crypto.randomUUID(),
       channelId: id,
@@ -350,6 +357,12 @@ export function RealChannelView({
         </Conversation>
       )}
 
+      {/* The "…is typing" strip. A fixed height so its appearance never shoves the
+          composer (the no-layout-shift rule) — it just fills the reserved row. */}
+      <div className="flex h-4 shrink-0 items-center overflow-hidden px-4">
+        <TypingIndicator users={typingUsers} />
+      </div>
+
       {!canPost ? (
         <ReadOnlyNotice postingPolicy={channel.postingPolicy} />
       ) : (
@@ -361,6 +374,7 @@ export function RealChannelView({
           onSend={submit}
           onUpload={uploadFile}
           onRemoveUpload={(key) => void deleteUpload({ key })}
+          onTyping={notifyTyping}
           replyTo={replyTarget}
           onCancelReply={() => setReplyTarget(null)}
         />

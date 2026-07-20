@@ -3,12 +3,14 @@ import { useNavigate } from '@tanstack/react-router'
 import { useMutation } from 'convex/react'
 import {
   Check,
+  ClipboardText,
   FileText,
   Hash,
   Kanban,
   LockSimple,
   PenNib,
-  SpeakerHigh
+  SpeakerHigh,
+  Table
 } from '@phosphor-icons/react'
 import { api } from '@convex/_generated/api'
 import type { Id } from '@convex/_generated/dataModel'
@@ -27,16 +29,27 @@ import { BusyLabel } from '@renderer/components/common/busy-label'
 import { cn } from '@renderer/lib/utils'
 import { errorMessage } from '@renderer/lib/convex-error'
 
-export type ChannelDialogKind = 'chat' | 'voice' | 'page' | 'kanban' | 'whiteboard'
+export type ChannelDialogKind =
+  'chat' | 'voice' | 'page' | 'kanban' | 'whiteboard' | 'database' | 'form'
 
 const KIND_META: Record<ChannelDialogKind, { label: string; Icon: typeof Hash }> = {
   chat: { label: 'Text', Icon: Hash },
   voice: { label: 'Voice', Icon: SpeakerHigh },
   page: { label: 'Page', Icon: FileText },
   kanban: { label: 'Board', Icon: Kanban },
-  whiteboard: { label: 'Whiteboard', Icon: PenNib }
+  whiteboard: { label: 'Whiteboard', Icon: PenNib },
+  database: { label: 'Database', Icon: Table },
+  form: { label: 'Form', Icon: ClipboardText }
 }
-const ALL_KINDS: ChannelDialogKind[] = ['chat', 'voice', 'page', 'kanban', 'whiteboard']
+const ALL_KINDS: ChannelDialogKind[] = [
+  'chat',
+  'voice',
+  'page',
+  'kanban',
+  'whiteboard',
+  'database',
+  'form'
+]
 
 /**
  * The presentational Create-a-channel dialog — **the one component both the online and
@@ -99,7 +112,7 @@ export function CreateChannelDialogView({
         <form id="create-channel-form" onSubmit={submit} className="grid gap-3 py-2">
           <div className="grid gap-1.5">
             <Label>Channel type</Label>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {kinds.map((value) => {
                 const { label, Icon } = KIND_META[value]
                 return (

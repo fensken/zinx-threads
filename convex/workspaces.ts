@@ -1,10 +1,14 @@
 import { ConvexError, v } from 'convex/values'
 import { query, mutation } from './_generated/server'
 import { getCurrentUser, getMembership, requireUser } from './lib/auth'
+import { recordAudit } from './lib/audit'
 import { rateLimiter } from './rateLimiter'
 import { markUploadUsed, objectUrl, r2 } from './files'
 import { internal } from './_generated/api'
-import { seedBoardColumns } from './lib/boardSeed'
+import { seedBoardWithSamples } from './lib/boardSeed'
+import { seedDatabaseWithSamples } from './lib/databaseSeed'
+import { seedFormWithSamples } from './lib/formSeed'
+import { seedPage } from './lib/pageSeed'
 import {
   DEFAULT_CHANNEL,
   DEFAULT_GROUPS,
@@ -216,9 +220,16 @@ export const create = mutation({
         order: i,
         createdBy: user._id
       })
-      // Boards open with the default columns, same as `channels.create`.
+      // A brand-new workspace fills each non-chat channel with sample data to showcase
+      // what it can do. (Chat channels get NO prefilled messages.)
       if (ch.kind === 'kanban') {
-        await seedBoardColumns(ctx, { workspaceId, channelId, userId: user._id })
+        await seedBoardWithSamples(ctx, { workspaceId, channelId, userId: user._id })
+      } else if (ch.kind === 'database') {
+        await seedDatabaseWithSamples(ctx, { channelId, userId: user._id })
+      } else if (ch.kind === 'form') {
+        await seedFormWithSamples(ctx, { workspaceId, channelId, title: ch.name, userId: user._id })
+      } else if (ch.kind === 'page') {
+        await seedPage(ctx, { workspaceId, channelId, userId: user._id, name: ch.name })
       }
     }
     return { workspaceId, slug }
@@ -269,7 +280,42 @@ export const update = mutation({
     if (color !== undefined) patch.color = color
     if (timezone !== undefined) patch.timezone = timezone.trim().slice(0, 64)
     await ctx.db.patch(workspaceId, patch)
+    await recordAudit(ctx, {
+      workspaceId,
+      actorId: user._id,
+      action: 'workspace.updated',
+      targetType: 'workspace',
+      targetId: workspaceId as string,
+      summary: `Updated workspace settings (${Object.keys(patch).join(', ') || 'no change'})`
+    })
     return { slug: patch.slug ?? workspace.slug }
+  }
+})
+
+/** Set the enterprise message-retention policy (days) — owner/admin only. `0` (or
+ *  absent) clears it → keep everything. A daily cron (`retention.enforce`) hard-deletes
+ *  channel messages older than this; DMs are exempt. */
+export const setRetention = mutation({
+  args: { workspaceId: v.id('workspaces'), days: v.number() },
+  handler: async (ctx, { workspaceId, days }) => {
+    const user = await requireUser(ctx)
+    const membership = await getMembership(ctx, workspaceId, user._id)
+    if (!membership || (membership.role !== 'owner' && membership.role !== 'admin')) {
+      throw new ConvexError('Only owners and admins can change the retention policy')
+    }
+    // Clamp to a sane range: a 1-day floor (so it can't be set to delete near-instantly)
+    // and a ~10-year ceiling. `0` disables it.
+    const clean = Number.isFinite(days) ? Math.max(0, Math.min(3650, Math.floor(days))) : 0
+    await ctx.db.patch(workspaceId, { messageRetentionDays: clean === 0 ? undefined : clean })
+    await recordAudit(ctx, {
+      workspaceId,
+      actorId: user._id,
+      action: 'retention.updated',
+      targetType: 'workspace',
+      targetId: workspaceId as string,
+      summary: clean === 0 ? 'Disabled message retention (keep everything)' : `Set message retention to ${clean} days`
+    })
+    return { days: clean }
   }
 })
 
@@ -334,6 +380,14 @@ export const leave = mutation({
     if (membership) await ctx.db.delete(membership._id)
     // Drop your read markers + inbox for this workspace (your messages stay).
     await ctx.scheduler.runAfter(0, internal.cleanup.member, { workspaceId, userId: user._id })
+    await recordAudit(ctx, {
+      workspaceId,
+      actorId: user._id,
+      action: 'member.left',
+      targetType: 'user',
+      targetId: user._id as string,
+      summary: `${user.name ?? user.email ?? 'A member'} left the workspace`
+    })
   }
 })
 

@@ -30,11 +30,12 @@ const ID_RE = /^[a-zA-Z0-9-]{1,64}$/
  *  means adding it HERE** — the renderer writing a path this doesn't know about used
  *  to be silently dropped (see `applySave`), which is exactly how offline diagrams
  *  shipped writing to a path main refused, losing every drawing on quit. */
-const SUB_DIRS = ['pages', 'boards', 'whiteboards'] as const
+const SUB_DIRS = ['pages', 'boards', 'whiteboards', 'databases'] as const
 
 /** The only files a workspace folder may contain. Also the path-traversal guard:
  *  no `.` or `/` is allowed inside a name, so a crafted id can't escape the root. */
-const REL_PATH_RE = /^(workspace\.json|(?:pages|boards|whiteboards)\/[a-zA-Z0-9-]{1,64}\.json)$/
+const REL_PATH_RE =
+  /^(workspace\.json|(?:pages|boards|whiteboards|databases)\/[a-zA-Z0-9-]{1,64}\.json)$/
 
 function rootDir(): string {
   return path.join(app.getPath('userData'), ROOT_DIR_NAME)

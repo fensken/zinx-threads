@@ -123,7 +123,12 @@ export const resolveUpload = mutation({
     const url = await objectUrl(key)
     // The block stores only this URL (not the key), so record the key against the page so
     // `cleanup.channel` can reclaim the R2 object when the page is deleted.
-    await ctx.db.insert('pageUploads', { channelId, key, createdBy: user._id, createdAt: Date.now() })
+    await ctx.db.insert('pageUploads', {
+      channelId,
+      key,
+      createdBy: user._id,
+      createdAt: Date.now()
+    })
     return url
   }
 })
@@ -198,7 +203,10 @@ const MEDIA_BLOCK_TYPES = new Set(['image', 'video', 'audio', 'file'])
 /** The R2 keys a page's BlockNote doc references (media-block URLs of the form `${prefix}${key}`),
  *  plus `ambiguous` = it holds a media URL we CAN'T map (signed / external / unparseable) so the
  *  page's uploads must not be reclaimed. Recurses into nested blocks (e.g. a toggle's children). */
-function analyzePageMedia(content: string, prefix: string): { keys: Set<string>; ambiguous: boolean } {
+function analyzePageMedia(
+  content: string,
+  prefix: string
+): { keys: Set<string>; ambiguous: boolean } {
   const keys = new Set<string>()
   let blocks: unknown
   try {
@@ -233,7 +241,11 @@ export const reconcilePageMedia = internalMutation({
     const prefix = `${base.replace(/\/$/, '')}/`
     const graceCutoff = Date.now() - PAGE_MEDIA_GRACE_MS
 
-    const { page: rows, continueCursor, isDone } = await ctx.db
+    const {
+      page: rows,
+      continueCursor,
+      isDone
+    } = await ctx.db
       .query('pageUploads')
       .paginate({ cursor: cursor ?? null, numItems: RECONCILE_BATCH })
 

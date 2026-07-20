@@ -23,19 +23,14 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import {
   Check,
-  FileText,
   FolderOpen,
-  Hash,
-  Kanban,
   LockSimple,
-  PenNib,
   MicrophoneSlash,
   PlugsConnected,
   PencilSimple,
   Plus,
   Scribble,
   Sliders,
-  SpeakerHigh,
   Trash,
   VideoCamera
 } from '@phosphor-icons/react'
@@ -47,6 +42,7 @@ import { DeafenGlyph } from '@renderer/components/voice/deafen-glyph'
 import { ConfirmDialog } from '@renderer/components/common/confirm-dialog'
 import { ChannelSettingsDialog } from '@renderer/components/chat/channel-settings-dialog'
 import { PostingPolicyIcon } from '@renderer/components/chat/channel-policy-icon'
+import { ChannelKindIcon } from '@renderer/components/chat/channel-kind-icon'
 import {
   RowActionButton,
   SidebarGroup,
@@ -91,11 +87,9 @@ function initialsOf(name: string): string {
 }
 
 function channelIcon(kind: string, className: string): React.JSX.Element {
-  if (kind === 'voice') return <SpeakerHigh className={className} />
-  if (kind === 'page') return <FileText className={className} />
-  if (kind === 'kanban') return <Kanban className={className} />
-  if (kind === 'whiteboard') return <PenNib className={className} />
-  return <Hash className={className} />
+  // Single-sourced through `ChannelKindIcon` so a new kind can't render one glyph in the
+  // sidebar and another in the header / `#` autocomplete.
+  return <ChannelKindIcon kind={kind} className={className} />
 }
 
 /** Convex-backed sidebar for real workspaces: switcher + grouped channel list
@@ -388,7 +382,11 @@ export function RealChannelSidebar({ serverId }: { serverId: string }): React.JS
               if (!g) return null
               return (
                 <SortableGroup key={gid} id={gid}>
-                  <ChannelGroup group={g} onAddChannel={() => setCreateIn({ groupId: g._id })}>
+                  <ChannelGroup
+                    group={g}
+                    onAddChannel={() => setCreateIn({ groupId: g._id })}
+                    onCreateGroup={() => setNewGroup('')}
+                  >
                     <SortableContext
                       items={buckets[gid] ?? []}
                       strategy={verticalListSortingStrategy}
@@ -893,10 +891,12 @@ function VoiceParticipants({
 function ChannelGroup({
   group,
   onAddChannel,
+  onCreateGroup,
   children
 }: {
   group: Doc<'channelGroups'>
   onAddChannel: () => void
+  onCreateGroup: () => void
   children: React.ReactNode
 }): React.JSX.Element {
   const rename = useMutation(api.groups.rename)
@@ -911,6 +911,7 @@ function ChannelGroup({
         await remove({ groupId: group._id })
       }}
       onAddChannel={onAddChannel}
+      onCreateGroup={onCreateGroup}
     >
       {children}
     </SidebarGroup>

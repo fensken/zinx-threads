@@ -1,10 +1,14 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useState } from 'react'
+import { Question } from '@phosphor-icons/react'
 import { useLocalStore, type LocalChannel } from '@renderer/store/local-store'
 import { SidebarToggle } from '@renderer/components/layout/sidebar-toggle'
 import { ChannelKindIcon } from '@renderer/components/chat/channel-kind-icon'
+import { ChannelHelpDialog } from '@renderer/components/chat/channel-help-dialog'
 import { EditableChannelName } from '@renderer/components/chat/editable-channel-name'
+import { IconButton } from '@renderer/components/common/icon-button'
 import { Spinner } from '@renderer/components/ui/spinner'
 import { LocalBoardView } from '@renderer/components/local/local-board-view'
+import { LocalDatabaseView } from '@renderer/components/local/local-database-view'
 
 // BlockNote (~900kB) and Excalidraw (~1MB) are large chunks — only load them for the
 // channel kinds that use them (mirrors the online lazy split).
@@ -23,6 +27,7 @@ const LocalWhiteboardView = lazy(() =>
  *  online `RealChannelHeader`) + the page editor or the board. */
 export function LocalChannelView({ channel }: { channel: LocalChannel }): React.JSX.Element {
   const rename = useLocalStore((state) => state.renameChannel)
+  const [helpOpen, setHelpOpen] = useState(false)
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-card">
@@ -38,7 +43,20 @@ export function LocalChannelView({ channel }: { channel: LocalChannel }): React.
           }
           onRename={(name) => rename(channel.id, name)}
         />
+        <IconButton
+          label="About this channel"
+          className="ml-auto"
+          onClick={() => setHelpOpen(true)}
+        >
+          <Question className="size-5" />
+        </IconButton>
       </header>
+      <ChannelHelpDialog
+        channel={{ kind: channel.kind }}
+        canManage
+        open={helpOpen}
+        onOpenChange={setHelpOpen}
+      />
 
       {channel.kind === 'page' ? (
         <Suspense
@@ -60,6 +78,8 @@ export function LocalChannelView({ channel }: { channel: LocalChannel }): React.
         >
           <LocalWhiteboardView key={channel.id} channelId={channel.id} />
         </Suspense>
+      ) : channel.kind === 'database' ? (
+        <LocalDatabaseView key={channel.id} channelId={channel.id} />
       ) : (
         <LocalBoardView key={channel.id} channelId={channel.id} />
       )}

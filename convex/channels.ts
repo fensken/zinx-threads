@@ -11,9 +11,12 @@ import {
 } from './lib/auth'
 import { internal } from './_generated/api'
 import { listRealChannels } from './lib/channels'
+import { recordAudit } from './lib/audit'
 import { getMyChannelIds, visibleChannels } from './lib/channelMembers'
 import { DEFAULT_CHANNEL } from './lib/demoSeed'
 import { seedBoardColumns } from './lib/boardSeed'
+import { seedDatabase } from './lib/databaseSeed'
+import { seedForm } from './lib/formSeed'
 
 /** A `groupId` must belong to the same workspace as the channel it's attached to.
  *  Nothing else re-checks this: `groups.remove` only re-parents channels whose
@@ -36,7 +39,9 @@ const channelKind = v.union(
   v.literal('voice'),
   v.literal('page'),
   v.literal('kanban'),
-  v.literal('whiteboard')
+  v.literal('whiteboard'),
+  v.literal('database'),
+  v.literal('form')
 )
 
 /** Channels in a workspace (by slug), ordered. Null-safe: [] if not a member. */
@@ -158,10 +163,26 @@ export const create = mutation({
       })
     }
     // A board opens with the default columns rather than a blank canvas.
-    // (`page` channels need no seeding — the editor just opens empty.)
+    // (`page`/`whiteboard` channels need no seeding — they just open empty.)
     if (kind === 'kanban') {
       await seedBoardColumns(ctx, { workspaceId, channelId, userId: user._id })
     }
+    // A database opens as a usable table (Name/Status/Notes + Grid & Board views).
+    if (kind === 'database') {
+      await seedDatabase(ctx, { channelId })
+    }
+    // A form opens as an editable starter form with a public submission link.
+    if (kind === 'form') {
+      await seedForm(ctx, { workspaceId, channelId, title: uniqueName })
+    }
+    await recordAudit(ctx, {
+      workspaceId,
+      actorId: user._id,
+      action: 'channel.created',
+      targetType: 'channel',
+      targetId: channelId as string,
+      summary: `Created ${visibility === 'private' ? 'private ' : ''}${kind} channel #${uniqueName}`
+    })
     return channelId
   }
 })
@@ -233,7 +254,18 @@ export const rename = mutation({
       clean,
       new Set(siblings.filter((c) => c._id !== channelId).map((c) => c.name))
     )
+    const previousName = channel.name
     await ctx.db.patch(channelId, { name: uniqueName })
+    if (uniqueName !== previousName) {
+      await recordAudit(ctx, {
+        workspaceId: channel.workspaceId,
+        actorId: user._id,
+        action: 'channel.renamed',
+        targetType: 'channel',
+        targetId: channelId as string,
+        summary: `Renamed channel #${previousName} to #${uniqueName}`
+      })
+    }
   }
 })
 
@@ -376,5 +408,13 @@ export const remove = mutation({
 
     await ctx.db.delete(channelId)
     await ctx.scheduler.runAfter(0, internal.cleanup.channel, { channelId })
+    await recordAudit(ctx, {
+      workspaceId: channel.workspaceId,
+      actorId: user._id,
+      action: 'channel.deleted',
+      targetType: 'channel',
+      targetId: channelId as string,
+      summary: `Deleted ${channel.kind} channel #${channel.name}`
+    })
   }
 })

@@ -10,6 +10,7 @@ import {
   type LocalBoard,
   type LocalChannel,
   type LocalData,
+  type LocalDatabase,
   type LocalGroup,
   type LocalWhiteboard,
   type LocalPage,
@@ -47,7 +48,8 @@ function emptyData(): LocalData {
     groups: [],
     pages: {},
     boards: {},
-    whiteboards: {}
+    whiteboards: {},
+    databases: {}
   }
 }
 
@@ -61,7 +63,8 @@ function dataOf(): LocalData {
     groups: s.groups,
     pages: s.pages,
     boards: s.boards,
-    whiteboards: s.whiteboards
+    whiteboards: s.whiteboards,
+    databases: s.databases
   }
 }
 
@@ -109,8 +112,9 @@ function readLegacy(): LocalData | null {
     groups: (state.groups ?? []).map((group) => ({ ...group, workspaceId })),
     pages: state.pages ?? {},
     boards: state.boards ?? {},
-    // v0 predates whiteboards entirely — there are none to carry over.
-    whiteboards: {}
+    // v0 predates whiteboards + databases entirely — there are none to carry over.
+    whiteboards: {},
+    databases: {}
   }
 }
 
@@ -171,16 +175,17 @@ function parseSnapshot(snapshot: OfflineSnapshot): LocalData {
       data.groups.push({ ...group, workspaceId: ws.id })
     }
     for (const [rel, content] of Object.entries(ws.files)) {
-      const match = rel.match(/^(pages|boards|whiteboards)\/(.+)\.json$/)
+      const match = rel.match(/^(pages|boards|whiteboards|databases)\/(.+)\.json$/)
       if (!match) continue
-      const parsed = tryParse<LocalPage & LocalBoard & LocalWhiteboard>(content)
+      const parsed = tryParse<LocalPage & LocalBoard & LocalWhiteboard & LocalDatabase>(content)
       if (!parsed) {
         console.error(`[offline] skipping corrupt file ${ws.id}/${rel}`)
         continue
       }
-      // All three are keyed by the CHANNEL's id — the file name IS the channel id.
+      // All are keyed by the CHANNEL's id — the file name IS the channel id.
       if (match[1] === 'pages') data.pages[match[2]] = parsed
       else if (match[1] === 'whiteboards') data.whiteboards[match[2]] = parsed
+      else if (match[1] === 'databases') data.databases[match[2]] = parsed
       else data.boards[match[2]] = parsed
     }
   }
@@ -231,6 +236,10 @@ function buildFileMap(data: LocalData): Map<string, string> {
       const whiteboard = data.whiteboards[channel.id]
       if (whiteboard) {
         map.set(`${ws.id}/whiteboards/${channel.id}.json`, JSON.stringify(whiteboard, null, 2))
+      }
+      const database = data.databases[channel.id]
+      if (database) {
+        map.set(`${ws.id}/databases/${channel.id}.json`, JSON.stringify(database, null, 2))
       }
     }
   }

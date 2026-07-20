@@ -34,10 +34,12 @@ export function collectWorkspaceExport(workspaceId: string): LocalWorkspaceExpor
   const pages: LocalWorkspaceExport['pages'] = {}
   const boards: LocalWorkspaceExport['boards'] = {}
   const whiteboards: LocalWorkspaceExport['whiteboards'] = {}
+  const databases: NonNullable<LocalWorkspaceExport['databases']> = {}
   for (const channel of channels) {
     if (state.pages[channel.id]) pages[channel.id] = state.pages[channel.id]
     if (state.boards[channel.id]) boards[channel.id] = state.boards[channel.id]
     if (state.whiteboards[channel.id]) whiteboards[channel.id] = state.whiteboards[channel.id]
+    if (state.databases[channel.id]) databases[channel.id] = state.databases[channel.id]
   }
 
   return {
@@ -57,7 +59,8 @@ export function collectWorkspaceExport(workspaceId: string): LocalWorkspaceExpor
       .map((g) => ({ id: g.id, name: g.name, order: g.order })),
     pages,
     boards,
-    whiteboards
+    whiteboards,
+    databases
   }
 }
 
@@ -78,6 +81,9 @@ export function buildExportZip(payload: LocalWorkspaceExport): Uint8Array {
     files[`boards/${id}.json`] = pretty(board)
   for (const [id, wb] of Object.entries(payload.whiteboards)) {
     files[`whiteboards/${id}.json`] = pretty(wb)
+  }
+  for (const [id, db] of Object.entries(payload.databases ?? {})) {
+    files[`databases/${id}.json`] = pretty(db)
   }
   return zipSync(files, { level: 6 })
 }
@@ -132,12 +138,14 @@ export async function readWorkspaceZip(file: File): Promise<LocalWorkspaceExport
     const pages: LocalWorkspaceExport['pages'] = {}
     const boards: LocalWorkspaceExport['boards'] = {}
     const whiteboards: LocalWorkspaceExport['whiteboards'] = {}
+    const databases: NonNullable<LocalWorkspaceExport['databases']> = {}
     for (const [path, data] of Object.entries(unzipped)) {
-      const match = path.match(/^(pages|boards|whiteboards)\/(.+)\.json$/)
+      const match = path.match(/^(pages|boards|whiteboards|databases)\/(.+)\.json$/)
       if (!match) continue
       const parsed = JSON.parse(strFromU8(data))
       if (match[1] === 'pages') pages[match[2]] = parsed
       else if (match[1] === 'boards') boards[match[2]] = parsed
+      else if (match[1] === 'databases') databases[match[2]] = parsed
       else whiteboards[match[2]] = parsed
     }
 
@@ -149,7 +157,8 @@ export async function readWorkspaceZip(file: File): Promise<LocalWorkspaceExport
       groups: meta.groups,
       pages,
       boards,
-      whiteboards
+      whiteboards,
+      databases
     }
   } catch {
     return null

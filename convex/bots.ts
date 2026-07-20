@@ -3,6 +3,7 @@ import { action, internalMutation, mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
 import type { Id } from './_generated/dataModel'
 import { getChannelAccess, getCurrentUser, getMembership, requireUser } from './lib/auth'
+import { recordAudit } from './lib/audit'
 import { mintToken } from './lib/tokens'
 import { postMessageInChannel } from './lib/post'
 import { colorFor } from './users'
@@ -99,6 +100,14 @@ export const provision = internalMutation({
       botId,
       createdAt: now
     })
+    await recordAudit(ctx, {
+      workspaceId,
+      actorId: user._id,
+      action: 'bot.created',
+      targetType: 'bot',
+      targetId: botId as string,
+      summary: `Created bot "${name}"`
+    })
     return botId
   }
 })
@@ -179,6 +188,14 @@ export const remove = mutation({
     await ctx.scheduler.runAfter(0, internal.cleanup.member, {
       workspaceId: bot.workspaceId,
       userId: bot.userId
+    })
+    await recordAudit(ctx, {
+      workspaceId: bot.workspaceId,
+      actorId: user._id,
+      action: 'bot.removed',
+      targetType: 'bot',
+      targetId: botId as string,
+      summary: `Removed bot "${bot.name}"`
     })
   }
 })

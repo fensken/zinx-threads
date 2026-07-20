@@ -36,6 +36,11 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // noticed. The burst covers dragging a folder of screenshots into the composer.
   upload: { kind: 'token bucket', rate: 60, period: MINUTE, capacity: 30 },
 
+  // Public FORM submissions are keyed by the form's token (there's no user), so this caps
+  // how fast ANY one form can be filled — a spam guard on an endpoint anonymous callers
+  // reach. Generous for a real form drive, protective against a script hammering our DB.
+  formSubmit: { kind: 'token bucket', rate: 60, period: MINUTE, capacity: 30 },
+
   // Every API/MCP/bot **write** (create/edit/delete channel · event · task · column ·
   // page, react, mark-read) spends a shared per-token budget, so an automation can't
   // hammer creates and pile up rows/channels. Generous enough for legitimate scripting

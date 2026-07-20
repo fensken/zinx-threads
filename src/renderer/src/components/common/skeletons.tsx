@@ -375,3 +375,81 @@ export function WorkspaceShellSkeleton(): React.JSX.Element {
     </div>
   )
 }
+
+// ── Database (data table) ─────────────────────────────────────────────────────
+
+/** A `database` channel — the view-tabs bar + a toolbar + a grid (header row + a few
+ *  data rows), so the swap to the real table doesn't move the tabs or toolbar. */
+export function DatabaseSkeleton(): React.JSX.Element {
+  const cols = ['w-44', 'w-32', 'w-40', 'w-28']
+  return (
+    <div aria-hidden className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {/* View tabs */}
+      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5">
+        <Skeleton className="h-6 w-16 rounded-md" />
+        <Skeleton className="h-6 w-16 rounded-md" />
+      </div>
+      {/* Toolbar */}
+      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5">
+        <Skeleton className="h-8 w-56 rounded-md" />
+        <Skeleton className="h-4 w-16" />
+      </div>
+      {/* Header row */}
+      <div className="flex shrink-0 border-b">
+        <Skeleton className="mx-2 my-2 h-4 w-4" />
+        {cols.map((w, i) => (
+          <div key={i} className="flex items-center border-l px-2 py-2">
+            <Skeleton className={cn('h-3.5', w)} />
+          </div>
+        ))}
+      </div>
+      {/* Data rows */}
+      <div className="min-h-0 flex-1 space-y-px overflow-hidden">
+        {Array.from({ length: 10 }).map((_, r) => (
+          <div key={r} className="flex border-b">
+            <Skeleton className="mx-2 my-2.5 h-3.5 w-4" />
+            {cols.map((_w, c) => (
+              <div key={c} className="flex items-center border-l px-2 py-2.5">
+                <Skeleton
+                  className="h-3"
+                  style={{ width: pick(['70%', '45%', '58%', '38%'], r + c) }}
+                />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Form ──────────────────────────────────────────────────────────────────────
+
+/** A `form` channel — the fillable form (title + a few labelled fields + a submit
+ *  button), centred at the page-channel width, so the swap doesn't shift the layout.
+ *  Managers get a tabs bar (Preview/Build/Responses) above it once loaded, so their
+ *  skeleton reserves that row too — else the content jumps down ~37px on load. */
+export function FormSkeleton({ withTabs = false }: { withTabs?: boolean }): React.JSX.Element {
+  return (
+    <div aria-hidden className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      {withTabs ? (
+        <div className="flex shrink-0 items-center gap-3 border-b px-3 py-1.5">
+          <Skeleton className="h-6 w-20" />
+          <Skeleton className="h-6 w-14" />
+          <Skeleton className="h-6 w-28" />
+        </div>
+      ) : null}
+      <div className="mx-auto w-full max-w-3xl space-y-5 px-6 py-8">
+        <Skeleton className="h-7 w-1/2" />
+        <Skeleton className="h-3.5 w-3/4" />
+        {['w-24', 'w-20', 'w-28'].map((w, i) => (
+          <div key={i} className="space-y-1.5">
+            <Skeleton className={cn('h-3', w)} />
+            <Skeleton className="h-9 w-full rounded-md" />
+          </div>
+        ))}
+        <Skeleton className="h-9 w-full rounded-md" />
+      </div>
+    </div>
+  )
+}

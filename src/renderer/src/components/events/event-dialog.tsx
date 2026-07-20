@@ -39,7 +39,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@renderer/components/ui/select'
-import { Textarea } from '@renderer/components/ui/textarea'
+import { DescriptionEditor } from '@renderer/components/common/description-editor'
 import { errorMessage } from '@renderer/lib/convex-error'
 import {
   detectTimeZone,
@@ -448,14 +448,13 @@ export function EventDialog({
             </div>
           </Field>
 
-          <Field icon={TextAlignLeft} label="Description" htmlFor="event-description" optional>
-            <Textarea
-              id="event-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+          <Field icon={TextAlignLeft} label="Description" optional>
+            {/* The app's ONE rich description editor (same as kanban tasks) — Markdown with
+                `/` commands, `@` mentions and `#` channels. */}
+            <DescriptionEditor
+              initialMarkdown={description}
+              onChange={setDescription}
               placeholder="What's this about?"
-              rows={3}
-              maxLength={2000}
             />
           </Field>
         </form>

@@ -32,3 +32,15 @@ $ pnpm build:mac
 # For Linux
 $ pnpm build:linux
 ```
+
+## License
+
+Licensed under the [Apache License, Version 2.0](./LICENSE). You may use, modify,
+and distribute this software — including commercially — provided you retain the
+copyright and license notices (see [`NOTICE`](./NOTICE)).
+
+**"Zinx Threads" and its logo are trademarks** and are not covered by the Apache
+License: a fork may use the code, but not the name or brand.
+
+Building a commercial product on this and want to talk? Reach out:
+<developer@ecobees.net>.

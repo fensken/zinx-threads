@@ -43,4 +43,4 @@ copyright and license notices (see [`NOTICE`](./NOTICE)).
 License: a fork may use the code, but not the name or brand.
 
 Building a commercial product on this and want to talk? Reach out:
-<developer@ecobees.net>.
+<shardul.gautam123@gmail.com>.

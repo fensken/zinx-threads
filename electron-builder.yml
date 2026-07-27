@@ -28,9 +28,11 @@ win:
   # auto-update work: NSIS refuses to apply an update whose publisher doesn't match the installed
   # app, and SmartScreen drops the "unknown publisher" prompt. See RELEASING.md.
   #
-  # `publisherName` must match the certificate's subject CN *exactly* — set it once the cert is
-  # issued (a mismatch breaks the update signature check, which is worse than leaving it unset:
-  # electron-builder derives it from the cert when absent).
+  # ⚠ LEAVE `publisherName` UNSET UNTIL THE BUILD IS ACTUALLY SIGNED. electron-updater only
+  # verifies the Windows signature when this is present — absent, it skips the check, which is
+  # exactly why unsigned Windows builds still auto-update. Setting it on an unsigned build turns
+  # verification on and makes every update fail its own check. When the cert exists, set this to
+  # the certificate's subject CN *exactly*; a mismatch has the same effect.
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}

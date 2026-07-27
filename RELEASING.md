@@ -19,10 +19,18 @@ an installer after the first one.
 > only the first-install medium. Both architectures are built because an arm64 Mac cannot fall back
 > to an x64 update.
 
-> ⚠ **Signing is what makes auto-update work.** Squirrel (macOS) and NSIS (Windows) refuse to apply
-> an update that isn't signed, or whose publisher doesn't match the installed app. Unsigned builds
-> still install by hand, but they will never self-update, and macOS Gatekeeper blocks first launch
-> (right-click → **Open**) while Windows shows a SmartScreen "unknown publisher" prompt.
+> **What actually needs signing.** Only macOS. Squirrel.Mac verifies that an update's code signature
+> matches the running app's, and Gatekeeper blocks unnotarized apps — so an unsigned macOS build
+> installs (right-click → **Open**) but can never self-update.
+>
+> **Windows and Linux self-update fine unsigned.** electron-updater only verifies the Windows
+> signature when `win.publisherName` is set; with it absent, verification is skipped. The only cost
+> is a SmartScreen "unknown publisher" prompt on the **first** install — every update after that is
+> silent. Linux has no signature check at all.
+>
+> ⚠ **Corollary: do NOT set `win.publisherName` until the build is actually signed.** Setting it
+> turns verification ON, and an unsigned build then fails its own update check — you'd break
+> auto-update by adding what looks like metadata.
 
 ## Prerequisites (once)
 

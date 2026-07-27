@@ -52,6 +52,11 @@ mac:
   # the environment — either `APPLE_API_KEY` + `APPLE_API_KEY_ID` + `APPLE_API_ISSUER` (App Store
   # Connect key, best for CI) or `APPLE_ID` + `APPLE_APP_SPECIFIC_PASSWORD` + `APPLE_TEAM_ID`.
   notarize: true
+  # Name the mac artifacts like the Windows/Linux ones (`zinx-threads-…`) instead of the default
+  # `${productName}-…`, which yields "Zinx Threads-0.0.1-beta.1-arm64-mac.zip" — spaces and all.
+  # The ZIP is the file the auto-updater fetches, so its name ends up in a download URL; keeping
+  # it space-free avoids a whole class of encoding papercuts for zero cost.
+  artifactName: ${name}-${version}-${arch}-mac.${ext}
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
     - NSMicrophoneUsageDescription: Application requests access to the device's microphone.

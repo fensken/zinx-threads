@@ -2,7 +2,7 @@
 import { convexTest } from 'convex-test'
 import { register as registerRateLimiter } from '@convex-dev/rate-limiter/test'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api } from './_generated/api'
+import { api, internal } from './_generated/api'
 import type { Id } from './_generated/dataModel'
 import schema from './schema'
 
@@ -836,5 +836,93 @@ describe('silent messages', () => {
     // …but the silent message is really there and still bolds the channel.
     expect(entry?.hasUnread).toBe(true)
     expect(await asBob.query(api.messages.listByChannel, { channelId })).toHaveLength(2)
+  })
+})
+
+describe('form channels', () => {
+  // Fake timers so `finishAllScheduledFunctions` can drive the `runAfter(0)` action that
+  // replaces a freshly-seeded form's placeholder token.
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  /** A form channel in Alice's workspace, plus its public token. */
+  async function setupForm() {
+    const base = await setupOwner()
+    const channelId = await base.asAlice.mutation(api.channels.create, {
+      workspaceId: base.workspaceId,
+      name: 'signup',
+      kind: 'form'
+    })
+    const data = await base.asAlice.query(api.forms.getByChannel, { channelId })
+    return { ...base, channelId, token: data!.form.publicToken }
+  }
+
+  it('counts responses without reading them', async () => {
+    const { t, asAlice, channelId, token } = await setupForm()
+
+    // The cap check must not scan the response rows — that read grows with every submission
+    // and would eventually exceed a transaction's document limit, wedging the form shut. The
+    // counter is the mechanism, so assert it tracks submissions exactly.
+    await t.mutation(api.forms.submit, { token, values: { name: 'First' } })
+    await t.mutation(api.forms.submit, { token, values: { name: 'Second' } })
+
+    const after = await asAlice.query(api.forms.getByChannel, { channelId })
+    expect(after?.responseCount).toBe(2)
+    expect(after?.responses).toHaveLength(2)
+
+    // Deleting one decrements it, or repeated add/delete cycles would strand the form at its
+    // cap with nothing in it.
+    await asAlice.mutation(api.forms.deleteResponse, { responseId: after!.responses[0]._id })
+    const pruned = await asAlice.query(api.forms.getByChannel, { channelId })
+    expect(pruned?.responseCount).toBe(1)
+    expect(pruned?.responses).toHaveLength(1)
+  })
+
+  it('replaces the seeded link with a strong one, and never re-weakens a rotated link', async () => {
+    const { t, asAlice, channelId, token } = await setupForm()
+
+    // Channel creation is a mutation and can't reach a secure RNG, so it mints a placeholder
+    // and schedules an action to overwrite it. Until that runs the token is the placeholder.
+    expect(token.startsWith('seed')).toBe(true)
+    await t.finishAllScheduledFunctions(vi.runAllTimers)
+
+    const strengthened = (await asAlice.query(api.forms.getByChannel, { channelId }))!.form
+      .publicToken
+    expect(strengthened.startsWith('seed')).toBe(false)
+    expect(strengthened).not.toBe(token)
+    // The old link is dead — a rotated token must not keep working.
+    expect(await t.query(api.forms.publicGet, { token })).toBeNull()
+    expect(await t.query(api.forms.publicGet, { token: strengthened })).not.toBeNull()
+
+    // A hand-rotated link must survive a late-running strengthen action (it only ever upgrades
+    // the placeholder), or rotating would silently hand the link back to whoever had the old one.
+    await t.run(async (ctx) => {
+      const form = await ctx.db
+        .query('forms')
+        .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+        .unique()
+      await ctx.db.patch(form!._id, { publicToken: 'rotated-by-hand' })
+      await ctx.scheduler.runAfter(0, internal.forms.strengthenToken, { formId: form!._id })
+    })
+    await t.finishAllScheduledFunctions(vi.runAllTimers)
+    const final = (await asAlice.query(api.forms.getByChannel, { channelId }))!.form.publicToken
+    expect(final).toBe('rotated-by-hand')
+  })
+
+  it('hides the questions from someone who may not answer', async () => {
+    const { t, asAlice, channelId } = await setupForm()
+    await t.finishAllScheduledFunctions(vi.runAllTimers)
+    await asAlice.mutation(api.forms.saveForm, { channelId, audience: 'workspace' })
+    const token = (await asAlice.query(api.forms.getByChannel, { channelId }))!.form.publicToken
+
+    // A stranger with the link sees the form exists but not what it asks — and can't submit.
+    const asMallory = t.withIdentity(identityOf('user-mallory'))
+    await asMallory.mutation(api.users.store, { email: 'mallory@example.com', name: 'Mallory' })
+    const seen = await asMallory.query(api.forms.publicGet, { token })
+    expect(seen?.access).toBe('need-member')
+    expect(seen?.fields).toEqual([])
+    await expect(
+      asMallory.mutation(api.forms.submit, { token, values: { name: 'sneaky' } })
+    ).rejects.toThrow()
   })
 })

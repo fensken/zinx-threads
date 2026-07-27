@@ -121,11 +121,17 @@ const api = {
   /** Unread count on the dock (macOS) / taskbar (Linux). A no-op on Windows. */
   setBadgeCount: (count: number): Promise<void> => ipcRenderer.invoke('set-badge-count', count),
 
-  /** In-app auto-update state for the title-bar "Update available" badge (see
-   *  src/main/updater.ts). `getState` on mount, then subscribe via `onStateChange`;
-   *  `install` restarts into the staged update (Windows/Linux). */
+  /** In-app auto-update (see src/main/updater.ts). The app downloads and installs updates
+   *  itself — nothing is ever downloaded by hand. `getState` on mount, then subscribe via
+   *  `onStateChange`; `install` relaunches into the staged update. */
   updates: {
     getState: (): Promise<UpdateState> => ipcRenderer.invoke('update:get-state'),
+    /** Re-check now (Settings → "Check for updates"). Resolves with the resulting state. */
+    check: (): Promise<UpdateState> => ipcRenderer.invoke('update:check'),
+    /** Start/retry the background download. Normally automatic; this makes the badge
+     *  actionable in the transient "available" phase and after a failure. */
+    download: (): Promise<UpdateState> => ipcRenderer.invoke('update:download'),
+    /** Relaunch into the staged update. Resolves false when nothing is staged. */
     install: (): Promise<boolean> => ipcRenderer.invoke('update:install'),
     onStateChange: (handler: (state: UpdateState) => void): (() => void) => {
       const listener = (_event: IpcRendererEvent, state: UpdateState): void => handler(state)
@@ -157,12 +163,20 @@ export interface SystemPrefs {
   runInBackground: boolean
 }
 
+/** Where the in-app auto-update flow currently is (see src/main/updater.ts). */
+export type UpdatePhase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error'
+
 /** In-app auto-update state (title-bar badge). */
 export interface UpdateState {
-  available: boolean
-  downloaded: boolean
+  phase: UpdatePhase
+  /** The version currently running. */
+  currentVersion: string
+  /** The newer version, once known. */
   version: string | null
-  url: string | null
+  /** Download progress, 0–100 — only meaningful while downloading. */
+  percent: number
+  /** A short, user-facing reason when `phase === 'error'`. Never internals. */
+  message: string | null
 }
 
 /** A shareable screen or window (thumbnail is a data URL). */

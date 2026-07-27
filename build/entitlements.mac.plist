@@ -1,12 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS entitlements for the SIGNED, hardened-runtime build (electron-builder.yml → mac).
+
+  Signing turns the hardened runtime on, and the hardened runtime denies capabilities an unsigned
+  build simply has. The camera/microphone pair below is load-bearing, not boilerplate: without them
+  a signed build still shows the OS permission prompt, the user accepts, and voice/video fails
+  anyway — the LiveKit call joins with no tracks. The Info.plist usage strings
+  (electron-builder.yml → mac.extendInfo) are what the prompt *says*; these are what allow it.
+-->
 <plist version="1.0">
   <dict>
+    <!-- V8 JIT — required by Electron under the hardened runtime. -->
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
     <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+    <!-- Voice/video calls (LiveKit): getUserMedia's mic + camera. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.device.camera</key>
+    <true/>
+    <!-- Convex / WorkOS / LiveKit / R2 over the network, and the auto-updater's download. -->
+    <key>com.apple.security.network.client</key>
     <true/>
   </dict>
 </plist>

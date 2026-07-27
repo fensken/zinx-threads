@@ -255,16 +255,31 @@ export const platform = {
   },
 
   /**
-   * In-app auto-update (title-bar "Update available" badge, desktop only). Web has no
-   * updater — `getState` resolves "nothing available" and `onStateChange` is a no-op, so
-   * the badge simply never shows.
+   * In-app auto-update (title-bar badge, desktop only). The desktop app downloads and installs
+   * updates itself; there is no manual-download path. Web has no updater at all — the browser
+   * always serves the current build — so `getState` resolves `idle`, the mutators are no-ops and
+   * the badge never shows.
    */
   updates: {
+    /** True where an updater exists at all — lets settings hide the whole section on web. */
+    supported(): boolean {
+      return isElectron && Boolean(window.api?.updates)
+    },
     getState(): Promise<UpdateState> {
       if (isElectron && window.api?.updates) return window.api.updates.getState()
-      return Promise.resolve({ available: false, downloaded: false, version: null, url: null })
+      return Promise.resolve(IDLE_UPDATE_STATE)
     },
-    /** Restart into the staged update (Windows/Linux). Resolves false when nothing is staged. */
+    /** Re-check now. Resolves with the resulting state. */
+    check(): Promise<UpdateState> {
+      if (isElectron && window.api?.updates) return window.api.updates.check()
+      return Promise.resolve(IDLE_UPDATE_STATE)
+    },
+    /** Start/retry the background download. */
+    download(): Promise<UpdateState> {
+      if (isElectron && window.api?.updates) return window.api.updates.download()
+      return Promise.resolve(IDLE_UPDATE_STATE)
+    },
+    /** Relaunch into the staged update. Resolves false when nothing is staged. */
     install(): Promise<boolean> {
       if (isElectron && window.api?.updates) return window.api.updates.install()
       return Promise.resolve(false)
@@ -314,12 +329,29 @@ export interface SystemPrefs {
   runInBackground: boolean
 }
 
+/** Where the in-app auto-update flow currently is (see src/main/updater.ts). */
+export type UpdatePhase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error'
+
 /** In-app auto-update state (title-bar badge). */
 export interface UpdateState {
-  available: boolean
-  downloaded: boolean
+  phase: UpdatePhase
+  /** The version currently running. Empty on web, which has no app version of its own. */
+  currentVersion: string
+  /** The newer version, once known. */
   version: string | null
-  url: string | null
+  /** Download progress, 0–100 — only meaningful while downloading. */
+  percent: number
+  /** A short, user-facing reason when `phase === 'error'`. Never internals. */
+  message: string | null
+}
+
+/** "No update known" — what web resolves and what the badge treats as nothing to show. */
+const IDLE_UPDATE_STATE: UpdateState = {
+  phase: 'idle',
+  currentVersion: '',
+  version: null,
+  percent: 0,
+  message: null
 }
 
 /** The app draws its own title bar on desktop; the web build has the browser's chrome

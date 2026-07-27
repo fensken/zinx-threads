@@ -23,25 +23,55 @@ protocols:
       - zinx
 win:
   executableName: zinx-threads
-  # No `publisherName` here: an unsigned beta always shows "unknown publisher" in SmartScreen, and
-  # in electron-builder 26 the Windows publisher/signing options live under `win.signtoolOptions`
-  # (or Azure Trusted Signing) — set the publisher there together with the cert once signing is
-  # added. See RELEASING.md.
+  # Code signing is picked up from the environment (`CSC_LINK` = the .pfx as a path or base64,
+  # `CSC_KEY_PASSWORD` = its password), so no cert lives in this file. Signing is what makes
+  # auto-update work: NSIS refuses to apply an update whose publisher doesn't match the installed
+  # app, and SmartScreen drops the "unknown publisher" prompt. See RELEASING.md.
+  #
+  # `publisherName` must match the certificate's subject CN *exactly* — set it once the cert is
+  # issued (a mismatch breaks the update signature check, which is worse than leaving it unset:
+  # electron-builder derives it from the cert when absent).
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  # `entitlements` is the app itself; `entitlementsInherit` covers the helper processes (renderer,
+  # GPU, plugin). Both are needed — the renderer is the process that actually opens the mic/camera,
+  # and it inherits. See build/entitlements.mac.plist.
+  entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # Signing implies the hardened runtime; make it explicit so a config change can't silently drop it
+  # (an un-hardened build fails notarization).
+  hardenedRuntime: true
+  # Don't run Gatekeeper's own assessment during the build — the notarized+stapled artifact is what
+  # gets assessed on the user's machine, and an unnotarized local build would fail this and abort.
+  gatekeeperAssess: false
+  # Notarization: Apple must staple a ticket or Gatekeeper blocks first launch. Credentials come from
+  # the environment — either `APPLE_API_KEY` + `APPLE_API_KEY_ID` + `APPLE_API_ISSUER` (App Store
+  # Connect key, best for CI) or `APPLE_ID` + `APPLE_APP_SPECIFIC_PASSWORD` + `APPLE_TEAM_ID`.
+  notarize: true
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
     - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
-  notarize: false
+  # `zip` is REQUIRED for auto-update — Squirrel.Mac updates from a ZIP, never from a DMG. Shipping
+  # only the DMG produces a `latest-mac.yml` the updater can't use, and macOS silently never updates.
+  # Both arches are built because the update must match the running architecture: an arm64 Mac has no
+  # x64 build to fall back to in `latest-mac.yml`.
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
 dmg:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${name}-${version}-${arch}.${ext}
 linux:
   # AppImage (run-anywhere, just `chmod +x`) + deb. `snap` was dropped for beta — it needs
   # `snapcraft` on the build machine (absent on GitHub's `ubuntu-latest`) and a store login to be
@@ -59,8 +89,10 @@ npmRebuild: false
 # Distribution + auto-update = GitHub Releases. `electron-builder --publish always` (via the
 # release:* scripts) builds the installers AND uploads them + the `latest*.yml` update manifests
 # to a Release, which `electron-updater` (src/main/updater.ts) then reads. Needs a `GH_TOKEN`
-# env var with `repo` scope. Beta builds are UNSIGNED — they auto-update on Windows/Linux;
-# macOS refuses unsigned updates (re-download manually until signed).
+# env var with `repo` scope.
+#
+# ⚠ A **draft** release is invisible to electron-updater — it reads the *latest published* release.
+# Publishing the draft is what actually ships the update. See RELEASING.md.
 publish:
   provider: github
   owner: fensken

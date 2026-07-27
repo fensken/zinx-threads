@@ -13,21 +13,29 @@
     <meta name="theme-color" content="#e11d48" />
     <meta name="description" content="Zinx Threads — team chat, docs, and boards in one place." />
     <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
-         connect-src is widened for Convex (realtime over wss + https), WorkOS
-         AuthKit (token exchange), and Cloudflare R2 (the browser PUTs uploads
-         straight to R2's S3 endpoint via a signed URL); applies to both the
-         desktop and web builds. Uploaded images load from R2's public domain,
-         already covered by `img-src https:`; page-block **audio/video** load over
-         `media-src https:` (added for R2-hosted media); the page editor's **video-embed
-         block** and **world interactive objects** iframe external sites, allowed by
-         `frame-src https:` (embeds are sandboxed). `connect-src` also allows the LiveKit
-         signaling websocket — `ws://localhost:7880` for a local `livekit-server
-         --dev`; for a self-hosted prod server ADD its `wss://<your-livekit-host>`
-         here (WebRTC media itself is UDP and not CSP-gated). Narrow the wildcards
-         to your exact deployment / AuthKit / R2 / LiveKit domain in prod. -->
+         Applies to both the desktop and web builds.
+
+         connect-src is widened for Convex (realtime over wss + https), WorkOS AuthKit (token
+         exchange), Cloudflare R2 (the browser PUTs uploads straight to R2's S3 endpoint via a
+         signed URL), and the LiveKit signalling websocket — `ws://localhost:7880` for a local
+         `livekit-server --dev`; for a self-hosted prod server ADD its `wss://<your-livekit-host>`
+         here (WebRTC media itself is UDP and not CSP-gated). Uploaded images load from R2's public
+         domain, covered by `img-src https:`; page-block audio/video over `media-src https:`.
+
+         frame-src is EXACTLY the video-embed block's three hosts. It is the app's only iframe
+         (page-schema.tsx), and `toEmbedUrl` already refuses anything but these — so anything wider
+         is reach a member-authored page link could abuse, for nothing gained. Add a host here only
+         when a real embed needs it.
+
+         object-src/base-uri are pure hardening: no plugin content anywhere, and no injected
+         `<base>` can re-point the app's relative URLs.
+
+         NB `frame-ancestors` is ignored in a <meta> CSP — the WEB deployment must send it (or
+         X-Frame-Options) as a real HTTP header to stop the app being framed. Desktop is unaffected.
+         Narrow the remaining wildcards to your exact deployment/AuthKit/R2/LiveKit hosts in prod. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' blob: https:; frame-src https:; worker-src 'self' blob:; connect-src 'self' blob: https://*.convex.cloud wss://*.convex.cloud https://*.convex.site https://api.workos.com https://*.workos.com https://*.authkit.app https://cdn.jsdelivr.net https://*.r2.cloudflarestorage.com https://*.r2.dev ws://localhost:7880 wss://localhost:7880 wss://*.livekit.cloud https://*.livekit.cloud; form-action 'self' https://*.workos.com https://*.authkit.app"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' blob: https:; frame-src https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; object-src 'none'; base-uri 'self'; worker-src 'self' blob:; connect-src 'self' blob: https://*.convex.cloud wss://*.convex.cloud https://*.convex.site https://api.workos.com https://*.workos.com https://*.authkit.app https://cdn.jsdelivr.net https://*.r2.cloudflarestorage.com https://*.r2.dev ws://localhost:7880 wss://localhost:7880 wss://*.livekit.cloud https://*.livekit.cloud; form-action 'self' https://*.workos.com https://*.authkit.app"
     />
   </head>
 

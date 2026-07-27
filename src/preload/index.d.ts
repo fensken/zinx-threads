@@ -110,15 +110,24 @@ export interface ZinxApi {
   updates: UpdatesBridge
 }
 
+/** Where the in-app auto-update flow currently is (see src/main/updater.ts). */
+export type UpdatePhase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error'
+
 /** In-app auto-update state (title-bar badge). */
 export interface UpdateState {
-  available: boolean
-  downloaded: boolean
+  phase: UpdatePhase
+  /** The version currently running. */
+  currentVersion: string
   version: string | null
-  url: string | null
+  /** Download progress, 0–100 — only meaningful while downloading. */
+  percent: number
+  /** A short, user-facing reason when `phase === 'error'`. Never internals. */
+  message: string | null
 }
 export interface UpdatesBridge {
   getState: () => Promise<UpdateState>
+  check: () => Promise<UpdateState>
+  download: () => Promise<UpdateState>
   install: () => Promise<boolean>
   onStateChange: (handler: (state: UpdateState) => void) => () => void
 }

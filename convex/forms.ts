@@ -1,8 +1,9 @@
 import { ConvexError, v } from 'convex/values'
-import { mutation, query } from './_generated/server'
+import { action, internalAction, internalMutation, mutation, query } from './_generated/server'
+import { internal } from './_generated/api'
 import { getChannelAccess, getCurrentUser, getMembership, requireUser } from './lib/auth'
 import { rateLimiter } from './rateLimiter'
-import { makePublicToken } from './lib/publicToken'
+import { makeStrongPublicToken } from './lib/publicToken'
 import type { MutationCtx, QueryCtx } from './_generated/server'
 import type { Doc, Id } from './_generated/dataModel'
 
@@ -16,6 +17,9 @@ import type { Doc, Id } from './_generated/dataModel'
 
 const MAX_FIELDS = 40
 const MAX_RESPONSES = 50_000
+/** How many responses the owner's in-channel table loads. The true total comes from the
+ *  `formStats` counter, so this is a page size, not a ceiling on what was collected. */
+const RESPONSE_PAGE = 200
 const MAX_VALUE_LEN = 5_000
 const MAX_MULTI = 50
 const cellValue = v.union(v.string(), v.number(), v.boolean(), v.array(v.string()), v.null())
@@ -93,8 +97,14 @@ export const getByChannel = query({
       .query('formResponses')
       .withIndex('by_form', (q) => q.eq('formId', form._id))
       .order('desc')
-      .take(1000)
-    return { form, responses, responseCount: responses.length }
+      .take(RESPONSE_PAGE)
+    const stats = await ctx.db
+      .query('formStats')
+      .withIndex('by_form', (q) => q.eq('formId', form._id))
+      .unique()
+    // The counter is the true total; `responses` is only the newest page. Forms that predate
+    // the counter have no row yet, so fall back to what we loaded.
+    return { form, responses, responseCount: stats?.responseCount ?? responses.length }
   }
 })
 
@@ -132,15 +142,59 @@ export const saveForm = mutation({
   }
 })
 
-/** Rotate the public link (invalidates the old `/f/<token>`). */
-export const regenerateLink = mutation({
+/**
+ * Rotate the public link (invalidates the old `/f/<token>`).
+ *
+ * An **action**, not a mutation, because a link that gates a form's questions has to come from
+ * `crypto.getRandomValues` — see lib/publicToken.ts. The access check lives in the internal
+ * mutation below, where the database is.
+ */
+export const regenerateLink = action({
   args: { channelId: v.id('channels') },
-  handler: async (ctx, { channelId }) => {
+  handler: async (ctx, { channelId }): Promise<{ publicToken: string }> => {
+    const publicToken = makeStrongPublicToken()
+    await ctx.runMutation(internal.forms.setPublicToken, { channelId, publicToken })
+    return { publicToken }
+  }
+})
+
+/** Store a rotated token. Internal — the caller minted it in an action; this re-checks access. */
+export const setPublicToken = internalMutation({
+  args: { channelId: v.id('channels'), publicToken: v.string() },
+  handler: async (ctx, { channelId, publicToken }) => {
     const user = await requireUser(ctx)
     const form = await requireFormChannel(ctx, channelId, user._id)
-    const publicToken = makePublicToken()
     await ctx.db.patch(form._id, { publicToken, updatedAt: Date.now() })
-    return { publicToken }
+  }
+})
+
+/**
+ * Replace a freshly-seeded form's placeholder token with a real one. Scheduled by `seedForm`
+ * (see lib/publicToken.ts): channel creation is a mutation and so cannot generate a secure
+ * token itself. Runs immediately after the creating mutation commits — before any UI has had a
+ * chance to show a link — so no shareable link is ever the weak placeholder.
+ *
+ * No auth check: it's internal, it takes a form id the scheduler supplied, and it only replaces
+ * a secret with a stronger one.
+ */
+export const strengthenToken = internalAction({
+  args: { formId: v.id('forms') },
+  handler: async (ctx, { formId }) => {
+    await ctx.runMutation(internal.forms.applyStrongToken, {
+      formId,
+      publicToken: makeStrongPublicToken()
+    })
+  }
+})
+
+export const applyStrongToken = internalMutation({
+  args: { formId: v.id('forms'), publicToken: v.string() },
+  handler: async (ctx, { formId, publicToken }) => {
+    const form = await ctx.db.get(formId)
+    // Only ever upgrade the placeholder. If the owner already rotated the link by hand, that
+    // token is the real one and must win — this action must not clobber it.
+    if (!form || !form.publicToken.startsWith('seed')) return
+    await ctx.db.patch(formId, { publicToken })
   }
 })
 
@@ -152,6 +206,13 @@ export const deleteResponse = mutation({
     if (!response) return
     await requireFormChannel(ctx, response.channelId, user._id)
     await ctx.db.delete(responseId)
+    // Keep the counter honest, or deleting responses would eventually wedge the form against
+    // its cap with nothing in it. Floored at 0 for forms that predate the counter.
+    const stats = await ctx.db
+      .query('formStats')
+      .withIndex('by_form', (q) => q.eq('formId', response.formId))
+      .unique()
+    if (stats) await ctx.db.patch(stats._id, { responseCount: Math.max(0, stats.responseCount - 1) })
   }
 })
 
@@ -262,12 +323,13 @@ async function recordSubmission(
     else clean[field.id] = raw
   }
 
-  const count = (
-    await ctx.db
-      .query('formResponses')
-      .withIndex('by_form', (q) => q.eq('formId', form._id))
-      .take(MAX_RESPONSES)
-  ).length
+  // O(1) cap check — see the `formStats` comment in schema.ts for why the count is neither
+  // recomputed from the rows nor stored on the form document.
+  const stats = await ctx.db
+    .query('formStats')
+    .withIndex('by_form', (q) => q.eq('formId', form._id))
+    .unique()
+  const count = stats?.responseCount ?? 0
   if (count >= MAX_RESPONSES) throw new ConvexError('This form is no longer accepting responses')
 
   await ctx.db.insert('formResponses', {
@@ -277,6 +339,8 @@ async function recordSubmission(
     values: clean,
     submittedAt: Date.now()
   })
+  if (stats) await ctx.db.patch(stats._id, { responseCount: count + 1 })
+  else await ctx.db.insert('formStats', { formId: form._id, responseCount: 1 })
   return { confirmationMessage: form.confirmationMessage ?? 'Thanks — your response was recorded.' }
 }
 

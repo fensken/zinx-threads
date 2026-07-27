@@ -200,12 +200,19 @@ export const channel = internalMutation({
         .collect()
       for (const row of dbViews) await ctx.db.delete(row._id)
 
-      // Form channel — one row (responses drained above).
+      // Form channel — one row (responses drained above), plus its response counter.
       const form = await ctx.db
         .query('forms')
         .withIndex('by_channel', (q) => q.eq('channelId', channelId))
         .unique()
-      if (form) await ctx.db.delete(form._id)
+      if (form) {
+        const stats = await ctx.db
+          .query('formStats')
+          .withIndex('by_form', (q) => q.eq('formId', form._id))
+          .unique()
+        if (stats) await ctx.db.delete(stats._id)
+        await ctx.db.delete(form._id)
+      }
 
       // Cross-workspace shares of this channel (bounded by MAX_SHARE_GUESTS) — the
       // guests lose access with the channel. Their per-channel reads/notifications

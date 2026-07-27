@@ -28,6 +28,16 @@ export function isQuitting(): boolean {
   return quitting
 }
 
+/**
+ * Declare a quit *before* triggering one, for callers that don't go through `app.quit()` first.
+ * The updater needs this: `quitAndInstall` closes the window to apply the update, and with
+ * run-in-background on, the `close` handler would hide it to the tray instead — the app would keep
+ * running and the update would never be applied.
+ */
+export function markQuitting(): void {
+  quitting = true
+}
+
 /** Whether a window `close` should hide-to-tray instead of closing (run-in-background, not a real
  *  quit). Read by `createWindow`'s `close` handler. */
 export function shouldHideOnClose(): boolean {

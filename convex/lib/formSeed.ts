@@ -1,6 +1,7 @@
 import type { MutationCtx } from '../_generated/server'
 import type { Id } from '../_generated/dataModel'
-import { makePublicToken } from './publicToken'
+import { internal } from '../_generated/api'
+import { makeSeedToken } from './publicToken'
 
 /**
  * Seed a fresh `form` channel with a starter form (title + one required text field) and a
@@ -11,16 +12,19 @@ export async function seedForm(
   ctx: MutationCtx,
   { workspaceId, channelId, title }: { workspaceId: Id<'workspaces'>; channelId: Id<'channels'>; title: string }
 ): Promise<void> {
-  await ctx.db.insert('forms', {
+  const formId = await ctx.db.insert('forms', {
     workspaceId,
     channelId,
     title: title.trim() || 'Untitled form',
     fields: [{ id: 'name', name: 'Name', type: 'text', required: true }],
     requireSignIn: false,
     audience: 'public',
-    publicToken: makePublicToken(),
+    publicToken: makeSeedToken(),
     updatedAt: Date.now()
   })
+  // A mutation can't mint a secure token; this swaps the placeholder for a real one the moment
+  // this mutation commits. See lib/publicToken.ts.
+  await ctx.scheduler.runAfter(0, internal.forms.strengthenToken, { formId })
 }
 
 /** A richer starter form + one sample response — used only by `workspaces.create`, so the
@@ -57,9 +61,10 @@ export async function seedFormWithSamples(
     ],
     requireSignIn: false,
     audience: 'public',
-    publicToken: makePublicToken(),
+    publicToken: makeSeedToken(),
     updatedAt: Date.now()
   })
+  await ctx.scheduler.runAfter(0, internal.forms.strengthenToken, { formId })
   await ctx.db.insert('formResponses', {
     formId,
     channelId,
@@ -67,4 +72,7 @@ export async function seedFormWithSamples(
     values: { name: 'Sample response', rating: 'great', comments: 'Loving it so far!' },
     submittedAt: Date.now()
   })
+  // Seed the counter alongside the sample response — `getByChannel` reads the counter as the
+  // true total, so skipping this would show "0 responses" above a visible row.
+  await ctx.db.insert('formStats', { formId, responseCount: 1 })
 }

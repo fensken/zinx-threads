@@ -904,6 +904,22 @@ export default defineSchema({
     .index('by_form', ['formId'])
     .index('by_channel', ['channelId']),
 
+  // A form's response counter — deliberately its OWN table, not a field on `forms`.
+  //
+  // Two reasons, both load-bearing. (1) Counting by reading the rows is not viable: a submit
+  // that scans `by_form` to enforce the cap reads one document per existing response, so the
+  // last submission to a popular form would read tens of thousands of documents — and blow
+  // past a transaction's document limit long before reaching the cap, making the form
+  // permanently un-submittable. (2) The counter can't live on `forms` either, because
+  // `publicGet` reads that document and EVERY visitor of the public `/f/<token>` page
+  // subscribes to it — patching it per submit would re-run that query for all of them, so a
+  // survey blast would cost O(submissions × viewers). Same reasoning that moved
+  // `channels.lastMessageAt` into `channelActivity`.
+  formStats: defineTable({
+    formId: v.id('forms'),
+    responseCount: v.number()
+  }).index('by_form', ['formId']),
+
   // Who's coming. A row per (event, user) rather than an array on the event: RSVPs
   // are written one at a time, by different people, and the list grows.
   eventAttendees: defineTable({

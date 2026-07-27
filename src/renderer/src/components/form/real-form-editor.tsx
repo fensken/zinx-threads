@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { useMutation } from 'convex/react'
+import { useAction, useMutation } from 'convex/react'
 import { useQuery } from 'convex-helpers/react/cache/hooks'
 import { toast } from 'sonner'
 import {
@@ -199,7 +199,9 @@ function FormBuilder({
   track: (promise: Promise<unknown>) => Promise<unknown>
 }): React.JSX.Element {
   const save = useMutation(api.forms.saveForm)
-  const regenerate = useMutation(api.forms.regenerateLink)
+  // An action, not a mutation — the link is minted with `crypto.getRandomValues`, which a
+  // mutation can't use. See convex/lib/publicToken.ts.
+  const regenerate = useAction(api.forms.regenerateLink)
   const descTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const [fields, setFields] = useState<FormField[]>(form.fields)
   const [audience, setAudience] = useState<Audience>(

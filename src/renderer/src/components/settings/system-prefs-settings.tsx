@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { BRAND } from '@shared/brand'
-import { platform, type SystemPrefs } from '@renderer/lib/platform'
+import { platform, type SystemPrefs, type UpdateState } from '@renderer/lib/platform'
 import { Switch } from '@renderer/components/ui/switch'
 import { Spinner } from '@renderer/components/ui/spinner'
+import { Button } from '@renderer/components/ui/button'
 
 /**
  * "Startup & tray" — launch-at-startup + run-in-background (close-to-tray), Discord/Slack-style.
@@ -75,6 +76,86 @@ export function SystemPrefsSettings(): React.JSX.Element {
               )
           }}
         />
+      </div>
+      <UpdatesBlock />
+    </div>
+  )
+}
+
+/**
+ * "Updates" — the version you're on, and a manual re-check.
+ *
+ * The app updates itself in the background (see `src/main/updater.ts`), so this is deliberately
+ * *informational*: there is no "download" button because there is no manual download. It exists so
+ * the version is findable when reporting a bug, and so someone who has just been told a fix shipped
+ * can pull it now instead of waiting for the next 6-hourly check.
+ */
+function UpdatesBlock(): React.JSX.Element | null {
+  const [state, setState] = useState<UpdateState | null>(null)
+  const [checking, setChecking] = useState(false)
+
+  useEffect(() => {
+    if (!platform.updates.supported()) return
+    let alive = true
+    void platform.updates.getState().then((value) => {
+      if (alive) setState(value)
+    })
+    const unsubscribe = platform.updates.onStateChange(setState)
+    return () => {
+      alive = false
+      unsubscribe()
+    }
+  }, [])
+
+  const check = useCallback(() => {
+    setChecking(true)
+    void platform.updates
+      .check()
+      .then(setState)
+      .finally(() => setChecking(false))
+  }, [])
+
+  if (!platform.updates.supported() || !state) return null
+
+  const busy = checking || state.phase === 'checking'
+  // Only the terminal phases get a line of their own; `idle` after a check simply means up to date.
+  const status =
+    state.phase === 'downloading'
+      ? `Downloading ${state.version ?? 'update'}… ${state.percent}%`
+      : state.phase === 'ready'
+        ? `Version ${state.version} is ready — restart to apply it.`
+        : state.phase === 'available'
+          ? `Version ${state.version} is available and will download automatically.`
+          : state.phase === 'error'
+            ? (state.message ?? 'The last update check failed.')
+            : `${BRAND.productName} is up to date.`
+
+  return (
+    <div className="mt-6">
+      <h3 className="text-sm font-semibold">Updates</h3>
+      <p className="mb-3 text-xs text-muted-foreground">
+        {BRAND.productName} installs updates by itself — you never have to download one.
+      </p>
+      <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+        <span className="min-w-0">
+          <span className="block text-sm font-medium">Version {state.currentVersion}</span>
+          <span
+            className={`block text-xs ${
+              state.phase === 'error' ? 'text-destructive' : 'text-muted-foreground'
+            }`}
+          >
+            {busy ? 'Checking for updates…' : status}
+          </span>
+        </span>
+        {state.phase === 'ready' ? (
+          <Button size="sm" className="shrink-0" onClick={() => void platform.updates.install()}>
+            Restart now
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" className="shrink-0" disabled={busy} onClick={check}>
+            {busy ? <Spinner className="size-4" /> : 'Check for updates'}
+          </Button>
+        )}
       </div>
     </div>
   )

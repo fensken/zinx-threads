@@ -86,20 +86,6 @@ export default defineSchema({
     .index('by_key', ['key'])
     .index('by_created', ['createdAt']),
 
-  /** R2 keys of files uploaded INTO a page (image / video / audio / file blocks). A page
-   *  block stores only the file URL in its BlockNote doc — NOT the key — so, unlike a page
-   *  cover (tracked by `pages.coverKey`), there's nothing on the page row to reclaim on
-   *  delete. This is that missing back-reference: one row per upload, keyed by the page's
-   *  channel, written by `files.resolveUpload`. Deleting the page channel drains these and
-   *  frees the objects (`cleanup.channel`). A removed block's object lingers until the page
-   *  is deleted — the same lifetime as a message's attachments. */
-  pageUploads: defineTable({
-    channelId: v.id('channels'),
-    key: v.string(),
-    createdBy: v.id('users'),
-    createdAt: v.number()
-  }).index('by_channel', ['channelId']),
-
   workspaces: defineTable({
     name: v.string(),
     slug: v.string(),
@@ -258,9 +244,11 @@ export default defineSchema({
     kind: v.union(
       v.literal('chat'),
       v.literal('voice'),
-      v.literal('page'),
       v.literal('kanban'),
       v.literal('whiteboard'),
+      // A Notion-style block document — the channel IS the page. One `channelDocs` row
+      // holds the whole ProseMirror document; see that table.
+      v.literal('doc'),
       // An Airtable-style typed record set with multiple views (grid/kanban/calendar/
       // gallery). `kanban` is effectively one view of the same idea; this generalizes it.
       v.literal('database'),
@@ -572,32 +560,9 @@ export default defineSchema({
       filterFields: ['workspaceId', 'threadId']
     }),
 
-  // The document behind a `kind: 'page'` channel — one row per channel, created
-  // on first save. `content` is the BlockNote document serialized to JSON rather
-  // than modelled as Convex validators: the block shapes are BlockNote's, they
-  // change with its version, and nothing server-side reads inside them.
-  //
-  // Last-write-wins. Real multiplayer editing would need a CRDT (y.js) and is a
-  // separate project; today two people editing one page will clobber each other.
-  pages: defineTable({
-    workspaceId: v.id('workspaces'),
-    channelId: v.id('channels'),
-    title: v.string(),
-    icon: v.optional(v.string()), // emoji
-    cover: v.optional(v.string()), // `gradient:<key>` | `color:<hex>` | image URL
-    /** R2 object key when the cover is a user **upload** (`convex/files.ts`), so a
-     *  replace can delete the previous object. Absent for gradient/color/Unsplash/
-     *  link covers. */
-    coverKey: v.optional(v.string()),
-    coverY: v.optional(v.number()), // vertical focal point, 0–100
-    content: v.string(), // JSON: BlockNote `Block[]`
-    updatedAt: v.number(),
-    updatedBy: v.id('users')
-  }).index('by_channel', ['channelId']),
 
-  // The board behind a `kind: 'kanban'` channel. Unlike `pages.content` (an opaque
-  // BlockNote blob), a board's tasks are queried and reordered individually, so
-  // they get real rows.
+  // The board behind a `kind: 'kanban'` channel. A board's tasks are queried and
+  // reordered individually, so they get real rows rather than one opaque blob.
   kanbanColumns: defineTable({
     workspaceId: v.id('workspaces'),
     channelId: v.id('channels'),
@@ -621,6 +586,12 @@ export default defineSchema({
     checklist: v.array(v.object({ id: v.string(), content: v.string(), completed: v.boolean() })),
     dueDate: v.optional(v.string()), // ISO `YYYY-MM-DD`
     storyPoints: v.optional(v.number()),
+    /** How long this task is expected to take, in ms. A **cold** field: it changes only
+     *  when a human edits the card, so it belongs on the task document. It is the ONLY
+     *  time field allowed here — the *logged* total lives in `taskTimeTotals`, because
+     *  that changes every time anyone stops a timer and `boards.getByChannel` reads
+     *  every task document for every board viewer. */
+    estimateMs: v.optional(v.number()),
     order: v.number(),
     createdBy: v.id('users'),
     createdAt: v.number(),
@@ -628,6 +599,132 @@ export default defineSchema({
   })
     .index('by_channel', ['channelId'])
     .index('by_column_order', ['columnId', 'order']),
+
+  // ── Time tracking ───────────────────────────────────────────────────────────
+  //
+  // A live stopwatch, one row per (user, task). **Elapsed is computed, never stored**:
+  // `accumulatedMs + (now - segmentStartedAt)` while running. There is deliberately no
+  // `lastTickAt`, no heartbeat and no `elapsedMs` column — a per-second field on a
+  // subscribed row is a per-second invalidation, a per-second write conflict and
+  // per-second bandwidth, for a number the client can derive itself.
+  //
+  // Only its owner ever reads it (`timer.mine`, scoped `by_workspace_user`), so a
+  // start/stop has a fan-out of exactly one client. That is also why a running timer is
+  // NOT shown on the board: it would put this write on `boards.getByChannel`'s path.
+  timerStates: defineTable({
+    workspaceId: v.id('workspaces'),
+    userId: v.id('users'),
+    taskId: v.id('kanbanTasks'),
+    /** Denormalised from the task purely so the channel cascade can find these rows
+     *  (`cleanup.channel` has a channelId and no way back to the tasks it just
+     *  deleted). Never read for display. */
+    channelId: v.id('channels'),
+    status: v.union(v.literal('running'), v.literal('paused')),
+    /** When the CURRENT segment began. Moved forward by `trim` to drop idle time
+     *  without stopping the clock. */
+    segmentStartedAt: v.number(),
+    /** Time banked from previous segments. Only pause/stop/trim write it. */
+    accumulatedMs: v.number(),
+    note: v.optional(v.string()),
+    /** Set when something OTHER than the user stopped the clock, so the UI can say so
+     *  and offer Resume. Cleared by a manual resume. */
+    autoPausedAt: v.optional(v.number()),
+    autoPausedReason: v.optional(
+      v.union(v.literal('stale'), v.literal('sleep'), v.literal('lock'), v.literal('idle'))
+    )
+  })
+    .index('by_workspace_user', ['workspaceId', 'userId'])
+    .index('by_workspace_user_task', ['workspaceId', 'userId', 'taskId'])
+    .index('by_task', ['taskId'])
+    .index('by_channel', ['channelId'])
+    // The stale-timer cron reads `eq('status','running').lt('segmentStartedAt', cutoff)`
+    // — only the forgotten timers, never the whole table. Pausing sets `status` AND moves
+    // `segmentStartedAt`, so the row leaves this range and the batch always progresses.
+    .index('by_status_segment', ['status', 'segmentStartedAt']),
+
+  // The ledger. **Entries outlive their task, their board and their author** — that is
+  // the whole point of a timesheet — so the FKs are optional (a cascade nulls them) and
+  // the snapshots are not. Reads prefer the live document so renames propagate, and fall
+  // back to the snapshot when the `get` returns null, which makes "FK nulled" and
+  // "document deleted" the same code path.
+  timesheetEntries: defineTable({
+    workspaceId: v.id('workspaces'),
+    channelId: v.optional(v.id('channels')),
+    taskId: v.optional(v.id('kanbanTasks')),
+    /** Whose hours these are. NOT optional: a `users` row survives leaving a workspace,
+     *  so this stays resolvable. `userName` covers a hard account deletion. */
+    userId: v.id('users'),
+    taskTitle: v.string(),
+    channelName: v.string(),
+    userName: v.string(),
+    /** A UTC instant, never a wall-clock string — the same rule `events` follows. */
+    startedAt: v.number(),
+    /** What was LOGGED. This is the number that counts. */
+    durationMs: v.number(),
+    /** What the timer actually MEASURED. Kept beside `durationMs` forever so the gap
+     *  between tracked and logged stays visible instead of being silently overwritten. */
+    trackedMs: v.optional(v.number()),
+    source: v.union(v.literal('timer'), v.literal('manual')),
+    billable: v.optional(v.boolean()),
+    note: v.optional(v.string()),
+    edited: v.optional(v.boolean()),
+    editCount: v.optional(v.number()),
+    /** Soft delete. Active reads exclude it; the audit trail and the "show deleted" view
+     *  do not. Nothing here is ever hard-deleted except with its workspace. */
+    deletedAt: v.optional(v.number())
+  })
+    .index('by_workspace_started', ['workspaceId', 'startedAt'])
+    .index('by_workspace_user_started', ['workspaceId', 'userId', 'startedAt'])
+    .index('by_channel_started', ['channelId', 'startedAt'])
+    .index('by_task', ['taskId']),
+
+  // Append-only audit. Every edit and delete carries a MANDATORY human reason plus
+  // field-level before/after, and snapshots the editor's name so the trail still reads
+  // correctly after they leave the workspace. `restore` is here because a soft delete
+  // with no way back is a trap wearing safety goggles.
+  timesheetEntryEdits: defineTable({
+    workspaceId: v.id('workspaces'),
+    entryId: v.id('timesheetEntries'),
+    editorId: v.id('users'),
+    editorName: v.string(),
+    /** `create` is here because a **manual** entry needs a reason too: time typed in by
+     *  hand has no timer behind it, so the only record of why those hours exist is what
+     *  the person said at the time. A timer-logged entry gets no `create` row — the timer
+     *  itself is the evidence. */
+    kind: v.union(
+      v.literal('create'),
+      v.literal('edit'),
+      v.literal('delete'),
+      v.literal('restore')
+    ),
+    reason: v.string(),
+    at: v.number(),
+    changes: v.array(v.object({ field: v.string(), before: v.string(), after: v.string() }))
+  })
+    .index('by_entry', ['entryId'])
+    .index('by_workspace_at', ['workspaceId', 'at']),
+
+  // Logged time per task — deliberately its OWN table, not a field on `kanbanTasks`.
+  //
+  // Two reasons, both already precedented here. (1) Counting by reading the rows is not
+  // viable: rendering a 500-card board would mean 500 `by_task` scans per board read —
+  // the same call as `formStats`. (2) It cannot live on the task, because
+  // `boards.getByChannel` reads EVERY task document and every board viewer subscribes to
+  // it, so one person stopping a timer would re-run the whole board for everyone looking
+  // at it — the reasoning that moved `channels.lastMessageAt` into `channelActivity`.
+  //
+  // There is deliberately no workspace-wide total row: that would be a single hot
+  // document every log contends on. Workspace totals are summed from a bounded range.
+  taskTimeTotals: defineTable({
+    taskId: v.id('kanbanTasks'),
+    channelId: v.id('channels'),
+    workspaceId: v.id('workspaces'),
+    loggedMs: v.number(),
+    billableMs: v.number(),
+    entryCount: v.number()
+  })
+    .index('by_task', ['taskId'])
+    .index('by_channel', ['channelId']),
 
   // One row per (message, user, emoji) — the compound index makes the toggle a
   // single unique lookup (mirrors `_zinx`'s `chatReaction`).
@@ -768,6 +865,42 @@ export default defineSchema({
     elements: v.string(),
     /** Cheap "N shapes" for the UI without parsing the scene to count. */
     elementCount: v.number(),
+    updatedBy: v.id('users'),
+    updatedAt: v.number()
+  }).index('by_channel', ['channelId']),
+
+  // ── Doc channels (Notion-style block document) ─────────────────────────────
+  // One row per `kind: 'doc'` channel, created by the first real edit (not by opening
+  // the channel), exactly like `whiteboards`.
+  //
+  // `content` is a single JSON **string** — the TipTap/ProseMirror document
+  // (`{ type: 'doc', content: [...] }`) stringified. Last-write-wins, saved debounced
+  // from the client. It is deliberately opaque to the server: the node vocabulary is the
+  // editor's and changes with it, and nothing server-side reads inside a document (the
+  // one thing that does — `apiTools.get_doc` — walks it as plain JSON). Blocks are NOT
+  // rows: unlike a database's records or a board's tasks, a doc's blocks are only ever
+  // read and written as one document, so rows would buy nothing and cost a join.
+  channelDocs: defineTable({
+    workspaceId: v.id('workspaces'),
+    channelId: v.id('channels'),
+    content: v.string(),
+    /** The page title — the doc's own, separate from the channel name (renaming the
+     *  channel doesn't retitle the page, and vice versa: a channel name is a URL slug,
+     *  a page title is prose). Absent → the editor seeds it from the channel name. */
+    title: v.optional(v.string()),
+    /** An emoji, shown above the title (Notion's page icon). */
+    icon: v.optional(v.string()),
+    /** One string, encoding all three cover forms — `gradient:<key>`, `color:<#hex>`, or
+     *  a direct image URL. A single column rather than a value + a discriminator: the
+     *  form is recoverable from the prefix, and the value stays trivially portable.
+     *  See `components/doc/cover-data.ts` (mirrored client-side). */
+    cover: v.optional(v.string()),
+    /** Set only when the cover is an R2 upload, so replacing or clearing it can reclaim
+     *  the old object instead of leaking it. */
+    coverKey: v.optional(v.string()),
+    /** Vertical focal point (0-100) for an image cover. Meaningless for the gradient and
+     *  colour forms, which have nothing to reposition. */
+    coverY: v.optional(v.number()),
     updatedBy: v.id('users'),
     updatedAt: v.number()
   }).index('by_channel', ['channelId']),

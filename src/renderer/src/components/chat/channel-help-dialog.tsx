@@ -39,14 +39,14 @@ const HELP: Record<string, HelpEntry> = {
       'See who’s connected in the sidebar, with their mic / camera / share state'
     ]
   },
-  page: {
-    label: 'Page',
-    summary: 'A Notion-style document — rich text, media, and embeds, with a cover and icon.',
+  doc: {
+    label: 'Doc',
+    summary: 'A Notion-style document — rich text, media and embeds, with a cover and icon.',
     features: [
-      'Headings, lists, to-dos, quotes, callouts, code blocks (syntax-highlighted) and tables',
-      'Upload images, video, audio and files, or embed YouTube / Vimeo',
-      '@mention people and #channels inline; a table of contents tracks your headings',
-      'Autosaves as you type; add a cover image and an emoji icon'
+      'Type `/` for the block menu: headings, lists, to-dos, toggles, quotes, callouts, syntax-highlighted code, tables, columns and dividers',
+      'Upload images, video, audio and files, drop in a GIF, embed YouTube / Vimeo, or draw on an inline whiteboard',
+      '@mention people and #channels inline; select text for the formatting bar (colour, alignment, links)',
+      'A table of contents tracks your headings; add a cover image and an emoji icon. Autosaves as you type'
     ]
   },
   kanban: {

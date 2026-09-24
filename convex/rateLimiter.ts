@@ -41,6 +41,11 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // reach. Generous for a real form drive, protective against a script hammering our DB.
   formSubmit: { kind: 'token bucket', rate: 60, period: MINUTE, capacity: 30 },
 
+  // Writing time entries (stopping a timer, or a manual entry). Generous for someone
+  // catching up on a week of forgotten hours; protective against an API loop fabricating
+  // a ledger, which is the one thing here that produces a *billing* record.
+  logTime: { kind: 'token bucket', rate: 120, period: HOUR, capacity: 60 },
+
   // Every API/MCP/bot **write** (create/edit/delete channel · event · task · column ·
   // page, react, mark-read) spends a shared per-token budget, so an automation can't
   // hammer creates and pile up rows/channels. Generous enough for legitimate scripting

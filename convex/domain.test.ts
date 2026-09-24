@@ -926,3 +926,686 @@ describe('form channels', () => {
     ).rejects.toThrow()
   })
 })
+
+describe('doc channels', () => {
+  // Fake timers so `drainScheduled` can drive the `runAfter(0)` cleanup chain.
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  /** A doc channel in Alice's workspace. */
+  async function setupDoc() {
+    const base = await setupOwner()
+    const channelId = await base.asAlice.mutation(api.channels.create, {
+      workspaceId: base.workspaceId,
+      // NOT 'handbook' — the workspace seed already creates one, and `channels.create`
+      // would auto-suffix this to 'handbook-2'.
+      name: 'runbook',
+      kind: 'doc'
+    })
+    return { ...base, channelId }
+  }
+
+  const docOf = (nodes: unknown[]): string => JSON.stringify({ type: 'doc', content: nodes })
+  const paragraph = (text: string): unknown => ({
+    type: 'paragraph',
+    content: [{ type: 'text', text }]
+  })
+
+  it('is born from the first edit, and a no-op save does not rewrite it', async () => {
+    const { asAlice, channelId, t } = await setupDoc()
+
+    // Creating the channel must NOT create a row: an untouched doc costs nothing, and a
+    // seeded row would also be an editor-version-dependent guess at "empty".
+    const fresh = await asAlice.query(api.docs.getByChannel, { channelId })
+    expect(fresh?.content).toBeNull()
+    expect(fresh?.canWrite).toBe(true)
+
+    const body = docOf([paragraph('Hello')])
+    await asAlice.mutation(api.docs.save, { channelId, content: body })
+    const saved = await asAlice.query(api.docs.getByChannel, { channelId })
+    expect(saved?.content).toBe(body)
+    // The title defaults to the channel name for a doc created by typing.
+    expect(saved?.title).toBe('runbook')
+
+    // Re-saving the identical document must not bump `updatedAt` — a no-op patch still
+    // re-notifies every subscriber, and this editor fires `onUpdate` freely.
+    const before = await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query('channelDocs')
+        .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+        .unique()
+      return row!.updatedAt
+    })
+    await asAlice.mutation(api.docs.save, { channelId, content: body })
+    const after = await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query('channelDocs')
+        .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+        .unique()
+      return row!.updatedAt
+    })
+    expect(after).toBe(before)
+  })
+
+  it('never stores a content sentinel the editor would refuse', async () => {
+    const { asAlice, channelId } = await setupDoc()
+
+    // Setting chrome before typing creates a stub row. Its `content` MUST be a document the
+    // client's `parseDocContent` accepts — a value it refuses makes the editor open blank
+    // against a row that exists, and the first normalisation update then saves that blank
+    // over the user's text. (A BlockNote-era `'[]'` here destroyed real pages once.)
+    await asAlice.mutation(api.docs.saveMeta, { channelId, icon: '📘', title: 'Handbook' })
+    const stub = await asAlice.query(api.docs.getByChannel, { channelId })
+    expect(stub?.icon).toBe('📘')
+    expect(stub?.title).toBe('Handbook')
+    const parsed = JSON.parse(stub!.content!) as { type?: string; content?: unknown[] }
+    expect(parsed.type).toBe('doc')
+    expect(Array.isArray(parsed.content)).toBe(true)
+  })
+
+  it('refuses a cover value that is not a gradient, colour or http(s) URL', async () => {
+    const { asAlice, channelId } = await setupDoc()
+
+    // The cover lands in a CSS `url()` on every reader's screen, so the client's encoding is
+    // a convenience and THIS is the boundary.
+    await expect(
+      asAlice.mutation(api.docs.saveMeta, { channelId, cover: 'javascript:alert(1)' })
+    ).rejects.toThrow()
+    await expect(
+      asAlice.mutation(api.docs.saveMeta, { channelId, cover: 'gradient:../../etc' })
+    ).rejects.toThrow()
+    await expect(
+      asAlice.mutation(api.docs.saveMeta, { channelId, cover: 'color:notahex' })
+    ).rejects.toThrow()
+
+    await asAlice.mutation(api.docs.saveMeta, { channelId, cover: 'gradient:aurora' })
+    expect((await asAlice.query(api.docs.getByChannel, { channelId }))?.cover).toBe(
+      'gradient:aurora'
+    )
+  })
+
+  it('refuses a non-member, and refuses to bury a document in a non-doc channel', async () => {
+    const { t, asAlice, workspaceId, channelId } = await setupDoc()
+
+    const asMallory = t.withIdentity(identityOf('user-mallory'))
+    await asMallory.mutation(api.users.store, { email: 'mallory@example.com', name: 'Mallory' })
+    // Not a member: no read, no write.
+    expect(await asMallory.query(api.docs.getByChannel, { channelId })).toBeNull()
+    await expect(
+      asMallory.mutation(api.docs.save, { channelId, content: docOf([paragraph('mine now')]) })
+    ).rejects.toThrow()
+
+    // The kind gate: a crafted call must not park a document on a channel no view surfaces.
+    const chatId = await asAlice.mutation(api.channels.create, {
+      workspaceId,
+      name: 'random',
+      kind: 'chat'
+    })
+    await expect(
+      asAlice.mutation(api.docs.save, { channelId: chatId, content: docOf([paragraph('x')]) })
+    ).rejects.toThrow()
+  })
+
+  it('deleting the channel deletes its document', async () => {
+    const { t, asAlice, channelId } = await setupDoc()
+    await asAlice.mutation(api.docs.save, { channelId, content: docOf([paragraph('Hello')]) })
+
+    await asAlice.mutation(api.channels.remove, { channelId })
+    await drainScheduled(t)
+
+    const rows = await t.run((ctx) => ctx.db.query('channelDocs').collect())
+    expect(rows).toHaveLength(0)
+  })
+})
+
+describe('time tracking', () => {
+  // Elapsed time, the late-pause clamp and the stale cron are all clock-dependent, and the
+  // cascade cases need the `runAfter(0)` chain driven.
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  const MINUTE = 60_000
+  const HOUR = 60 * MINUTE
+
+  /** Alice (owner) + a board channel with one task. */
+  async function setupBoard() {
+    const base = await setupOwner()
+    const channelId = await base.asAlice.mutation(api.channels.create, {
+      workspaceId: base.workspaceId,
+      name: 'sprint',
+      kind: 'kanban'
+    })
+    const columns = await base.asAlice.query(api.boards.getByChannel, { channelId })
+    const taskId = await base.asAlice.mutation(api.boards.createTask, {
+      columnId: columns[0]._id,
+      title: 'Fix the flaky test',
+      priority: 'medium',
+      assigneeIds: [],
+      labels: [],
+      checklist: []
+    })
+    return { ...base, channelId, columnId: columns[0]._id, taskId }
+  }
+
+  /** The schema-aware test instance. `ReturnType<typeof convexTest>` drops the schema
+   *  generic, which turns `ctx.db.query('users')` into an untyped system-table query. */
+  type BoardTest = Awaited<ReturnType<typeof setupBoard>>
+
+  /** Add a second member, returning their identity + user id. */
+  async function addMember(
+    t: BoardTest['t'],
+    asAlice: ReturnType<ReturnType<typeof convexTest>['withIdentity']>,
+    workspaceId: Id<'workspaces'>,
+    subject: string,
+    email: string,
+    name: string
+  ) {
+    const as = t.withIdentity(identityOf(subject))
+    await as.mutation(api.users.store, { email, name })
+    const { code } = await asAlice.mutation(api.invitations.invite, { workspaceId })
+    await as.mutation(api.invitations.acceptByToken, { code })
+    const userId = await t.run(async (ctx) => {
+      const u = await ctx.db
+        .query('users')
+        .withIndex('by_email', (q) => q.eq('email', email))
+        .unique()
+      return u!._id
+    })
+    return { as, userId }
+  }
+
+  it('derives elapsed time instead of writing it', async () => {
+    const { t, asAlice, workspaceId, channelId, taskId } = await setupBoard()
+    const timerId = await asAlice.mutation(api.timer.start, { taskId })
+
+    vi.advanceTimersByTime(5 * MINUTE)
+
+    // The clock has moved, and the query reports it…
+    const { timers } = await asAlice.query(api.timer.mine, { workspaceId })
+    expect(timers).toHaveLength(1)
+    expect(timers[0].elapsedMs).toBe(5 * MINUTE)
+
+    // …but nothing was written for it. A per-tick field on a subscribed row would be a
+    // per-tick invalidation; this is the guarantee that makes the whole design cheap.
+    const stored = await t.run(async (ctx) => await ctx.db.get(timerId))
+    expect(stored?.accumulatedMs).toBe(0)
+  })
+
+  it('runs at most one timer at a time', async () => {
+    const { t, asAlice, columnId, taskId } = await setupBoard()
+    const other = await asAlice.mutation(api.boards.createTask, {
+      columnId,
+      title: 'Second task',
+      priority: 'low',
+      assigneeIds: [],
+      labels: [],
+      checklist: []
+    })
+
+    const first = await asAlice.mutation(api.timer.start, { taskId })
+    vi.advanceTimersByTime(3 * MINUTE)
+    await asAlice.mutation(api.timer.start, { taskId: other })
+
+    const rows = await t.run(async (ctx) => ({
+      first: await ctx.db.get(first),
+      byStatus: await ctx.db.query('timerStates').collect()
+    }))
+    // The first banked its segment and stopped; exactly one is still running.
+    expect(rows.first?.status).toBe('paused')
+    expect(rows.first?.accumulatedMs).toBe(3 * MINUTE)
+    expect(rows.byStatus.filter((r) => r.status === 'running')).toHaveLength(1)
+  })
+
+  it('keeps what the timer measured beside what was logged', async () => {
+    const { t, asAlice, workspaceId, channelId, taskId } = await setupBoard()
+    const timerId = await asAlice.mutation(api.timer.start, { taskId })
+    vi.advanceTimersByTime(52 * MINUTE)
+
+    // Round 52 minutes up to an hour, as people do.
+    await asAlice.mutation(api.timesheets.logTimer, { timerId, durationMs: HOUR })
+
+    const { rows } = await asAlice.query(api.timesheets.listByChannel, { channelId })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].durationMs).toBe(HOUR)
+    expect(rows[0].trackedMs).toBe(52 * MINUTE)
+    expect(rows[0].source).toBe('timer')
+    // The timer is consumed by logging it.
+    expect(await t.run(async (ctx) => await ctx.db.get(timerId))).toBeNull()
+  })
+
+  it('credits a late pause only up to the moment it was requested', async () => {
+    const { t, asAlice, taskId } = await setupBoard()
+    const timerId = await asAlice.mutation(api.timer.start, { taskId })
+    const startedAt = Date.now()
+
+    // The machine slept at +5min but the mutation only lands 8h later, on resume. A
+    // server-side `Date.now()` here would bill the entire nap.
+    vi.advanceTimersByTime(8 * HOUR)
+    await asAlice.mutation(api.timer.pause, { timerId, at: startedAt + 5 * MINUTE })
+
+    const paused = await t.run(async (ctx) => await ctx.db.get(timerId))
+    expect(paused?.accumulatedMs).toBe(5 * MINUTE)
+  })
+
+  it('clamps a pause time outside the current segment', async () => {
+    const { t, asAlice, taskId } = await setupBoard()
+    const timerId = await asAlice.mutation(api.timer.start, { taskId })
+    const startedAt = Date.now()
+    vi.advanceTimersByTime(10 * MINUTE)
+
+    // Before the segment began → clamps up to zero credit, never negative.
+    await asAlice.mutation(api.timer.pause, { timerId, at: startedAt - HOUR })
+    expect((await t.run(async (ctx) => await ctx.db.get(timerId)))?.accumulatedMs).toBe(0)
+
+    // And a future `at` can't credit more than has actually elapsed.
+    await asAlice.mutation(api.timer.resume, { timerId })
+    vi.advanceTimersByTime(2 * MINUTE)
+    await asAlice.mutation(api.timer.pause, { timerId, at: Date.now() + 10 * HOUR })
+    expect((await t.run(async (ctx) => await ctx.db.get(timerId)))?.accumulatedMs).toBe(2 * MINUTE)
+  })
+
+  it('requires a reason for every edit and records what changed', async () => {
+    const { asAlice, workspaceId, channelId, taskId } = await setupBoard()
+    await asAlice.mutation(api.timesheets.create, {
+      taskId,
+      startedAt: Date.now() - HOUR,
+      durationMs: HOUR,
+      reason: 'Worked on this away from the timer'
+    })
+    const entryId = (await asAlice.query(api.timesheets.listByChannel, { channelId })).rows[0]._id
+
+    // Too short to be a reason.
+    await expect(
+      asAlice.mutation(api.timesheets.update, { entryId, durationMs: 2 * HOUR, reason: 'x' })
+    ).rejects.toThrow()
+
+    await asAlice.mutation(api.timesheets.update, {
+      entryId,
+      durationMs: 2 * HOUR,
+      reason: 'Forgot to include the review call'
+    })
+
+    // Two rows: the manual entry's own reason, then the edit. Newest first.
+    const history = await asAlice.query(api.timesheets.history, { entryId })
+    expect(history.map((h) => h.kind)).toEqual(['edit', 'create'])
+    expect(history[0].reason).toBe('Forgot to include the review call')
+    expect(history[0].editorName).toBe('Alice')
+    expect(history[0].changes).toEqual([{ field: 'duration', before: '1h 00m', after: '2h 00m' }])
+
+    // A no-op update writes nothing — not the patch, and not an audit row saying
+    // "changed nothing", which would be noise in a record people have to read.
+    await asAlice.mutation(api.timesheets.update, {
+      entryId,
+      durationMs: 2 * HOUR,
+      reason: 'No actual change'
+    })
+    expect(await asAlice.query(api.timesheets.history, { entryId })).toHaveLength(2)
+  })
+
+  it('demands a reason when time is entered by hand', async () => {
+    // A timer-logged entry carries its own evidence. Hours typed in afterwards do not, so
+    // the reason is the only record of why they exist — and it is not optional.
+    const { asAlice, channelId, taskId } = await setupBoard()
+    await expect(
+      asAlice.mutation(api.timesheets.create, {
+        taskId,
+        startedAt: Date.now() - HOUR,
+        durationMs: HOUR,
+        reason: 'x' // too short to say anything
+      })
+    ).rejects.toThrow()
+
+    // A rejected entry leaves nothing behind — no half-written row, no rollup movement.
+    expect((await asAlice.query(api.timesheets.listByChannel, { channelId })).rows).toHaveLength(0)
+
+    // With a real reason it lands, and the reason is the first thing in its history.
+    await asAlice.mutation(api.timesheets.create, {
+      taskId,
+      startedAt: Date.now() - HOUR,
+      durationMs: HOUR,
+      reason: 'Worked offline at the client’s office'
+    })
+    const [entry] = (await asAlice.query(api.timesheets.listByChannel, { channelId })).rows
+    expect(entry.source).toBe('manual')
+    const history = await asAlice.query(api.timesheets.history, { entryId: entry._id })
+    expect(history).toHaveLength(1)
+    expect(history[0].kind).toBe('create')
+    expect(history[0].reason).toBe('Worked offline at the client’s office')
+  })
+
+  it('deletes softly and can restore', async () => {
+    const { asAlice, workspaceId, channelId, taskId } = await setupBoard()
+    await asAlice.mutation(api.timesheets.create, {
+      taskId,
+      startedAt: Date.now() - HOUR,
+      durationMs: HOUR,
+      reason: 'Worked on this away from the timer'
+    })
+    const entryId = (await asAlice.query(api.timesheets.listByChannel, { channelId })).rows[0]._id
+
+    await asAlice.mutation(api.timesheets.remove, { entryId, reason: 'Logged on the wrong task' })
+    expect((await asAlice.query(api.timesheets.listByChannel, { channelId })).rows).toHaveLength(0)
+
+    // Still there, and visible when asked for — nothing is destroyed.
+    const withDeleted = await asAlice.query(api.timesheets.listByChannel, {
+      channelId,
+      includeDeleted: true
+    })
+    expect(withDeleted.rows).toHaveLength(1)
+    expect(withDeleted.rows[0].deletedAt).toBeGreaterThan(0)
+
+    await asAlice.mutation(api.timesheets.restore, { entryId, reason: 'Actually it was right' })
+    expect((await asAlice.query(api.timesheets.listByChannel, { channelId })).rows).toHaveLength(1)
+
+    const history = await asAlice.query(api.timesheets.history, { entryId })
+    // Newest first: restored, removed, and the reason it was added by hand in the first place.
+    expect(history.map((h) => h.kind)).toEqual(['restore', 'delete', 'create'])
+  })
+
+  it('shows a member only their own hours, and a moderator everyone’s', async () => {
+    const { t, asAlice, workspaceId, channelId, taskId } = await setupBoard()
+    const { as: asBob } = await addMember(t, asAlice, workspaceId, 'user-bob', 'bob@x.com', 'Bob')
+    const { as: asCarol } = await addMember(
+      t,
+      asAlice,
+      workspaceId,
+      'user-carol',
+      'c@x.com',
+      'Carol'
+    )
+
+    await asAlice.mutation(api.timesheets.create, {
+      taskId,
+      startedAt: Date.now() - HOUR,
+      durationMs: HOUR,
+      reason: 'Worked on this away from the timer'
+    })
+    await asBob.mutation(api.timesheets.create, {
+      taskId,
+      startedAt: Date.now() - HOUR,
+      durationMs: 30 * MINUTE,
+      reason: 'Worked on this away from the timer'
+    })
+
+    // Carol is a plain member: her own hours only, whatever she asks for.
+    expect((await asCarol.query(api.timesheets.listByChannel, { channelId })).rows).toHaveLength(0)
+    const bobsIdSpoof = await asBob.query(api.timesheets.listByChannel, { channelId })
+    expect(bobsIdSpoof.rows).toHaveLength(1)
+    expect(bobsIdSpoof.rows[0].durationMs).toBe(30 * MINUTE)
+
+    // Alice owns the workspace: she sees both.
+    expect((await asAlice.query(api.timesheets.listByChannel, { channelId })).rows).toHaveLength(2)
+
+    // And a member can't rewrite someone else's hours.
+    const bobEntry = bobsIdSpoof.rows[0]._id
+    await expect(
+      asCarol.mutation(api.timesheets.update, {
+        entryId: bobEntry,
+        durationMs: 8 * HOUR,
+        reason: 'Padding a colleague'
+      })
+    ).rejects.toThrow()
+  })
+
+  it('does not leak a private board’s work through the timesheet', async () => {
+    // The adaptation most likely to be got wrong. zinx-os gates the timesheet by permission
+    // keys; here access is MEMBERSHIP, and an admin outside a private board gets nothing —
+    // including, and especially, its task titles by way of somebody's hours.
+    const { t, asAlice, workspaceId, channelId } = await setupBoard()
+    const { as: asBob, userId: bobId } = await addMember(
+      t,
+      asAlice,
+      workspaceId,
+      'user-bob',
+      'bob@x.com',
+      'Bob'
+    )
+    const { as: asCarol } = await addMember(
+      t,
+      asAlice,
+      workspaceId,
+      'user-carol',
+      'c@x.com',
+      'Carol'
+    )
+    await t.run(async (ctx) => {
+      const carol = await ctx.db
+        .query('users')
+        .withIndex('by_email', (q) => q.eq('email', 'c@x.com'))
+        .unique()
+      const membership = await ctx.db
+        .query('workspaceMembers')
+        .withIndex('by_workspace_user', (q) =>
+          q.eq('workspaceId', workspaceId).eq('userId', carol!._id)
+        )
+        .unique()
+      await ctx.db.patch(membership!._id, { role: 'admin' })
+    })
+
+    const secret = await asAlice.mutation(api.channels.create, {
+      workspaceId,
+      name: 'acquisition',
+      kind: 'kanban',
+      visibility: 'private'
+    })
+    await asAlice.mutation(api.channelMembers.add, { channelId: secret, userIds: [bobId] })
+    const columns = await asBob.query(api.boards.getByChannel, { channelId: secret })
+    const secretTask = await asBob.mutation(api.boards.createTask, {
+      columnId: columns[0]._id,
+      title: 'Draft the offer letter',
+      priority: 'high',
+      assigneeIds: [],
+      labels: [],
+      checklist: []
+    })
+    await asBob.mutation(api.timesheets.create, {
+      taskId: secretTask,
+      startedAt: Date.now() - HOUR,
+      durationMs: HOUR,
+      reason: 'Worked on this away from the timer'
+    })
+
+    // Carol is an ADMIN, and she asks the private board's timesheet directly. She isn't in
+    // the room, so `getChannelAccess` gives her nothing — not the hours, and not the task
+    // titles they'd reveal. With the timesheet scoped to a channel this is the whole gate;
+    // there is no workspace-wide read left that could route around it.
+    const carolSees = await asCarol.query(api.timesheets.listByChannel, { channelId: secret })
+    expect(carolSees.rows).toHaveLength(0)
+    expect(carolSees.canModerate).toBe(false)
+
+    // Bob, who is in the room, sees his own.
+    const bobSees = await asBob.query(api.timesheets.listByChannel, { channelId: secret })
+    expect(bobSees.rows).toHaveLength(1)
+    expect(bobSees.rows[0].taskTitle).toBe('Draft the offer letter')
+  })
+
+  it('refuses a timer on a read-only board', async () => {
+    const { t, asAlice, workspaceId, channelId, taskId } = await setupBoard()
+    const { as: asBob } = await addMember(t, asAlice, workspaceId, 'user-bob', 'bob@x.com', 'Bob')
+
+    // Bob can track while the board is open to everyone…
+    const timerId = await asBob.mutation(api.timer.start, { taskId })
+    await asBob.mutation(api.timer.discard, { timerId })
+
+    // …and not once it's announcement-only. Time is content attached to a board, so the
+    // people who may write to it are exactly the people who may bill against it.
+    await asAlice.mutation(api.channelMembers.setPostingPolicy, {
+      channelId,
+      postingPolicy: 'admins'
+    })
+    await expect(asBob.mutation(api.timer.start, { taskId })).rejects.toThrow()
+    await expect(
+      asBob.mutation(api.timesheets.create, {
+        taskId,
+        startedAt: Date.now() - HOUR,
+        durationMs: HOUR,
+        reason: 'Worked on this away from the timer'
+      })
+    ).rejects.toThrow()
+  })
+
+  it('keeps a deleted task’s hours, and takes them with the board', async () => {
+    const { t, asAlice, workspaceId, channelId, taskId } = await setupBoard()
+    await asAlice.mutation(api.timesheets.create, {
+      taskId,
+      startedAt: Date.now() - HOUR,
+      durationMs: HOUR,
+      reason: 'Worked on this away from the timer',
+      note: 'Pairing session'
+    })
+
+    await asAlice.mutation(api.boards.removeTask, { taskId })
+    await drainScheduled(t)
+
+    // The entry survives its task, rendering from the snapshot.
+    let rows = (await asAlice.query(api.timesheets.listByChannel, { channelId })).rows
+    expect(rows).toHaveLength(1)
+    expect(rows[0].taskTitle).toBe('Fix the flaky test')
+    expect(rows[0].orphaned).toBe(true)
+    // Its rollup is gone with the task.
+    expect(await t.run(async (ctx) => await ctx.db.query('taskTimeTotals').collect())).toHaveLength(
+      0
+    )
+
+    // Deleting the BOARD is different, and deliberately so. The timesheet is a view of this
+    // channel, so an entry whose channel is gone could never be shown again — keeping the
+    // row would preserve data that has ceased to exist as far as anyone using the app is
+    // concerned. Its audit trail goes with it.
+    await asAlice.mutation(api.channels.remove, { channelId })
+    await drainScheduled(t)
+    const left = await t.run(async (ctx) => ({
+      entries: await ctx.db.query('timesheetEntries').collect(),
+      edits: await ctx.db.query('timesheetEntryEdits').collect(),
+      timers: await ctx.db.query('timerStates').collect()
+    }))
+    expect(left.entries).toHaveLength(0)
+    expect(left.edits).toHaveLength(0)
+    expect(left.timers).toHaveLength(0)
+    expect(workspaceId).toBeTruthy()
+  })
+
+  it('does not silently lose a running timer when its task is deleted', async () => {
+    const { t, asAlice, workspaceId, channelId, columnId, taskId } = await setupBoard()
+    const shortTask = await asAlice.mutation(api.boards.createTask, {
+      columnId,
+      title: 'Barely started',
+      priority: 'low',
+      assigneeIds: [],
+      labels: [],
+      checklist: []
+    })
+
+    // 40 minutes of real work — auto-logged rather than discarded.
+    await asAlice.mutation(api.timer.start, { taskId })
+    vi.advanceTimersByTime(40 * MINUTE)
+    await asAlice.mutation(api.boards.removeTask, { taskId })
+    await drainScheduled(t)
+
+    const rows = (await asAlice.query(api.timesheets.listByChannel, { channelId })).rows
+    expect(rows).toHaveLength(1)
+    expect(rows[0].durationMs).toBe(40 * MINUTE)
+    expect(rows[0].note).toMatch(/deleted/i)
+
+    // A few seconds is noise — discarded, not logged.
+    await asAlice.mutation(api.timer.start, { taskId: shortTask })
+    vi.advanceTimersByTime(5000)
+    await asAlice.mutation(api.boards.removeTask, { taskId: shortTask })
+    await drainScheduled(t)
+    expect((await asAlice.query(api.timesheets.listByChannel, { channelId })).rows).toHaveLength(1)
+  })
+
+  it('keeps the task rollup in step without reading the entries', async () => {
+    const { t, asAlice, workspaceId, channelId, taskId } = await setupBoard()
+    const totals = async () =>
+      (await asAlice.query(api.timesheets.rollupsForChannel, { channelId }))[0]
+
+    await asAlice.mutation(api.timesheets.create, {
+      taskId,
+      startedAt: Date.now() - HOUR,
+      durationMs: HOUR,
+      reason: 'Worked on this away from the timer',
+      billable: true
+    })
+    await asAlice.mutation(api.timesheets.create, {
+      taskId,
+      startedAt: Date.now() - HOUR,
+      durationMs: 30 * MINUTE,
+      reason: 'Worked on this away from the timer'
+    })
+    expect(await totals()).toMatchObject({
+      loggedMs: 90 * MINUTE,
+      billableMs: HOUR,
+      entryCount: 2
+    })
+
+    const entryId = (await asAlice.query(api.timesheets.listByChannel, { channelId })).rows.find(
+      (r) => r.durationMs === 30 * MINUTE
+    )!._id
+
+    // An edit moves it by the delta…
+    await asAlice.mutation(api.timesheets.update, {
+      entryId,
+      durationMs: HOUR,
+      reason: 'Undercounted the call'
+    })
+    expect(await totals()).toMatchObject({ loggedMs: 2 * HOUR, entryCount: 2 })
+
+    // …a soft delete removes its contribution…
+    await asAlice.mutation(api.timesheets.remove, { entryId, reason: 'Duplicate of the other one' })
+    expect(await totals()).toMatchObject({ loggedMs: HOUR, entryCount: 1 })
+
+    // …and a restore brings it back.
+    await asAlice.mutation(api.timesheets.restore, { entryId, reason: 'Not a duplicate after all' })
+    expect(await totals()).toMatchObject({ loggedMs: 2 * HOUR, entryCount: 2 })
+  })
+
+  it('caps a forgotten timer and never double-credits it', async () => {
+    const { t, asAlice, taskId } = await setupBoard()
+    const timerId = await asAlice.mutation(api.timer.start, { taskId })
+
+    // Started Friday evening, still running Sunday.
+    vi.advanceTimersByTime(30 * HOUR)
+    await t.mutation(internal.timer.autoPauseStale, {})
+
+    const paused = await t.run(async (ctx) => await ctx.db.get(timerId))
+    expect(paused?.status).toBe('paused')
+    expect(paused?.accumulatedMs).toBe(12 * HOUR) // the cap, not the 30 hours
+    expect(paused?.autoPausedReason).toBe('stale')
+
+    // A second pass must not find it again — pausing moved it out of the index range,
+    // which is also what guarantees the batch can't spin.
+    await t.mutation(internal.timer.autoPauseStale, {})
+    expect((await t.run(async (ctx) => await ctx.db.get(timerId)))?.accumulatedMs).toBe(12 * HOUR)
+  })
+
+  it('drains the ledger and its audit trail with the workspace', async () => {
+    const { t, asAlice, workspaceId, channelId, taskId, slug } = await setupBoard()
+    await asAlice.mutation(api.timesheets.create, {
+      taskId,
+      startedAt: Date.now() - HOUR,
+      durationMs: HOUR,
+      reason: 'Worked on this away from the timer'
+    })
+    const entryId = (await asAlice.query(api.timesheets.listByChannel, { channelId })).rows[0]._id
+    await asAlice.mutation(api.timesheets.update, {
+      entryId,
+      durationMs: 2 * HOUR,
+      reason: 'Adjusting before the workspace goes'
+    })
+
+    await asAlice.mutation(api.workspaces.remove, { workspaceId, confirmName: 'Acme' })
+    await drainScheduled(t)
+
+    const left = await t.run(async (ctx) => ({
+      entries: await ctx.db.query('timesheetEntries').collect(),
+      edits: await ctx.db.query('timesheetEntryEdits').collect(),
+      timers: await ctx.db.query('timerStates').collect(),
+      totals: await ctx.db.query('taskTimeTotals').collect()
+    }))
+    expect(left.entries).toHaveLength(0)
+    expect(left.edits).toHaveLength(0)
+    expect(left.timers).toHaveLength(0)
+    expect(left.totals).toHaveLength(0)
+    expect(slug).toBeTruthy()
+  })
+})

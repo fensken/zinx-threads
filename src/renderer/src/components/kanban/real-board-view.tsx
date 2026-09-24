@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useMutation } from 'convex/react'
 import { useQuery } from 'convex-helpers/react/cache/hooks'
 import type { FunctionReturnType } from 'convex/server'
@@ -32,6 +32,7 @@ export function RealBoardView({ channel }: { channel: Doc<'channels'> }): React.
   const seedDefaultColumns = useMutation(api.boards.seedDefaultColumns)
   const reorder = useMutation(api.boards.reorder)
   const { state: saveState, track } = useSaveStatus()
+  const [reordering, setReordering] = useState(false)
 
   /** Drive the "Saving…" pill + surface Convex errors instead of swallowing the rejection. */
   const guard = useCallback(
@@ -108,8 +109,12 @@ export function RealBoardView({ channel }: { channel: Doc<'channels'> }): React.
         onUseDefaultColumns={() =>
           guard(seedDefaultColumns({ channelId: channel._id }), 'Could not add the default columns')
         }
-        onReorder={({ columnIds, taskIdsByColumn }) =>
-          guard(
+        reordering={reordering}
+        onReorder={({ columnIds, taskIdsByColumn }) => {
+          // Hold the board still until the write lands. Two drops in flight at once compute
+          // their layouts from different views of the board and clobber each other.
+          setReordering(true)
+          void track(
             reorder({
               channelId: channel._id,
               columnOrder: columnIds as Id<'kanbanColumns'>[],
@@ -117,10 +122,11 @@ export function RealBoardView({ channel }: { channel: Doc<'channels'> }): React.
                 columnId: columnId as Id<'kanbanColumns'>,
                 taskIds: (taskIdsByColumn[columnId] ?? []) as Id<'kanbanTasks'>[]
               }))
-            }),
-            'Could not save the new order'
+            })
           )
-        }
+            .catch((error) => toast.error(errorMessage(error, 'Could not save the new order')))
+            .finally(() => setReordering(false))
+        }}
       />
       <SaveStatus state={saveState} />
     </div>

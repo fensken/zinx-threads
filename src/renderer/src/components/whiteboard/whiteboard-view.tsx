@@ -17,13 +17,15 @@ import '@renderer/components/whiteboard/whiteboard.css'
 /**
  * A `whiteboard` channel: an Excalidraw canvas, full-bleed, autosaved.
  *
- * **This is the only module that imports Excalidraw, and it is reached ONLY through
- * `React.lazy`** (see `real-whiteboard-view.tsx` / `local-whiteboard-view.tsx`). Excalidraw
- * is ~1MB; a static import from anywhere non-lazy pulls it into the main bundle and every
- * user pays for it whether or not they ever open a whiteboard. Same trap as BlockNote.
+ * **Reached ONLY through `React.lazy`** (see `real-whiteboard-view.tsx` /
+ * `local-whiteboard-view.tsx`). Excalidraw is ~1MB; a static import from anywhere non-lazy
+ * pulls it into the main bundle and every user pays for it whether or not they ever open a
+ * whiteboard. Same trap as BlockNote. (The doc editor's `/whiteboard` BLOCK is a different
+ * surface — a preview card that opens full-screen, `doc/doc-excalidraw-canvas.tsx` — and it
+ * is lazy for the same reason.)
  *
- * Presentational: the scene comes in, edits go out. `real-` / `local-` adapters supply
- * the persistence, exactly as `BoardView` and `PageEditor` do.
+ * Presentational: the scene comes in, edits go out. `real-` / `local-` adapters supply the
+ * persistence, exactly as `BoardView` does.
  */
 export function WhiteboardView({
   /** The serialized scene. **Must already be loaded** — the caller shows the spinner and

@@ -217,7 +217,7 @@ export const createWebhook = action({
 })
 
 /** Insert the webhook row. Owner/admin-gated; the channel must be a chat channel the bot can
- *  post in (so a webhook can't be aimed at a page/voice channel or one the bot was muted in). */
+ *  post in (so a webhook can't be aimed at a voice channel or one the bot was muted in). */
 export const storeWebhook = internalMutation({
   args: {
     botId: v.id('bots'),

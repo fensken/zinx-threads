@@ -7,7 +7,7 @@ import {
 
 /** The channel kinds that work with no server. (Not `form`: its whole point is a public
  *  submission link, which needs a server.) */
-const LOCAL_KINDS: ChannelDialogKind[] = ['page', 'kanban', 'whiteboard', 'database']
+const LOCAL_KINDS: ChannelDialogKind[] = ['doc', 'kanban', 'whiteboard', 'database']
 
 /** Create a local page/board/whiteboard — renders the **same** `CreateChannelDialogView`
  *  as the online app, just narrowed to the server-free kinds and with the private toggle
@@ -31,7 +31,7 @@ export function LocalCreateChannelDialog({
       onOpenChange={onOpenChange}
       kinds={LOCAL_KINDS}
       allowPrivate={false}
-      description="Pages, boards, whiteboards and tables are stored locally on this device."
+      description="Docs, boards, whiteboards and tables are stored locally on this device."
       onSubmit={({ name, kind }) => {
         const id = createChannel(name, kind as LocalChannelKind, groupId)
         onOpenChange(false)

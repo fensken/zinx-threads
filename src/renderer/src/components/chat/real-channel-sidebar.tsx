@@ -819,6 +819,11 @@ function ChannelRow({
             <span className="font-medium text-sidebar-foreground">
               , including any threads and their replies
             </span>
+            {channel.kind === 'kanban' ? (
+              <span className="font-medium text-sidebar-foreground">
+                , and every hour logged against this board
+              </span>
+            ) : null}
             . This can&apos;t be undone.
           </>
         }

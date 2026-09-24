@@ -30,7 +30,7 @@ const TOOLS = [
     name: 'list_channels',
     args: 'workspace',
     kind: 'read',
-    desc: 'The channels you can see, each with its kind (chat / voice / page / kanban / whiteboard / database / form) and whether you can post.'
+    desc: 'The channels you can see, each with its kind (chat / voice / kanban / whiteboard / doc / database / form) and whether you can post.'
   },
   {
     name: 'list_members',
@@ -69,12 +69,6 @@ const TOOLS = [
     desc: 'A kanban board’s columns (in order) and tasks, with column + task ids for create_task / move_task.'
   },
   {
-    name: 'get_page',
-    args: 'workspace, channel',
-    kind: 'read',
-    desc: 'A page channel’s title and its text content (plain text).'
-  },
-  {
     name: 'get_voice',
     args: 'workspace, channel',
     kind: 'read',
@@ -85,6 +79,12 @@ const TOOLS = [
     args: 'workspace, channel',
     kind: 'read',
     desc: 'A whiteboard channel’s scene (Excalidraw element JSON + shape count). Read-only — drawn in the app.'
+  },
+  {
+    name: 'get_doc',
+    args: 'workspace, channel',
+    kind: 'read',
+    desc: 'A doc channel’s title, icon and body — as flattened lines (text) and as the raw ProseMirror JSON (content).'
   },
   {
     name: 'get_database',
@@ -140,7 +140,14 @@ const TOOLS = [
     name: 'create_channel',
     args: 'workspace, name, kind, private?',
     kind: 'write',
-    desc: 'Create a channel (chat / voice / page / kanban / whiteboard / database / form), optionally private.'
+    desc: 'Create a channel (chat / voice / kanban / whiteboard / doc / database / form), optionally private.'
+  },
+  // Docs
+  {
+    name: 'set_doc',
+    args: 'workspace, channel, text, title?',
+    kind: 'write',
+    desc: 'Replace a doc’s body from plain text (# heading, - bullet). Replaces the whole document — richer blocks are flattened.'
   },
   // Events
   {
@@ -194,13 +201,6 @@ const TOOLS = [
     args: 'column',
     kind: 'write',
     desc: 'Delete a board column and its tasks.'
-  },
-  // Pages
-  {
-    name: 'set_page',
-    args: 'workspace, channel, title?, text?',
-    kind: 'write',
-    desc: 'Set a page channel’s title and/or text (plain text; rich editing is in the app).'
   },
   // Database (records)
   {

@@ -2,18 +2,10 @@
 // rich, Discord/_zinx-style structure out of the box (a new workspace still has
 // only its owner — no fake teammates or messages).
 //
-// `page` and `kanban` channels now persist to Convex (`convex/pages.ts`,
-// `convex/boards.ts`), so no channel name has to match a mock key any more — pages
-// start empty, and boards are seeded with `DEFAULT_BOARD_COLUMNS`.
+// `kanban` channels persist to Convex (`convex/boards.ts`); boards are seeded with
+// `DEFAULT_BOARD_COLUMNS`.
 
-export type DemoKind =
-  | 'chat'
-  | 'voice'
-  | 'page'
-  | 'kanban'
-  | 'whiteboard'
-  | 'database'
-  | 'form'
+export type DemoKind = 'chat' | 'voice' | 'kanban' | 'whiteboard' | 'doc' | 'database' | 'form'
 
 /** Workspace slugs that can't be taken. Empty now that the mock demo is gone — kept
  *  as a hook for any future reservations (e.g. route-conflicting words). */
@@ -37,7 +29,7 @@ export const DEFAULT_CHANNEL = {
   order: -1
 }
 
-// No decorative `emoji` on seeded channels: the kind icon (#/page/kanban/voice) is the
+// No decorative `emoji` on seeded channels: the kind icon (#/kanban/voice) is the
 // channel's identity, and the "Add a channel" flow doesn't set one — so seeding emojis
 // only made the sample channels look inconsistent with the ones you create. (The
 // `channels.emoji` field still exists; nothing sets it via the UI today.)
@@ -53,12 +45,15 @@ export const DEMO_CHANNELS: Array<{
   { name: 'welcome', kind: 'chat', group: 'Text Channels' },
   { name: 'zinx', kind: 'chat', topic: 'Everything about the app', group: 'Text Channels' },
   { name: 'business-talks', kind: 'chat', group: 'Text Channels' },
-  { name: 'roadmap', kind: 'page', group: 'Docs' },
-  { name: 'handbook', kind: 'page', group: 'Docs' },
-  { name: 'meeting-notes', kind: 'page', group: 'Docs' },
   { name: 'sprint-board', kind: 'kanban', topic: 'Track work across the sprint', group: 'Project' },
-  { name: 'project-tracker', kind: 'database', topic: 'A table of everything in flight', group: 'Project' },
+  {
+    name: 'project-tracker',
+    kind: 'database',
+    topic: 'A table of everything in flight',
+    group: 'Project'
+  },
   { name: 'brainstorm', kind: 'whiteboard', topic: 'Sketch ideas together', group: 'Project' },
+  { name: 'handbook', kind: 'doc', topic: 'How we work — write it down', group: 'Docs' },
   { name: 'feedback', kind: 'form', topic: 'Collect responses from anyone', group: 'Docs' },
   { name: 'General', kind: 'voice', group: 'Voice' }
 ]

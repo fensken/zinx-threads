@@ -9,14 +9,14 @@ import { WorkspaceGlyph } from '@renderer/components/workspace/workspace-glyph'
 import { PaletteDialog, type PaletteItem } from '@renderer/components/layout/command-palette'
 
 /** Offline ⌘K palette — the SAME modal the online app uses (`PaletteDialog`), fed by
- *  the local store instead of Convex. Jump to a page/board, switch offline workspace,
+ *  the local store instead of Convex. Jump to a doc/board, switch offline workspace,
  *  or run an action. Nothing mounts while it's closed. */
 /** Kept beside the icon so the palette can't drift from the sidebar's labels. */
 const KIND_LABEL: Record<LocalChannelKind, string> = {
-  page: 'Page',
   kanban: 'Board',
   whiteboard: 'Whiteboard',
-  database: 'Table'
+  database: 'Table',
+  doc: 'Doc'
 }
 
 export function LocalCommandPalette(): React.JSX.Element | null {
@@ -87,11 +87,11 @@ function LocalPalette(): React.JSX.Element {
 
   items.push(
     {
-      key: 'a-new-page',
+      key: 'a-new-doc',
       group: 'Actions',
-      label: 'New page',
+      label: 'New doc',
       icon: <Plus className="size-4" weight="bold" />,
-      run: () => createAndOpen('page')
+      run: () => createAndOpen('doc')
     },
     {
       key: 'a-new-board',

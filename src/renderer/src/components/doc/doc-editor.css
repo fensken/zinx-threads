@@ -1,0 +1,641 @@
+/**
+ * Doc channel editor styles (TipTap / ProseMirror).
+ *
+ * Scoped under `.zinx-doc` so nothing leaks into the rest of the app. Every value comes
+ * from a theme token, so the editor follows light/dark and the UI-scale setting for free.
+ */
+
+/* ── 1. Page column + gutter ─────────────────────────────────────────────── */
+.zinx-doc .zinx-doc-body,
+.zinx-doc-head {
+  /* Matched padding keeps the title aligned with the block text. */
+  padding-inline: 54px;
+}
+
+.zinx-doc .zinx-doc-body {
+  min-height: 24rem; /* clickable runway below the last block */
+}
+
+/* Container queries key on the EDITOR COLUMN, not the viewport — the sidebar and the
+   members panel both change how much room this has. */
+@container (max-width: 42rem) {
+  .zinx-doc .zinx-doc-body,
+  .zinx-doc-head {
+    padding-inline: 1.25rem;
+  }
+  /* The drag gutter has nowhere to sit in a narrow column. */
+  .zinx-block-handles {
+    display: none !important;
+  }
+}
+@container (max-width: 28rem) {
+  .zinx-doc .zinx-doc-body,
+  .zinx-doc-head {
+    padding-inline: 0.75rem;
+  }
+}
+
+.zinx-doc-narrow-note {
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+@container (max-width: 42rem) {
+  .zinx-doc-narrow-note {
+    display: flex;
+  }
+  /* The head's -mt-12 tucks the icon over the cover; at this width the note sits right
+     below it and the icon would ride onto it. */
+  .zinx-doc-head {
+    margin-top: 0 !important;
+  }
+}
+
+/* ── 2. Gutter handles (`+` and grip) ────────────────────────────────────── */
+/* The handle is placed flush with the top of the block. Its inline `height` is set from
+   the block's measured line-height (see doc-editor.tsx), so centring here puts the icons
+   on the block's FIRST LINE — right for a heading and a list item alike.
+
+   `padding-right` rather than `margin`: the plugin hides the handle when the pointer
+   leaves it, so a transparent gap between the icons and the text would make the handle
+   vanish exactly as you moved toward it. Padding keeps the hit area continuous. */
+.zinx-block-handles {
+  display: flex;
+  align-items: center;
+  gap: 0.05rem;
+  min-height: 1.6rem;
+  padding-right: 0.35rem;
+}
+.zinx-block-add,
+.zinx-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: calc(var(--radius) - 3px);
+  color: var(--muted-foreground);
+  opacity: 0.55;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease;
+}
+.zinx-block-add {
+  cursor: pointer;
+}
+.zinx-block-add:hover {
+  opacity: 1;
+  background: var(--accent);
+}
+.zinx-block-add svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+.zinx-drag-handle {
+  cursor: grab;
+  /* A six-dot grip painted with a repeating radial gradient — no icon font, and it picks
+     up the theme token. */
+  background-image: radial-gradient(var(--muted-foreground) 1.05px, transparent 1.15px);
+  background-size: 0.36rem 0.36rem;
+  background-position: center;
+  background-repeat: repeat;
+}
+/* No hover fill: the dots ARE the background image, so a background colour would sit
+   under them. Raising the opacity is signal enough. */
+.zinx-drag-handle:hover {
+  opacity: 1;
+}
+.zinx-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* ── 3. Block content ────────────────────────────────────────────────────── */
+.zinx-doc .zinx-doc-body > * + * {
+  margin-top: 0.5rem;
+}
+.zinx-doc .zinx-doc-body h1 {
+  font-size: 1.875rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-top: 1.75rem;
+}
+.zinx-doc .zinx-doc-body h2 {
+  font-size: 1.5rem;
+  font-weight: 650;
+  line-height: 1.3;
+  margin-top: 1.5rem;
+}
+.zinx-doc .zinx-doc-body h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 1.25rem;
+}
+.zinx-doc .zinx-doc-body h4 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-top: 1rem;
+}
+.zinx-doc .zinx-doc-body p {
+  line-height: 1.7;
+}
+.zinx-doc .zinx-doc-body ul,
+.zinx-doc .zinx-doc-body ol {
+  padding-left: 1.5rem;
+}
+.zinx-doc .zinx-doc-body ul {
+  list-style: disc;
+}
+.zinx-doc .zinx-doc-body ol {
+  list-style: decimal;
+}
+.zinx-doc .zinx-doc-body li p {
+  margin: 0;
+}
+.zinx-doc .zinx-doc-body blockquote {
+  padding-left: 1rem;
+  color: var(--muted-foreground);
+  border-left: 3px solid var(--muted-foreground);
+}
+.zinx-doc .zinx-doc-body pre {
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+  color: var(--foreground);
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.875rem;
+}
+.zinx-doc .zinx-doc-body :not(pre) > code {
+  padding: 0.1em 0.35em;
+  font-size: 0.9em;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+}
+.zinx-doc .zinx-doc-body hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1.5rem 0;
+}
+.zinx-doc .zinx-doc-body a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.zinx-doc .zinx-doc-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+}
+
+/* Task list */
+.zinx-doc .zinx-doc-body ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0.25rem;
+}
+.zinx-doc .zinx-doc-body ul[data-type='taskList'] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.zinx-doc .zinx-doc-body ul[data-type='taskList'] input[type='checkbox'] {
+  margin-top: 0.45rem;
+  accent-color: var(--primary);
+}
+
+/* Tables */
+.zinx-doc .zinx-doc-body table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  overflow: hidden;
+}
+.zinx-doc .zinx-doc-body th,
+.zinx-doc .zinx-doc-body td {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  vertical-align: top;
+}
+.zinx-doc .zinx-doc-body th {
+  background: var(--muted);
+  font-weight: 600;
+  text-align: left;
+}
+.zinx-doc .zinx-doc-body .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--primary) 14%, transparent);
+  pointer-events: none;
+}
+
+/* Placeholder on an empty line */
+.zinx-doc .zinx-doc-body p.is-editor-empty:first-child::before,
+.zinx-doc .zinx-doc-body .is-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+/* ── 4. Custom blocks ────────────────────────────────────────────────────── */
+.zinx-callout {
+  display: flex;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.zinx-callout-emoji {
+  flex-shrink: 0;
+  font-size: 1.125rem;
+  line-height: 1.6;
+  user-select: none;
+}
+.zinx-callout-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.zinx-embed {
+  width: 100%;
+}
+.zinx-embed-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.9rem 1rem;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.zinx-embed-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  color: var(--muted-foreground);
+}
+.zinx-embed-row {
+  display: flex;
+  gap: 0.5rem;
+}
+.zinx-embed-fallback {
+  padding: 0.8rem 1rem;
+  font-size: 0.9rem;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.zinx-embed-fallback button {
+  color: var(--primary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ── 5. Mention pills ────────────────────────────────────────────────────── */
+/* The pill itself is `MentionPill` (shared with chat) — this only stops the node-view
+   wrapper from breaking the line it sits in. */
+.zinx-mention-node {
+  display: inline;
+  white-space: nowrap;
+}
+
+/* ── 6. Code blocks ──────────────────────────────────────────────────────── */
+.zinx-code-block {
+  position: relative;
+}
+.zinx-code-block-bar {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.4rem;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.zinx-code-block:hover .zinx-code-block-bar,
+.zinx-code-block-bar:focus-within {
+  opacity: 1;
+}
+
+/* lowlight / highlight.js tokens. Without these the highlighter's `<span class="hljs-…">`
+   wrappers render with no colour at all. These ARE content colours (a keyword must read as
+   a keyword in both themes), which is the same exemption the Excalidraw palette takes. */
+.zinx-doc .zinx-doc-body pre code .hljs-comment,
+.zinx-doc .zinx-doc-body pre code .hljs-quote {
+  color: #928374;
+  font-style: italic;
+}
+.zinx-doc .zinx-doc-body pre code .hljs-keyword,
+.zinx-doc .zinx-doc-body pre code .hljs-selector-tag,
+.zinx-doc .zinx-doc-body pre code .hljs-built_in,
+.zinx-doc .zinx-doc-body pre code .hljs-name {
+  color: #fb4934;
+}
+.zinx-doc .zinx-doc-body pre code .hljs-string,
+.zinx-doc .zinx-doc-body pre code .hljs-regexp {
+  color: #b8bb26;
+}
+.zinx-doc .zinx-doc-body pre code .hljs-number,
+.zinx-doc .zinx-doc-body pre code .hljs-literal,
+.zinx-doc .zinx-doc-body pre code .hljs-symbol {
+  color: #d3869b;
+}
+.zinx-doc .zinx-doc-body pre code .hljs-title,
+.zinx-doc .zinx-doc-body pre code .hljs-function .hljs-title,
+.zinx-doc .zinx-doc-body pre code .hljs-attr {
+  color: #8ec07c;
+}
+.zinx-doc .zinx-doc-body pre code .hljs-type,
+.zinx-doc .zinx-doc-body pre code .hljs-class .hljs-title,
+.zinx-doc .zinx-doc-body pre code .hljs-attribute {
+  color: #fabd2f;
+}
+.zinx-doc .zinx-doc-body pre code .hljs-variable,
+.zinx-doc .zinx-doc-body pre code .hljs-template-variable,
+.zinx-doc .zinx-doc-body pre code .hljs-tag {
+  color: #83a598;
+}
+.zinx-doc .zinx-doc-body pre code .hljs-emphasis {
+  font-style: italic;
+}
+.zinx-doc .zinx-doc-body pre code .hljs-strong {
+  font-weight: bold;
+}
+
+/* ── 7. Toggle list (details) ────────────────────────────────────────────── */
+.zinx-doc .zinx-doc-body .zinx-toggle {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.15rem 0;
+}
+/* TipTap renders its own <button> before the summary; style it as a caret. */
+.zinx-doc .zinx-doc-body .zinx-toggle > button {
+  flex: 0 0 auto;
+  width: 1.1rem;
+  height: 1.6rem;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+.zinx-doc .zinx-doc-body .zinx-toggle > button::before {
+  content: '▸';
+  display: inline-block;
+  font-size: 0.8rem;
+  transition: transform 0.15s ease;
+}
+.zinx-doc .zinx-doc-body .zinx-toggle.is-open > button::before {
+  transform: rotate(90deg);
+}
+.zinx-doc .zinx-doc-body .zinx-toggle > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.zinx-doc .zinx-doc-body .zinx-toggle summary {
+  font-weight: 500;
+  list-style: none;
+}
+.zinx-doc .zinx-doc-body .zinx-toggle summary::-webkit-details-marker {
+  display: none;
+}
+
+/* ── 8. Columns ──────────────────────────────────────────────────────────── */
+/* `grid-auto-flow: column` gives every child an equal track, so the layout follows however
+   many `column` children the node has — no attribute to keep in sync. */
+.zinx-doc .zinx-doc-body {
+  /* One value for the gap, because the hover divider has to sit at exactly half of it. */
+  --zinx-column-gap: 1.25rem;
+}
+.zinx-doc .zinx-doc-body .zinx-columns {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--zinx-column-gap);
+  align-items: start;
+}
+.zinx-doc .zinx-doc-body .zinx-column {
+  position: relative; /* the gap divider is positioned against this */
+  min-width: 0; /* let long words wrap instead of widening the track */
+}
+.zinx-doc .zinx-doc-body .zinx-column > * + * {
+  margin-top: 0.5rem;
+}
+
+/* Columns are otherwise INVISIBLE — no border, no background — so a two-column row reads as
+   ordinary prose and an empty column reads as nothing at all. Hovering the block reveals the
+   structure with a hairline in each gap.
+
+   A hairline is the whole affordance, deliberately. Tinting the hovered column was tried and
+   removed: any background behind the text reads as a highlight on the WRITING rather than a
+   hint about the layout, and the dividers already answer the only question being asked —
+   where does one column end and the next begin. It is hover-only and it fades: a permanent
+   rule would turn every columned document into a table, which is not what columns are for. */
+.zinx-doc .zinx-doc-body .zinx-column + .zinx-column::before {
+  content: '';
+  position: absolute;
+  /* Overhangs the content slightly so a short column still shows a full-height rule. */
+  inset-block: -0.25rem;
+  inset-inline-start: calc(var(--zinx-column-gap) / -2);
+  width: 1px;
+  background: var(--border);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+.zinx-doc .zinx-doc-body .zinx-columns:hover > .zinx-column + .zinx-column::before {
+  opacity: 1;
+}
+
+/* Side-by-side stops making sense in a narrow column — stack them. The divider has to
+   follow: between stacked columns it's a horizontal rule in the row gap, not a vertical
+   one beside the first. */
+@container (max-width: 34rem) {
+  .zinx-doc .zinx-doc-body .zinx-columns {
+    grid-auto-flow: row;
+  }
+  .zinx-doc .zinx-doc-body .zinx-column + .zinx-column::before {
+    inset-block: auto;
+    inset-inline: 0;
+    top: calc(var(--zinx-column-gap) / -2);
+    width: auto;
+    height: 1px;
+  }
+}
+
+/* ── 9. Whiteboard ───────────────────────────────────────────────────────── */
+.zinx-whiteboard {
+  width: 100%;
+}
+
+/* ── 10. Media blocks ────────────────────────────────────────────────────── */
+.zinx-media {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 100%;
+}
+/* `max-content` (not 100%) so an image or GIF sits at its natural size rather than being
+   upscaled to fill the column; a replaced element with width:100% contributes its intrinsic
+   width to max-content sizing, so this resolves to the real image width. Video and embeds
+   opt into full width with -fill. */
+.zinx-media-frame {
+  position: relative;
+  width: max-content;
+  max-width: 100%;
+}
+.zinx-media-frame-fill {
+  width: 100%;
+}
+.zinx-media-frame > img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+}
+
+/* Vidstack renders a <media-player> custom element; make it fill the frame and pick up our
+   corner radius. A video keeps 16/9 until the real media reports its own ratio, so the
+   block doesn't jump on load. */
+.zinx-media media-player,
+.zinx-embed media-player {
+  width: 100%;
+  overflow: hidden;
+  border-radius: var(--radius);
+}
+.zinx-media media-player[data-view-type='video'],
+.zinx-embed media-player[data-view-type='video'] {
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+
+/* Drag-to-resize grips, revealed on hover.
+   `z-index` is load-bearing for video: Vidstack's control bar and gesture layer have their
+   own stacking order, and without this the grips render UNDER them — visible but
+   impossible to press. */
+.zinx-media-grip {
+  position: absolute;
+  top: 50%;
+  z-index: 30;
+  height: 3rem;
+  max-height: 55%;
+  width: 0.4rem;
+  transform: translateY(-50%);
+  border: 1px solid rgb(255 255 255 / 0.75);
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.55);
+  cursor: ew-resize;
+  opacity: 0;
+  /* Without this a touch drag scrolls the page instead of resizing. */
+  touch-action: none;
+  transition: opacity 0.15s ease;
+}
+.zinx-media-grip-left {
+  left: 0.4rem;
+}
+.zinx-media-grip-right {
+  right: 0.4rem;
+}
+.zinx-media-resizable:hover .zinx-media-grip,
+.zinx-media-grip:focus-visible {
+  opacity: 1;
+}
+/* While a resize is in progress the media itself must not react to the pointer — set by
+   the drag handler on the frame. */
+.zinx-media-frame[data-resizing] media-player,
+.zinx-media-frame[data-resizing] img,
+.zinx-media-frame[data-resizing] iframe {
+  pointer-events: none;
+}
+
+.zinx-media-file {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.9rem;
+  color: var(--foreground) !important;
+  text-decoration: none !important;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.zinx-media-file:hover {
+  background: var(--accent);
+}
+.zinx-media-caption {
+  font-size: 0.82rem;
+  color: var(--muted-foreground);
+}
+.zinx-media-caption-input {
+  width: 100%;
+  padding: 0.1rem 0.15rem;
+  font-size: 0.82rem;
+  color: var(--muted-foreground);
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+
+.zinx-media-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.85rem 1rem;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.zinx-media-picker-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  color: var(--muted-foreground);
+}
+.zinx-media-tabs {
+  display: flex;
+  gap: 0.25rem;
+}
+.zinx-media-body {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.zinx-media-error {
+  font-size: 0.8rem;
+  color: var(--destructive);
+}
+
+/* ── 11. Bubble menu ─────────────────────────────────────────────────────── */
+.zinx-bubble-menu {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0.2rem;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow:
+    0 10px 30px -12px rgb(0 0 0 / 0.35),
+    0 2px 8px -4px rgb(0 0 0 / 0.2);
+  z-index: 40;
+}
+
+/* react-colorful inside the cover picker */
+.doc-color-picker .react-colorful {
+  width: 100%;
+  height: 190px;
+}

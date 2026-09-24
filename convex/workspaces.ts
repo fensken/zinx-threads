@@ -8,7 +8,6 @@ import { internal } from './_generated/api'
 import { seedBoardWithSamples } from './lib/boardSeed'
 import { seedDatabaseWithSamples } from './lib/databaseSeed'
 import { seedFormWithSamples } from './lib/formSeed'
-import { seedPage } from './lib/pageSeed'
 import {
   DEFAULT_CHANNEL,
   DEFAULT_GROUPS,
@@ -228,8 +227,6 @@ export const create = mutation({
         await seedDatabaseWithSamples(ctx, { channelId, userId: user._id })
       } else if (ch.kind === 'form') {
         await seedFormWithSamples(ctx, { workspaceId, channelId, title: ch.name, userId: user._id })
-      } else if (ch.kind === 'page') {
-        await seedPage(ctx, { workspaceId, channelId, userId: user._id, name: ch.name })
       }
     }
     return { workspaceId, slug }

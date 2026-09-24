@@ -22,7 +22,14 @@ export function parseScene(elements: string | null | undefined): SceneElements {
   if (!elements) return []
   try {
     const parsed: unknown = JSON.parse(elements)
-    return Array.isArray(parsed) ? parsed : []
+    if (Array.isArray(parsed)) return parsed
+    // Also accept `{ elements: [...] }` — the shape an early version of the doc's
+    // whiteboard block wrote. Reading both means a board saved by it still opens with its
+    // drawing intact rather than blank, and the next save rewrites it in the canonical
+    // form, so this is self-healing rather than a permanent fork. (`_zinx`'s
+    // `safeExcalidrawInitialData` accepts the same two.)
+    const wrapped = (parsed as { elements?: unknown } | null)?.elements
+    return Array.isArray(wrapped) ? wrapped : []
   } catch {
     return []
   }

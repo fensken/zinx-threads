@@ -94,7 +94,10 @@ export interface MentionMember {
 export interface MentionChannel {
   id: string
   name: string
-  kind: 'chat' | 'voice' | 'page' | 'kanban' | 'whiteboard'
+  /** Every real channel kind — a `#mention` must be able to name any channel a person can
+   *  open, so this list has to grow with `CHANNEL_KINDS` (`convex/lib/channels.ts`). `dm`
+   *  is absent on purpose: a DM has no name, only participants. */
+  kind: 'chat' | 'voice' | 'kanban' | 'whiteboard' | 'doc' | 'database' | 'form'
 }
 
 /** Replace the trigger + query with a mention pill, then a trailing space. */
@@ -191,7 +194,9 @@ export function channelMentionEntries(
 export const CHANNEL_KIND_LABEL: Record<MentionChannel['kind'], string> = {
   chat: 'Chat channel',
   voice: 'Voice channel',
-  page: 'Page',
   kanban: 'Board',
-  whiteboard: 'Whiteboard'
+  whiteboard: 'Whiteboard',
+  doc: 'Doc',
+  database: 'Database',
+  form: 'Form'
 }

@@ -42,15 +42,36 @@ function normalize(p: UnsplashApiPhoto): UnsplashPhoto {
   }
 }
 
+/**
+ * Why this is a discriminated result and not just `UnsplashPhoto[]`:
+ *
+ * "the search matched nothing", "you're searching too fast", "our hourly Unsplash quota is
+ * spent", "the network failed" and "no API key is configured" are five completely different
+ * situations, and returning `[]` for all of them made the picker say **"No photos found"**
+ * for every one. That is a lie in four cases out of five, and an actively confusing one:
+ * typing `evere` would report no photos, then `everest` a moment later would work, because
+ * what had actually happened was a rate limit that quietly refilled.
+ *
+ * The caller can only tell the user something true if the server tells IT something true.
+ */
+export type UnsplashResult =
+  | { status: 'ok'; photos: UnsplashPhoto[] }
+  /** Our own per-user limiter. Transient — retrying in a few seconds works. */
+  | { status: 'rate-limited' }
+  /** No key configured, or Unsplash refused/failed. Retrying immediately won't help. */
+  | { status: 'unavailable' }
+
 export const search = action({
   args: { query: v.string(), perPage: v.optional(v.number()) },
-  handler: async (ctx, { query, perPage }): Promise<UnsplashPhoto[]> => {
-    // Signed-in callers only — this spends our Unsplash quota. Per-user rate limited
-    // (Unsplash free tier is strict); degrade to no results rather than erroring.
+  handler: async (ctx, { query, perPage }): Promise<UnsplashResult> => {
+    // Signed-in callers only — this spends our Unsplash quota, which on the free tier is
+    // strict enough that a few seconds of search-as-you-type can exhaust it.
     const identity = await requireIdentity(ctx)
-    if (!(await rateLimiter.limit(ctx, 'unsplash', { key: identity.subject })).ok) return []
+    if (!(await rateLimiter.limit(ctx, 'unsplash', { key: identity.subject })).ok) {
+      return { status: 'rate-limited' }
+    }
     const apiKey = process.env.UNSPLASH_ACCESS_KEY
-    if (!apiKey) return []
+    if (!apiKey) return { status: 'unavailable' }
     const auth = { headers: { Authorization: `Client-ID ${apiKey}` } }
     const per = String(Math.min(30, Math.max(1, perPage ?? 30)))
     const q = query.trim()
@@ -60,12 +81,16 @@ export const search = action({
 
     try {
       const res = await fetch(endpoint, auth)
-      if (!res.ok) return []
+      if (!res.ok) {
+        // 403 is how Unsplash reports its own hourly quota being spent — the same shape as
+        // our limiter from the user's point of view, so say so rather than "unavailable".
+        return { status: res.status === 403 || res.status === 429 ? 'rate-limited' : 'unavailable' }
+      }
       const json = (await res.json()) as UnsplashApiPhoto[] | { results?: UnsplashApiPhoto[] }
       const items = Array.isArray(json) ? json : (json.results ?? [])
-      return items.map(normalize)
+      return { status: 'ok', photos: items.map(normalize) }
     } catch {
-      return []
+      return { status: 'unavailable' }
     }
   }
 })

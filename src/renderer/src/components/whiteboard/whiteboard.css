@@ -3,7 +3,7 @@
  *
  * Excalidraw ships its design system as CSS custom properties, so this **remaps its
  * variables** rather than fighting its rules with `!important` — the same approach
- * `page-editor.css` takes with BlockNote, and it survives their upgrades because we're
+ * we take elsewhere, and it survives their upgrades because we're
  * using the API they expose rather than overriding internals. Every value below is a
  * `var(--…)` from `globals.css`; nothing here is a literal colour.
  *

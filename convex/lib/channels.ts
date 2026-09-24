@@ -7,9 +7,9 @@ import type { QueryCtx } from '../_generated/server'
 export const CHANNEL_KINDS = [
   'chat',
   'voice',
-  'page',
   'kanban',
   'whiteboard',
+  'doc',
   'database',
   'form'
 ] as const

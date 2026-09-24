@@ -180,27 +180,23 @@ export function BoardSkeleton(): React.JSX.Element {
   )
 }
 
-// ── Page (Notion-style document) ──────────────────────────────────────────────
+// ── Doc (Notion-style document) ───────────────────────────────────────────────
 
-/** A page channel — mirrors the **default** page, which has NO cover and NO icon
- *  (those are opt-in; a fresh page is just a title + body). So the skeleton is a
- *  title + a few prose lines, centred `max-w-3xl` with the editor's own `54px` inline
- *  padding (`.zinx-page-head`/`.bn-editor`) and `pt-12`, so the title lands exactly
- *  where the real one does — a cover/icon skeleton would draw a big band + tile that
- *  aren't there and then vanish. The `h-7` row reserves the (desktop-invisible)
- *  "Add icon / Add cover" affordance strip the real head keeps above the title. */
-export function PageSkeleton(): React.JSX.Element {
+/** A `doc` channel: the page icon, the title, and a few lines of prose — laid out on the
+ *  same centred `max-w-3xl` column the real editor uses, so the swap to content doesn't
+ *  move the title. */
+export function DocSkeleton(): React.JSX.Element {
+  // Deterministic widths (never `Math.random`) so the placeholder renders identically on
+  // every mount instead of shimmering into a different shape each time.
+  const lines = ['w-full', 'w-5/6', 'w-4/6']
   return (
-    <div aria-hidden className="min-h-0 flex-1 overflow-hidden">
-      <div className="mx-auto max-w-3xl px-[54px] pt-12">
-        <div className="mb-1 h-7" />
-        {/* Title (`text-4xl`), then the head's `mb-4` gap before the first block. */}
-        <Skeleton className="mb-4 h-10 w-1/2" />
-        <div className="space-y-3">
-          {['64%', '82%', '48%'].map((w, i) => (
-            <Skeleton key={i} className="h-4" style={{ width: w }} />
-          ))}
-        </div>
+    <div aria-hidden className="mx-auto w-full max-w-3xl px-14 pt-12">
+      <Skeleton className="mb-4 size-20 rounded-xl" />
+      <Skeleton className="mb-6 h-10 w-2/3 rounded-md" />
+      <div className="space-y-3">
+        {lines.map((width) => (
+          <Skeleton key={width} className={`h-4 ${width}`} />
+        ))}
       </div>
     </div>
   )

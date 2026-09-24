@@ -23,7 +23,7 @@ export const PROTOCOL_VERSION = '2025-06-18'
 
 const PRIORITY = ['lowest', 'low', 'medium', 'high', 'highest']
 const RSVP = ['going', 'maybe', 'declined', 'invited']
-const CHANNEL_KIND = ['chat', 'voice', 'page', 'kanban', 'whiteboard', 'database', 'form']
+const CHANNEL_KIND = ['chat', 'voice', 'kanban', 'whiteboard', 'doc', 'database', 'form']
 
 /** The tools. Each `inputSchema` is JSON Schema — the exact contract a client fills in.
  *  `annotations` are MCP hints (`readOnlyHint: false` → the client defaults it to needing
@@ -41,7 +41,7 @@ export const TOOLS = [
   {
     name: 'list_channels',
     description:
-      'List the channels the user can see in a workspace, each with its kind (chat / voice / page / kanban / whiteboard / database / form), visibility, and whether the user can post. Only channels the user has access to are returned.',
+      'List the channels the user can see in a workspace, each with its kind (chat / voice / kanban / whiteboard / doc / database / form), visibility, and whether the user can post. Only channels the user has access to are returned.',
     inputSchema: {
       type: 'object',
       properties: { workspace: { type: 'string', description: 'The workspace slug.' } },
@@ -134,20 +134,6 @@ export const TOOLS = [
     annotations: { readOnlyHint: true }
   },
   {
-    name: 'get_page',
-    description: 'Get a page channel’s title and its text content (plain text).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        workspace: { type: 'string', description: 'The workspace slug.' },
-        channel: { type: 'string', description: 'The page channel name.' }
-      },
-      required: ['workspace', 'channel'],
-      additionalProperties: false
-    },
-    annotations: { readOnlyHint: true }
-  },
-  {
     name: 'get_voice',
     description:
       'List who is currently in a voice channel’s call, with each person’s mic / camera / screen-share / deafen state.',
@@ -171,6 +157,21 @@ export const TOOLS = [
       properties: {
         workspace: { type: 'string', description: 'The workspace slug.' },
         channel: { type: 'string', description: 'The whiteboard channel name.' }
+      },
+      required: ['workspace', 'channel'],
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: true }
+  },
+  {
+    name: 'get_doc',
+    description:
+      'Get a doc channel’s title, icon, and body. `text` is the document flattened to lines (headings as `#`, list items as `-`); `content` is the raw ProseMirror JSON if you need the exact structure.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspace: { type: 'string', description: 'The workspace slug.' },
+        channel: { type: 'string', description: 'The doc channel name.' }
       },
       required: ['workspace', 'channel'],
       additionalProperties: false
@@ -298,7 +299,7 @@ export const TOOLS = [
   {
     name: 'create_channel',
     description:
-      'Create a channel in a workspace, as the user. kind is one of chat, voice, page, kanban, whiteboard, database, form.',
+      'Create a channel in a workspace, as the user. kind is one of chat, voice, kanban, whiteboard, doc, database, form.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -311,6 +312,24 @@ export const TOOLS = [
       additionalProperties: false
     },
     annotations: { readOnlyHint: false, destructiveHint: false }
+  },
+  // --- Docs ----------------------------------------------------------------
+  {
+    name: 'set_doc',
+    description:
+      'Replace a doc channel’s body from plain text, as the user. `#`/`##` start a heading and `-` a bullet; everything else is a paragraph. This REPLACES the whole document and understands only those three block types — reading a doc that contains tables, callouts, media or a whiteboard and writing it back will flatten them.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspace: { type: 'string', description: 'The workspace slug.' },
+        channel: { type: 'string', description: 'The doc channel name.' },
+        text: { type: 'string', description: 'The new body.' },
+        title: { type: 'string', description: 'Optionally retitle the page.' }
+      },
+      required: ['workspace', 'channel', 'text'],
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true }
   },
   // --- Events --------------------------------------------------------------
   {
@@ -486,24 +505,6 @@ export const TOOLS = [
       additionalProperties: false
     },
     annotations: { readOnlyHint: false, destructiveHint: true }
-  },
-  // --- Pages ---------------------------------------------------------------
-  {
-    name: 'set_page',
-    description:
-      'Set a page channel’s title and/or text (plain text). Rich formatting is edited in the app.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        workspace: { type: 'string', description: 'The workspace slug.' },
-        channel: { type: 'string', description: 'The page channel name.' },
-        title: { type: 'string' },
-        text: { type: 'string', description: 'Plain text; each line becomes a paragraph.' }
-      },
-      required: ['workspace', 'channel'],
-      additionalProperties: false
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false }
   },
   // --- Database (records) --------------------------------------------------
   {
@@ -696,12 +697,6 @@ export async function callTool(
         slug: workspace,
         channel: str(args, 'channel')
       })
-    case 'get_page':
-      return ctx.runQuery(internal.apiTools.pageFor, {
-        userId,
-        slug: workspace,
-        channel: str(args, 'channel')
-      })
     case 'get_voice':
       return ctx.runQuery(internal.apiTools.voiceFor, {
         userId,
@@ -713,6 +708,20 @@ export async function callTool(
         userId,
         slug: workspace,
         channel: str(args, 'channel')
+      })
+    case 'get_doc':
+      return ctx.runQuery(internal.apiTools.docFor, {
+        userId,
+        slug: workspace,
+        channel: str(args, 'channel')
+      })
+    case 'set_doc':
+      return ctx.runMutation(internal.apiTools.setDocFor, {
+        userId,
+        slug: workspace,
+        channel: str(args, 'channel'),
+        text: str(args, 'text'),
+        ...(args.title === undefined ? {} : { title: str(args, 'title') })
       })
     case 'get_database':
       return ctx.runQuery(internal.apiTools.databaseFor, {
@@ -856,15 +865,6 @@ export async function callTool(
       return ctx.runMutation(internal.apiTools.deleteColumnFor, {
         userId,
         column: str(args, 'column')
-      })
-    // Pages
-    case 'set_page':
-      return ctx.runMutation(internal.apiTools.setPageFor, {
-        userId,
-        slug: workspace,
-        channel: str(args, 'channel'),
-        title: optStr(args, 'title'),
-        text: optStr(args, 'text')
       })
     // Database records
     case 'create_record':

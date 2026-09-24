@@ -11,7 +11,6 @@ import path from 'path'
  *     profile.json                 — the device-local profile + current workspace
  *     <workspace-id>/
  *       workspace.json             — name, icon, channels, groups
- *       pages/<channel-id>.json    — one file per page (BlockNote document)
  *       boards/<channel-id>.json   — one file per board
  *
  * Workspaces are isolated: everything a workspace owns lives inside its folder, and
@@ -30,12 +29,16 @@ const ID_RE = /^[a-zA-Z0-9-]{1,64}$/
  *  means adding it HERE** — the renderer writing a path this doesn't know about used
  *  to be silently dropped (see `applySave`), which is exactly how offline diagrams
  *  shipped writing to a path main refused, losing every drawing on quit. */
-const SUB_DIRS = ['pages', 'boards', 'whiteboards', 'databases'] as const
+const SUB_DIRS = ['boards', 'whiteboards', 'databases', 'docs'] as const
 
 /** The only files a workspace folder may contain. Also the path-traversal guard:
- *  no `.` or `/` is allowed inside a name, so a crafted id can't escape the root. */
-const REL_PATH_RE =
-  /^(workspace\.json|(?:pages|boards|whiteboards|databases)\/[a-zA-Z0-9-]{1,64}\.json)$/
+ *  no `.` or `/` is allowed inside a name, so a crafted id can't escape the root.
+ *
+ *  Derived from `SUB_DIRS` rather than repeating the list — the two drifting apart is
+ *  precisely the bug the comment above describes. */
+const REL_PATH_RE = new RegExp(
+  `^(workspace\\.json|(?:${SUB_DIRS.join('|')})/[a-zA-Z0-9-]{1,64}\\.json)$`
+)
 
 function rootDir(): string {
   return path.join(app.getPath('userData'), ROOT_DIR_NAME)
@@ -157,7 +160,7 @@ async function applySave(payload: OfflineSavePayload): Promise<void> {
 
     for (const [rel, content] of Object.entries(files)) {
       // **Throw, don't skip.** A silently-ignored path is how offline diagrams once shipped
-      // writing to `diagrams/…` while this regex only knew `pages|boards`: every save
+      // writing to `diagrams/…` while this regex only knew `boards`: every save
       // reported success, the renderer committed its "already saved" baseline, and
       // every drawing was lost on quit with nothing in the logs. A path we don't
       // recognise is a bug in *us*, and it must be loud.

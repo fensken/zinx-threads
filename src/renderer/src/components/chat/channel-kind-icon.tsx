@@ -1,8 +1,8 @@
 import {
   ClipboardText,
-  FileText,
   Hash,
   Kanban,
+  Notebook,
   PenNib,
   SpeakerHigh,
   Table
@@ -18,9 +18,9 @@ export function ChannelKindIcon({
   className?: string
 }): React.JSX.Element {
   if (kind === 'voice') return <SpeakerHigh className={className} />
-  if (kind === 'page') return <FileText className={className} />
   if (kind === 'kanban') return <Kanban className={className} />
   if (kind === 'whiteboard') return <PenNib className={className} />
+  if (kind === 'doc') return <Notebook className={className} />
   if (kind === 'database') return <Table className={className} />
   if (kind === 'form') return <ClipboardText className={className} />
   return <Hash className={className} />

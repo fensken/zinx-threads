@@ -19,19 +19,28 @@ import { mapImportedCell } from '@renderer/lib/database-import'
  * The **offline workspace(s)** — standalone, no-auth, local-only workspaces. Mirrors
  * the live app (multiple workspaces + a switcher, an offline profile, per-workspace
  * grouped channels with drag-and-drop, search) minus everything that needs a server:
- * only `page` (docs) and `kanban` (boards) channel kinds, and no members / chat /
+ * the `kanban` / `whiteboard` / `database` / `doc` channel kinds, and no members / chat /
  * voice / unread / presence / sharing. Nothing here touches Convex.
  *
  * Persistence lives in `lib/local-data.ts` (NOT a zustand middleware): on desktop
  * each workspace is its own FOLDER on disk (`userData/offline-workspaces/<id>/` —
- * workspace.json + pages/*.json + boards/*.json, fully isolated per workspace); on
- * web it falls back to one localStorage blob. The store starts empty with
+ * workspace.json + boards|whiteboards|databases|docs/*.json, fully isolated per
+ * workspace); on web it falls back to one localStorage blob. The store starts empty with
  * `hydrated: false` and is filled by `ensureLocalDataLoaded()`.
  */
-export type LocalChannelKind = 'page' | 'kanban' | 'whiteboard' | 'database'
+export type LocalChannelKind = 'kanban' | 'whiteboard' | 'database' | 'doc'
 
 /** Sentinel bucket key for channels not in any group (mirrors the live sidebar). */
 export const LOCAL_UNGROUPED = '__ungrouped__'
+
+/** What an unnamed channel of each kind is called. Online, `channels.create` requires a
+ *  name; here the field can be left blank, so each kind needs its own honest default. */
+const DEFAULT_CHANNEL_NAME: Record<LocalChannelKind, string> = {
+  kanban: 'Untitled board',
+  whiteboard: 'Untitled whiteboard',
+  database: 'Untitled table',
+  doc: 'Untitled doc'
+}
 
 export interface LocalWorkspace {
   id: string
@@ -69,21 +78,12 @@ export interface LocalGroup {
   order: number
 }
 
-/** A local page: the BlockNote document (JSON string) + its chrome. Keyed by channel id. */
-export interface LocalPage {
-  title?: string
-  icon?: string
-  cover?: string
-  coverY?: number
-  content?: string
-}
-
 export interface LocalBoard {
   columns: BoardColumn[]
 }
 
 /** The offline twin of a `database` channel — the same fields/records/views shape the
- *  Convex tables hold, keyed by channel id (like `pages`/`boards`/`whiteboards`). */
+ *  Convex tables hold, keyed by channel id (like `boards`/`whiteboards`). */
 export interface LocalDatabase {
   fields: DbField[]
   records: DbRecord[]
@@ -96,8 +96,22 @@ export interface SidebarOrder {
   buckets: Record<string, string[]>
 }
 
+/** The document behind an offline `doc` channel — the same shape the Convex `channelDocs`
+ *  table holds, keyed by channel like `boards`. `cover` uses the same one-string encoding
+ *  (`components/doc/cover-data.ts`); there is no `coverKey`, because local mode has no
+ *  object store to reclaim from (its covers are gradients, colours and pasted links). */
+export interface LocalDoc {
+  /** The ProseMirror document, as JSON. */
+  content: string
+  title?: string
+  icon?: string
+  cover?: string
+  coverY?: number
+  updatedAt: number
+}
+
 /** The canvas behind an offline `whiteboard` channel — the same shape the Convex
- *  `whiteboards` table holds, keyed by channel like `pages` and `boards`. */
+ *  `whiteboards` table holds, keyed by channel like `boards`. */
 export interface LocalWhiteboard {
   /** Excalidraw's element array, as JSON. */
   elements: string
@@ -117,11 +131,12 @@ export interface LocalWorkspaceExport {
   workspace: { name: string; icon?: string; image?: string }
   channels: Omit<LocalChannel, 'workspaceId'>[]
   groups: Omit<LocalGroup, 'workspaceId'>[]
-  pages: Record<string, LocalPage>
   boards: Record<string, LocalBoard>
   whiteboards: Record<string, LocalWhiteboard>
   /** Optional so an export written before database channels existed still imports. */
   databases?: Record<string, LocalDatabase>
+  /** Likewise for docs — an older archive simply has none. */
+  docs?: Record<string, LocalDoc>
 }
 
 /** The persisted data slice (everything except `hydrated` + the actions) — what
@@ -132,10 +147,10 @@ export interface LocalData {
   profile: LocalProfile
   channels: LocalChannel[]
   groups: LocalGroup[]
-  pages: Record<string, LocalPage>
   boards: Record<string, LocalBoard>
   whiteboards: Record<string, LocalWhiteboard>
   databases: Record<string, LocalDatabase>
+  docs: Record<string, LocalDoc>
 }
 
 interface LocalState extends LocalData {
@@ -167,8 +182,9 @@ interface LocalState extends LocalData {
 
   saveWhiteboard: (channelId: string, scene: { elements: string; elementCount: number }) => void
 
-  savePageContent: (channelId: string, content: string) => void
-  savePageMeta: (
+  saveDocContent: (channelId: string, content: string) => void
+  /** Only the passed fields are written; `null` clears `icon`/`cover`. */
+  saveDocMeta: (
     channelId: string,
     patch: { title?: string; icon?: string | null; cover?: string | null; coverY?: number }
   ) => void
@@ -244,10 +260,10 @@ export const useLocalStore = create<LocalState>()((set) => ({
   profile: { name: 'You' },
   channels: [],
   groups: [],
-  pages: {},
   whiteboards: {},
   boards: {},
   databases: {},
+  docs: {},
   hydrated: false,
 
   createWorkspace: (name): string => {
@@ -289,15 +305,15 @@ export const useLocalStore = create<LocalState>()((set) => ({
       const channelIds = new Set(
         state.channels.filter((c) => c.workspaceId === id).map((c) => c.id)
       )
-      const pages = { ...state.pages }
       const boards = { ...state.boards }
       const whiteboards = { ...state.whiteboards }
       const databases = { ...state.databases }
+      const docs = { ...state.docs }
       for (const channelId of channelIds) {
-        delete pages[channelId]
         delete boards[channelId]
         delete whiteboards[channelId]
         delete databases[channelId]
+        delete docs[channelId]
       }
       const workspaces = state.workspaces.filter((w) => w.id !== id)
       return {
@@ -306,10 +322,10 @@ export const useLocalStore = create<LocalState>()((set) => ({
           state.currentWorkspaceId === id ? (workspaces[0]?.id ?? null) : state.currentWorkspaceId,
         channels: state.channels.filter((c) => c.workspaceId !== id),
         groups: state.groups.filter((g) => g.workspaceId !== id),
-        pages,
         boards,
         whiteboards,
-        databases
+        databases,
+        docs
       }
     })
   },
@@ -324,16 +340,16 @@ export const useLocalStore = create<LocalState>()((set) => ({
       groupIdMap.set(group.id, id)
       return { id, workspaceId: wsId, name: group.name, order: group.order }
     })
-    const pages: Record<string, LocalPage> = {}
     const boards: Record<string, LocalBoard> = {}
     const whiteboards: Record<string, LocalWhiteboard> = {}
     const databases: Record<string, LocalDatabase> = {}
+    const docs: Record<string, LocalDoc> = {}
     const channels: LocalChannel[] = payload.channels.map((channel) => {
       const id = uid()
-      if (payload.pages[channel.id]) pages[id] = payload.pages[channel.id]
       if (payload.boards[channel.id]) boards[id] = payload.boards[channel.id]
       if (payload.whiteboards[channel.id]) whiteboards[id] = payload.whiteboards[channel.id]
       if (payload.databases?.[channel.id]) databases[id] = payload.databases[channel.id]
+      if (payload.docs?.[channel.id]) docs[id] = payload.docs[channel.id]
       return {
         id,
         workspaceId: wsId,
@@ -358,10 +374,10 @@ export const useLocalStore = create<LocalState>()((set) => ({
       currentWorkspaceId: wsId,
       channels: [...state.channels, ...channels],
       groups: [...state.groups, ...groups],
-      pages: { ...state.pages, ...pages },
       boards: { ...state.boards, ...boards },
       whiteboards: { ...state.whiteboards, ...whiteboards },
-      databases: { ...state.databases, ...databases }
+      databases: { ...state.databases, ...databases },
+      docs: { ...state.docs, ...docs }
     }))
     return wsId
   },
@@ -380,13 +396,7 @@ export const useLocalStore = create<LocalState>()((set) => ({
 
   createChannel: (name, kind, groupId): string => {
     const id = uid()
-    const trimmed =
-      name.trim() ||
-      (kind === 'page'
-        ? 'Untitled page'
-        : kind === 'database'
-          ? 'Untitled table'
-          : 'Untitled board')
+    const trimmed = name.trim() || DEFAULT_CHANNEL_NAME[kind]
     set((state) => {
       const workspaceId = state.currentWorkspaceId
       if (!workspaceId) return {}
@@ -426,20 +436,20 @@ export const useLocalStore = create<LocalState>()((set) => ({
 
   deleteChannel: (id): void => {
     set((state) => {
-      const pages = { ...state.pages }
       const boards = { ...state.boards }
       const whiteboards = { ...state.whiteboards }
       const databases = { ...state.databases }
-      delete pages[id]
+      const docs = { ...state.docs }
       delete boards[id]
       delete whiteboards[id]
       delete databases[id]
+      delete docs[id]
       return {
         channels: state.channels.filter((channel) => channel.id !== id),
-        pages,
         boards,
         whiteboards,
-        databases
+        databases,
+        docs
       }
     })
   },
@@ -541,21 +551,28 @@ export const useLocalStore = create<LocalState>()((set) => ({
     }))
   },
 
-  savePageContent: (channelId, content): void => {
+  saveDocContent: (channelId, content): void => {
     set((state) => ({
-      pages: { ...state.pages, [channelId]: { ...state.pages[channelId], content } }
+      docs: {
+        ...state.docs,
+        [channelId]: { ...state.docs[channelId], content, updatedAt: Date.now() }
+      }
     }))
   },
 
-  savePageMeta: (channelId, patch): void => {
+  saveDocMeta: (channelId, patch): void => {
     set((state) => {
-      const current = state.pages[channelId] ?? {}
-      const next: LocalPage = { ...current }
-      if (patch.title !== undefined) next.title = patch.title
+      // Start from the stored row, or an empty document — a doc whose icon is set before
+      // anything is typed must still persist, and `''` is what the editor's parser reads
+      // as "nothing written yet" (never a sentinel it would refuse).
+      const current = state.docs[channelId] ?? { content: '', updatedAt: 0 }
+      const next = { ...current, updatedAt: Date.now() }
+      if (patch.title !== undefined) next.title = patch.title.trim().slice(0, 200)
+      // `null` clears; `undefined` means "not in this patch".
       if (patch.icon !== undefined) next.icon = patch.icon ?? undefined
       if (patch.cover !== undefined) next.cover = patch.cover ?? undefined
       if (patch.coverY !== undefined) next.coverY = patch.coverY
-      return { pages: { ...state.pages, [channelId]: next } }
+      return { docs: { ...state.docs, [channelId]: next } }
     })
   },
 

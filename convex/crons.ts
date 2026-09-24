@@ -25,15 +25,10 @@ crons.daily(
   {}
 )
 
-// Weekly GC: reclaim R2 objects for page media that was REMOVED from a page but whose object
-// lingered (a block dropped from a still-live page, so `cleanup.channel` never ran). Guarded
-// hard against deleting live files — public-URL-only, a 7-day grace, and it skips any page it
-// can't fully map. See `files.reconcilePageMedia`.
-crons.weekly(
-  'reconcile page media',
-  { dayOfWeek: 'sunday', hourUTC: 9, minuteUTC: 0 },
-  internal.files.reconcilePageMedia,
-  {}
-)
+// Guardrail: pause any timer left running past 12h (laptop shut, went to bed) and credit at
+// most that, so a forgotten clock can't invent a day of hours. Hourly so the correction is
+// never far behind. Indexed range + self-rescheduling — see `timer.autoPauseStale`.
+crons.hourly('auto-pause stale timers', { minuteUTC: 20 }, internal.timer.autoPauseStale, {})
+
 
 export default crons

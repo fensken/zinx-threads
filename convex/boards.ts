@@ -1,5 +1,6 @@
 import { ConvexError, v } from 'convex/values'
 import { query, mutation, type MutationCtx } from './_generated/server'
+import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import { taskPriority } from './schema'
 import { getChannelAccess, getCurrentUser, requireChannelAccess, requireUser } from './lib/auth'
@@ -17,6 +18,8 @@ const MAX_CHECKLIST = 100
 
 const MAX_TITLE = 200
 const MAX_DESCRIPTION = 20_000
+/** An estimate past this is a units mistake (someone typed ms as minutes), not a plan. */
+const MAX_ESTIMATE_MS = 1000 * 60 * 60 * 1000
 
 const checklistItem = v.object({
   id: v.string(),
@@ -33,7 +36,8 @@ const taskFields = {
   labels: v.array(v.string()),
   checklist: v.array(checklistItem),
   dueDate: v.optional(v.string()),
-  storyPoints: v.optional(v.number())
+  storyPoints: v.optional(v.number()),
+  estimateMs: v.optional(v.number())
 }
 
 type TaskFields = {
@@ -45,6 +49,7 @@ type TaskFields = {
   checklist: { id: string; content: string; completed: boolean }[]
   dueDate?: string
   storyPoints?: number
+  estimateMs?: number
 }
 
 /** Reject oversized input at the edge rather than letting a task document creep
@@ -63,6 +68,14 @@ function validateTask(fields: TaskFields): TaskFields {
   }
   if (fields.checklist.length > MAX_CHECKLIST) {
     throw new ConvexError(`A checklist can have at most ${MAX_CHECKLIST} items`)
+  }
+  if (fields.estimateMs !== undefined) {
+    if (!Number.isFinite(fields.estimateMs) || fields.estimateMs < 0) {
+      throw new ConvexError('That estimate is not a valid duration')
+    }
+    if (fields.estimateMs > MAX_ESTIMATE_MS) {
+      throw new ConvexError('An estimate can be at most 1000 hours')
+    }
   }
   return { ...fields, title }
 }
@@ -180,16 +193,24 @@ export const renameColumn = mutation({
 })
 
 /** Deleting a column deletes its tasks — they have nowhere else to live. */
+/**
+ * Delete a column and everything in it.
+ *
+ * The column row goes immediately (so it vanishes from the board), and its tasks drain in
+ * the background. That's the established shape here — but it became *necessary* with time
+ * tracking: each task now also has timers and a totals row to clean up, and doing 500 tasks
+ * × their time rows inline would blow a mutation's document limit. `by_column_order` still
+ * resolves by id after the column row is gone, the same trick `cleanup.channel` uses.
+ */
 export const removeColumn = mutation({
   args: { columnId: v.id('kanbanColumns') },
   handler: async (ctx, { columnId }) => {
-    await requireColumn(ctx, columnId)
-    const tasks = await ctx.db
-      .query('kanbanTasks')
-      .withIndex('by_column_order', (q) => q.eq('columnId', columnId))
-      .take(MAX_TASKS)
-    for (const task of tasks) await ctx.db.delete(task._id)
+    const { column } = await requireColumn(ctx, columnId)
     await ctx.db.delete(columnId)
+    await ctx.scheduler.runAfter(0, internal.cleanup.column, {
+      columnId,
+      channelId: column.channelId
+    })
   }
 })
 
@@ -241,6 +262,12 @@ export const removeTask = mutation({
     if (!task) return
     await requireChannelAccess(ctx, task.channelId, user._id)
     await ctx.db.delete(taskId)
+    // Its timers and rollup go too — but any logged HOURS survive, keyed to the snapshot.
+    // See `cleanup.taskTime`.
+    await ctx.scheduler.runAfter(0, internal.cleanup.taskTime, {
+      taskId,
+      channelId: task.channelId
+    })
   }
 })
 

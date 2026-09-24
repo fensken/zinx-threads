@@ -4,8 +4,9 @@ import { useLocalStore, type LocalWorkspaceExport } from '@renderer/store/local-
 /**
  * Export / import a local workspace as a **`.zip`**.
  *
- * The archive mirrors the on-disk folder layout (`workspace.json` + `pages/<id>.json`
- * + `boards/<id>.json` + `whiteboards/<id>.json`), so it's a portable backup you can
+ * The archive mirrors the on-disk folder layout (`workspace.json` + `boards/<id>.json` +
+ * `whiteboards/<id>.json` + `databases/<id>.json` + `docs/<id>.json`), so it's a portable
+ * backup you can
  * carry between devices, open in any archiver to see your files, and import back to
  * recreate the whole workspace. Importing always creates a **new** workspace with the
  * imported data (ids are remapped so it can't collide with anything you already have).
@@ -31,15 +32,15 @@ export function collectWorkspaceExport(workspaceId: string): LocalWorkspaceExpor
   if (!workspace) return null
 
   const channels = state.channels.filter((c) => c.workspaceId === workspaceId)
-  const pages: LocalWorkspaceExport['pages'] = {}
   const boards: LocalWorkspaceExport['boards'] = {}
   const whiteboards: LocalWorkspaceExport['whiteboards'] = {}
   const databases: NonNullable<LocalWorkspaceExport['databases']> = {}
+  const docs: NonNullable<LocalWorkspaceExport['docs']> = {}
   for (const channel of channels) {
-    if (state.pages[channel.id]) pages[channel.id] = state.pages[channel.id]
     if (state.boards[channel.id]) boards[channel.id] = state.boards[channel.id]
     if (state.whiteboards[channel.id]) whiteboards[channel.id] = state.whiteboards[channel.id]
     if (state.databases[channel.id]) databases[channel.id] = state.databases[channel.id]
+    if (state.docs[channel.id]) docs[channel.id] = state.docs[channel.id]
   }
 
   return {
@@ -57,10 +58,10 @@ export function collectWorkspaceExport(workspaceId: string): LocalWorkspaceExpor
     groups: state.groups
       .filter((g) => g.workspaceId === workspaceId)
       .map((g) => ({ id: g.id, name: g.name, order: g.order })),
-    pages,
     boards,
     whiteboards,
-    databases
+    databases,
+    docs
   }
 }
 
@@ -76,7 +77,6 @@ export function buildExportZip(payload: LocalWorkspaceExport): Uint8Array {
     groups: payload.groups
   }
   const files: Record<string, Uint8Array> = { 'workspace.json': pretty(meta) }
-  for (const [id, page] of Object.entries(payload.pages)) files[`pages/${id}.json`] = pretty(page)
   for (const [id, board] of Object.entries(payload.boards))
     files[`boards/${id}.json`] = pretty(board)
   for (const [id, wb] of Object.entries(payload.whiteboards)) {
@@ -84,6 +84,9 @@ export function buildExportZip(payload: LocalWorkspaceExport): Uint8Array {
   }
   for (const [id, db] of Object.entries(payload.databases ?? {})) {
     files[`databases/${id}.json`] = pretty(db)
+  }
+  for (const [id, doc] of Object.entries(payload.docs ?? {})) {
+    files[`docs/${id}.json`] = pretty(doc)
   }
   return zipSync(files, { level: 6 })
 }
@@ -134,18 +137,17 @@ export async function readWorkspaceZip(file: File): Promise<LocalWorkspaceExport
     ) {
       return null
     }
-
-    const pages: LocalWorkspaceExport['pages'] = {}
     const boards: LocalWorkspaceExport['boards'] = {}
     const whiteboards: LocalWorkspaceExport['whiteboards'] = {}
     const databases: NonNullable<LocalWorkspaceExport['databases']> = {}
+    const docs: NonNullable<LocalWorkspaceExport['docs']> = {}
     for (const [path, data] of Object.entries(unzipped)) {
-      const match = path.match(/^(pages|boards|whiteboards|databases)\/(.+)\.json$/)
+      const match = path.match(/^(boards|whiteboards|databases|docs)\/(.+)\.json$/)
       if (!match) continue
       const parsed = JSON.parse(strFromU8(data))
-      if (match[1] === 'pages') pages[match[2]] = parsed
-      else if (match[1] === 'boards') boards[match[2]] = parsed
+      if (match[1] === 'boards') boards[match[2]] = parsed
       else if (match[1] === 'databases') databases[match[2]] = parsed
+      else if (match[1] === 'docs') docs[match[2]] = parsed
       else whiteboards[match[2]] = parsed
     }
 
@@ -155,10 +157,10 @@ export async function readWorkspaceZip(file: File): Promise<LocalWorkspaceExport
       workspace: meta.workspace,
       channels: meta.channels,
       groups: meta.groups,
-      pages,
       boards,
       whiteboards,
-      databases
+      databases,
+      docs
     }
   } catch {
     return null

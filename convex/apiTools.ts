@@ -414,24 +414,6 @@ export const boardFor = internalQuery({
   }
 })
 
-/** `get_page` — a page channel's title and its text (a plain-text rendering of the document). */
-export const pageFor = internalQuery({
-  args: { userId: v.id('users'), slug: v.string(), channel: v.string() },
-  handler: async (ctx, { userId, slug, channel: channelName }) => {
-    const resolved = await resolveVisibleChannel(ctx, userId, slug, channelName)
-    if (!resolved || resolved.channel.kind !== 'page') return null
-    const page = await ctx.db
-      .query('pages')
-      .withIndex('by_channel', (q) => q.eq('channelId', resolved.channel._id))
-      .unique()
-    return {
-      channel: resolved.channel.name,
-      title: page?.title ?? resolved.channel.name,
-      text: page ? blocksToText(page.content) : ''
-    }
-  }
-})
-
 /** How long after its last heartbeat a voice participant is still considered present — mirrors
  *  `voice.ts` `PRESENCE_TTL_MS` (a missed beat shouldn't drop someone from the call). */
 const VOICE_PRESENCE_TTL = 45_000
@@ -484,6 +466,138 @@ export const whiteboardFor = internalQuery({
       elementCount: board?.elementCount ?? 0,
       // Excalidraw's own element-array format; empty when nothing has been drawn.
       elements: board?.elements ?? '[]'
+    }
+  }
+})
+
+// ── Doc channels ───────────────────────────────────────────────────────────
+//
+// A doc's stored form is a ProseMirror document, which is the editor's vocabulary and not
+// a useful thing to hand an automation. So the API speaks **lines**: `get_doc` flattens the
+// document to text (and still returns the raw JSON for a caller that understands it), and
+// `set_doc` builds a document from headings / bullets / paragraphs.
+//
+// That round-trip is deliberately lossy, and `set_doc` REPLACES the body — a caller that
+// reads a doc full of tables, callouts and media and writes it back would flatten them. The
+// tool description says so; the richer blocks are authored in the app.
+
+/** Node types whose text is worth extracting, and how each renders as a line. */
+function docNodeToLines(node: unknown, out: string[]): void {
+  if (!node || typeof node !== 'object') return
+  const { type, content, attrs, text } = node as {
+    type?: string
+    content?: unknown[]
+    attrs?: Record<string, unknown>
+    text?: string
+  }
+  if (type === 'text') {
+    if (text) out.push(text)
+    return
+  }
+  const children: string[] = []
+  for (const child of Array.isArray(content) ? content : []) docNodeToLines(child, children)
+
+  if (type === 'heading') {
+    const level = Number(attrs?.level ?? 1)
+    out.push(`${'#'.repeat(Math.min(Math.max(level, 1), 6))} ${children.join('')}`)
+    return
+  }
+  if (type === 'listItem' || type === 'taskItem') {
+    out.push(`- ${children.join(' ').trim()}`)
+    return
+  }
+  if (type === 'paragraph' || type === 'blockquote' || type === 'callout') {
+    out.push(children.join(''))
+    return
+  }
+  if (type === 'codeBlock') {
+    out.push(children.join(''))
+    return
+  }
+  // Everything else (lists, columns, tables, media, whiteboards) contributes whatever text
+  // its children hold — an image or a canvas simply has none.
+  out.push(...children)
+}
+
+/** The inverse: `# `/`## ` → a heading, `- `/`* ` → a bullet list, anything else a
+ *  paragraph. Blank lines separate blocks. */
+function linesToDoc(text: string): string {
+  const nodes: unknown[] = []
+  let bullets: string[] = []
+
+  const flushBullets = (): void => {
+    if (bullets.length === 0) return
+    nodes.push({
+      type: 'bulletList',
+      content: bullets.map((item) => ({
+        type: 'listItem',
+        content: [{ type: 'paragraph', content: item ? [{ type: 'text', text: item }] : [] }]
+      }))
+    })
+    bullets = []
+  }
+
+  for (const raw of text.replace(/\r\n/g, '\n').split('\n')) {
+    const line = raw.trimEnd()
+    const bullet = /^\s*[-*]\s+(.*)$/.exec(line)
+    if (bullet) {
+      bullets.push(bullet[1])
+      continue
+    }
+    flushBullets()
+    const heading = /^(#{1,4})\s+(.*)$/.exec(line)
+    if (heading) {
+      nodes.push({
+        type: 'heading',
+        attrs: { level: heading[1].length },
+        content: heading[2] ? [{ type: 'text', text: heading[2] }] : []
+      })
+      continue
+    }
+    nodes.push({ type: 'paragraph', content: line ? [{ type: 'text', text: line }] : [] })
+  }
+  flushBullets()
+
+  // Never an empty `content` array: the editor's parser accepts it, but a document with no
+  // blocks has nowhere to put the caret.
+  return JSON.stringify({
+    type: 'doc',
+    content: nodes.length > 0 ? nodes : [{ type: 'paragraph' }]
+  })
+}
+
+/** `get_doc` — a doc channel's title, icon, flattened text, and the raw document JSON. */
+export const docFor = internalQuery({
+  args: { userId: v.id('users'), slug: v.string(), channel: v.string() },
+  handler: async (ctx, { userId, slug, channel: channelName }) => {
+    const resolved = await resolveVisibleChannel(ctx, userId, slug, channelName)
+    if (!resolved || resolved.channel.kind !== 'doc') return null
+    const doc = await ctx.db
+      .query('channelDocs')
+      .withIndex('by_channel', (q) => q.eq('channelId', resolved.channel._id))
+      .unique()
+
+    let lines: string[] = []
+    if (doc?.content) {
+      try {
+        const parsed = JSON.parse(doc.content) as { content?: unknown[] }
+        for (const node of Array.isArray(parsed.content) ? parsed.content : []) {
+          docNodeToLines(node, lines)
+        }
+      } catch {
+        // A document the parser can't read is reported as empty, never as an error — the
+        // raw JSON is still returned below for a caller that wants to look.
+        lines = []
+      }
+    }
+
+    return {
+      channel: resolved.channel.name,
+      title: doc?.title ?? resolved.channel.name,
+      icon: doc?.icon ?? null,
+      text: lines.join('\n'),
+      /** The ProseMirror document, verbatim. Empty when nothing has been written. */
+      content: doc?.content ?? ''
     }
   }
 })
@@ -608,9 +722,9 @@ export const markReadFor = internalMutation({
 const CREATABLE_KINDS = new Set([
   'chat',
   'voice',
-  'page',
   'kanban',
   'whiteboard',
+  'doc',
   'database',
   'form'
 ])
@@ -629,7 +743,7 @@ export const createChannelFor = internalMutation({
     if (!resolved) throw new ConvexError(`Workspace "${slug}" not found or you are not a member`)
     if (resolved.membership.role === 'guest') throw new ConvexError('Guests cannot create channels')
     if (!CREATABLE_KINDS.has(kind)) {
-      throw new ConvexError('kind must be chat, voice, page, kanban, whiteboard, database or form')
+      throw new ConvexError('kind must be chat, voice, kanban, whiteboard, doc, database or form')
     }
     const clean = name
       .trim()
@@ -676,6 +790,60 @@ export const createChannelFor = internalMutation({
       await seedForm(ctx, { workspaceId: resolved.workspaceId, channelId, title: unique })
     }
     return { id: channelId, name: unique, kind }
+  }
+})
+
+/**
+ * `set_doc` — replace a doc channel's body (and optionally its title) from plain text.
+ *
+ * REPLACES rather than appends, and the text→document conversion only understands headings,
+ * bullets and paragraphs — so a caller that round-trips a doc containing tables, callouts,
+ * media or a whiteboard will flatten them. That's stated in the tool description; the richer
+ * blocks are authored in the app.
+ */
+export const setDocFor = internalMutation({
+  args: {
+    userId: v.id('users'),
+    slug: v.string(),
+    channel: v.string(),
+    text: v.string(),
+    title: v.optional(v.string())
+  },
+  handler: async (ctx, { userId, slug, channel: channelName, text, title }) => {
+    const resolved = await resolveVisibleChannel(ctx, userId, slug, channelName)
+    if (!resolved) throw new ConvexError(`No channel "${channelName}" you can see in "${slug}"`)
+    const { channel } = resolved
+    if (channel.kind !== 'doc') throw new ConvexError('That channel is not a doc')
+    // The same gate the editor goes through: membership decides access, `canPost` decides
+    // whether this is a read-only doc.
+    const access = await getChannelAccess(ctx, channel._id, userId)
+    if (!access) throw new ConvexError('You do not have access to this channel')
+    if (!access.canPost) throw new ConvexError('This doc is read-only for you')
+
+    const content = linesToDoc(text)
+    const existing = await ctx.db
+      .query('channelDocs')
+      .withIndex('by_channel', (q) => q.eq('channelId', channel._id))
+      .unique()
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        content,
+        ...(title === undefined ? {} : { title: title.trim().slice(0, 200) }),
+        updatedBy: userId,
+        updatedAt: Date.now()
+      })
+    } else {
+      await ctx.db.insert('channelDocs', {
+        workspaceId: channel.workspaceId,
+        channelId: channel._id,
+        title: title?.trim().slice(0, 200) || channel.name,
+        content,
+        updatedBy: userId,
+        updatedAt: Date.now()
+      })
+    }
+    return { channel: channel.name, saved: true }
   }
 })
 
@@ -992,46 +1160,6 @@ export const deleteColumnFor = internalMutation({
   }
 })
 
-/** `set_page` — set a page channel's title and/or its text (plain text → paragraphs). Rich
- *  formatting is edited in the app; the API writes plain paragraphs, which the editor then
- *  opens and the owner can format. */
-export const setPageFor = internalMutation({
-  args: {
-    userId: v.id('users'),
-    slug: v.string(),
-    channel: v.string(),
-    title: v.optional(v.string()),
-    text: v.optional(v.string())
-  },
-  handler: async (ctx, { userId, slug, channel: channelName, title, text }) => {
-    const resolved = await resolveVisibleChannel(ctx, userId, slug, channelName)
-    if (!resolved) throw new ConvexError(`No channel "${channelName}" you can see in "${slug}"`)
-    const channel = resolved.channel
-    if (channel.kind !== 'page') throw new ConvexError('That channel is not a page')
-    const page = await ctx.db
-      .query('pages')
-      .withIndex('by_channel', (q) => q.eq('channelId', channel._id))
-      .unique()
-    const now = Date.now()
-    const patch: Partial<Doc<'pages'>> = { updatedAt: now, updatedBy: userId }
-    if (title !== undefined) patch.title = title.trim().slice(0, 120)
-    if (text !== undefined) patch.content = textToBlocks(text)
-    if (page) {
-      await ctx.db.patch(page._id, patch)
-      return { channel: channel.name, updated: true }
-    }
-    await ctx.db.insert('pages', {
-      workspaceId: channel.workspaceId,
-      channelId: channel._id,
-      title: patch.title ?? channel.name,
-      content: patch.content ?? '[]',
-      updatedAt: now,
-      updatedBy: userId
-    })
-    return { channel: channel.name, created: true }
-  }
-})
-
 // ===========================================================================
 // DATABASE + FORM channels
 // ===========================================================================
@@ -1177,7 +1305,12 @@ export const formSchemaFor = internalQuery({
       channel: resolved.channel.name,
       title: form.title,
       description: form.description,
-      fields: form.fields.map((f) => ({ id: f.id, name: f.name, type: f.type, required: f.required })),
+      fields: form.fields.map((f) => ({
+        id: f.id,
+        name: f.name,
+        type: f.type,
+        required: f.required
+      })),
       responseCount: responses.length
     }
   }
@@ -1206,51 +1339,3 @@ export const formResponsesFor = internalQuery({
     }))
   }
 })
-
-// ---------------------------------------------------------------------------
-// Plain-text ⇄ BlockNote document (the page content is a BlockNote block array as JSON)
-// ---------------------------------------------------------------------------
-
-/** Each non-empty line becomes a paragraph block; blank lines become empty paragraphs. Ids are
- *  index-derived (deterministic — no `Math.random`, which Convex forbids). BlockNote normalises
- *  anything else on load, and `parsePageContent` opens an unparseable doc empty, so this is
- *  low-risk. */
-function textToBlocks(text: string): string {
-  const lines = text.replace(/\r\n/g, '\n').split('\n')
-  const blocks = lines.map((line, i) => ({
-    id: `api-${i}`,
-    type: 'paragraph',
-    props: { textColor: 'default', backgroundColor: 'default', textAlignment: 'left' },
-    content: line ? [{ type: 'text', text: line, styles: {} }] : [],
-    children: []
-  }))
-  if (blocks.length === 0) {
-    blocks.push({
-      id: 'api-0',
-      type: 'paragraph',
-      props: { textColor: 'default', backgroundColor: 'default', textAlignment: 'left' },
-      content: [],
-      children: []
-    })
-  }
-  return JSON.stringify(blocks)
-}
-
-/** Render a stored BlockNote document back to plain text — the inverse of `textToBlocks`, best
- *  effort (walks each block's inline text runs). A corrupt document yields ''. */
-function blocksToText(content: string): string {
-  try {
-    const blocks = JSON.parse(content) as Array<{ content?: Array<{ text?: string }> }>
-    if (!Array.isArray(blocks)) return ''
-    return blocks
-      .map((block) =>
-        Array.isArray(block.content)
-          ? block.content.map((run) => (typeof run.text === 'string' ? run.text : '')).join('')
-          : ''
-      )
-      .join('\n')
-      .trim()
-  } catch {
-    return ''
-  }
-}

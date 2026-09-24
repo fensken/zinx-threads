@@ -6,7 +6,7 @@ import type { CellValue } from '@renderer/components/database/database-types'
  * A `database` channel in the OFFLINE workspace — the local-store adapter. Renders the same
  * `DatabaseView` the online path does (Grid + Board), wiring every edit to the local store
  * (`<wsId>/databases/<channelId>.json` on disk). Local mode has no members, so `user`-type
- * fields have an empty picker. Mirrors `local-board-view.tsx` / `local-page-editor.tsx`.
+ * fields have an empty picker. Mirrors `local-board-view.tsx`.
  */
 export function LocalDatabaseView({ channelId }: { channelId: string }): React.JSX.Element {
   const database = useLocalStore((state) => state.databases[channelId])

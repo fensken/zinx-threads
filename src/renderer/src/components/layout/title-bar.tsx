@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter, useRouterState } from '@tanstack/react-router'
 import { CaretLeft, CaretRight, MagnifyingGlass, SidebarSimple } from '@phosphor-icons/react'
 import { Logo } from '@renderer/components/layout/logo'
+import { HeaderTimer } from '@renderer/components/timer/header-timer'
 import { UpdateBadge } from '@renderer/components/layout/update-badge'
 import { WindowControls } from '@renderer/components/layout/window-controls'
 import { hasCustomTitleBar, windowControlsStyle } from '@renderer/lib/platform'
@@ -120,11 +121,18 @@ export function TitleBar(): React.JSX.Element | null {
         </button>
       </div>
 
-      {/* The "Update available" pill sits just LEFT of the window buttons (it carries
-          `ml-auto`, so it hugs the right edge next to them). It must NOT wrap
-          `WindowControls` — those need to stay a direct child of the bar so `self-stretch`
-          fills the full bar height and they sit flush in the corner. */}
-      <UpdateBadge />
+      {/* The right-hand group, just LEFT of the window buttons. `ml-auto` lives on the group
+          so neither child has to know about the other. It must NOT wrap `WindowControls` —
+          those stay a direct child of the bar so `self-stretch` fills the full bar height and
+          they sit flush in the corner.
+
+          `HeaderTimer` shows a *running* clock wherever you are — starting one still happens
+          on a board, but losing sight of one because you changed channel is how people end up
+          billing a forgotten timer. It renders nothing in a workspace with no boards. */}
+      <div className="app-no-drag ml-auto flex items-center gap-1">
+        <HeaderTimer />
+        <UpdateBadge />
+      </div>
 
       {/* Windows/Linux: our minimise / maximise / close, flush to the corner. macOS:
           renders nothing (the traffic lights are already at the other end). */}

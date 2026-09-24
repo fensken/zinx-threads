@@ -7,19 +7,22 @@ import { ChannelHelpDialog } from '@renderer/components/chat/channel-help-dialog
 import { EditableChannelName } from '@renderer/components/chat/editable-channel-name'
 import { IconButton } from '@renderer/components/common/icon-button'
 import { Spinner } from '@renderer/components/ui/spinner'
+import { DocLoading } from '@renderer/components/doc/doc-loading'
 import { LocalBoardView } from '@renderer/components/local/local-board-view'
 import { LocalDatabaseView } from '@renderer/components/local/local-database-view'
 
-// BlockNote (~900kB) and Excalidraw (~1MB) are large chunks — only load them for the
-// channel kinds that use them (mirrors the online lazy split).
-const LocalPageEditor = lazy(() =>
-  import('@renderer/components/local/local-page-editor').then((module) => ({
-    default: module.LocalPageEditor
-  }))
-)
+// Excalidraw (~1MB) is a large chunk — only load it for the channel kinds that use it
+// (mirrors the online lazy split).
 const LocalWhiteboardView = lazy(() =>
   import('@renderer/components/whiteboard/local-whiteboard-view').then((module) => ({
     default: module.LocalWhiteboardView
+  }))
+)
+// Likewise the doc editor (TipTap + ~20 highlight.js grammars + Vidstack), matching the
+// online split — a local workspace with no docs never loads it.
+const LocalDocEditor = lazy(() =>
+  import('@renderer/components/local/local-doc-editor').then((module) => ({
+    default: module.LocalDocEditor
   }))
 )
 
@@ -58,17 +61,7 @@ export function LocalChannelView({ channel }: { channel: LocalChannel }): React.
         onOpenChange={setHelpOpen}
       />
 
-      {channel.kind === 'page' ? (
-        <Suspense
-          fallback={
-            <div className="flex flex-1 items-center justify-center">
-              <Spinner className="size-6 text-muted-foreground" />
-            </div>
-          }
-        >
-          <LocalPageEditor key={channel.id} channelId={channel.id} channelName={channel.name} />
-        </Suspense>
-      ) : channel.kind === 'whiteboard' ? (
+      {channel.kind === 'whiteboard' ? (
         <Suspense
           fallback={
             <div className="flex flex-1 items-center justify-center">
@@ -77,6 +70,10 @@ export function LocalChannelView({ channel }: { channel: LocalChannel }): React.
           }
         >
           <LocalWhiteboardView key={channel.id} channelId={channel.id} />
+        </Suspense>
+      ) : channel.kind === 'doc' ? (
+        <Suspense fallback={<DocLoading />}>
+          <LocalDocEditor key={channel.id} channelId={channel.id} channelName={channel.name} />
         </Suspense>
       ) : channel.kind === 'database' ? (
         <LocalDatabaseView key={channel.id} channelId={channel.id} />

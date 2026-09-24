@@ -3,6 +3,11 @@ import { internalMutation, type MutationCtx } from './_generated/server'
 import { internal } from './_generated/api'
 import type { Doc } from './_generated/dataModel'
 import { r2, reclaimAttachments } from './files'
+import { MAX_TIMERS_PER_USER, MIN_AUTOLOG_MS, computeElapsed } from './lib/timesheet'
+
+/** At most one timer per member on a given task, so a task's timers are bounded by the
+ *  workspace's member count in the worst case — take the same cap as a person's own list. */
+const MAX_TIMERS_PER_TASK = MAX_TIMERS_PER_USER * 10
 
 // Background cascade deletes. The public `remove` mutations (channels/workspaces/
 // threads) delete the top row immediately — so it vanishes from the UI — then
@@ -108,6 +113,46 @@ export const channel = internalMutation({
     for (const row of tasks) await ctx.db.delete(row._id)
     if (tasks.length === BATCH) more = true
 
+    // Running timers on this board — the board is gone, so there is nothing left to time.
+    const timers = await ctx.db
+      .query('timerStates')
+      .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+      .take(BATCH)
+    for (const row of timers) await ctx.db.delete(row._id)
+    if (timers.length === BATCH) more = true
+
+    const totals = await ctx.db
+      .query('taskTimeTotals')
+      .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+      .take(BATCH)
+    for (const row of totals) await ctx.db.delete(row._id)
+    if (totals.length === BATCH) more = true
+
+    // The board's time entries + their audit trail.
+    //
+    // These are DELETED, not orphaned, and the reason is worth stating: the timesheet is a
+    // view of this kanban channel, so an entry whose channel is gone can never be displayed
+    // again. Keeping it would preserve rows in the database that no longer exist as far as
+    // anyone using the app is concerned — the worst of both options. Deleting a channel
+    // already destroys its messages and its board; its hours go the same way, and
+    // the delete confirmation says so.
+    //
+    // (A task deletion is different and deliberately preserves its hours: the board is still
+    // there to show them. See `cleanup.taskTime`.)
+    const entries = await ctx.db
+      .query('timesheetEntries')
+      .withIndex('by_channel_started', (q) => q.eq('channelId', channelId))
+      .take(BATCH)
+    for (const row of entries) {
+      const audit = await ctx.db
+        .query('timesheetEntryEdits')
+        .withIndex('by_entry', (q) => q.eq('entryId', row._id))
+        .collect()
+      for (const edit of audit) await ctx.db.delete(edit._id)
+      await ctx.db.delete(row._id)
+    }
+    if (entries.length === BATCH) more = true
+
     // Database channel: its records can be many, so batch them like messages.
     const dbRecords = await ctx.db
       .query('databaseRecords')
@@ -123,23 +168,6 @@ export const channel = internalMutation({
       .take(BATCH)
     for (const row of formResponses) await ctx.db.delete(row._id)
     if (formResponses.length === BATCH) more = true
-
-    // Files uploaded INTO this channel's page (image/video/audio/file blocks). The block
-    // stored only the URL, so this back-reference table (`pageUploads`) is the only way to
-    // reclaim the R2 object on delete. Batched — a media-heavy page can have many.
-    const pageUploads = await ctx.db
-      .query('pageUploads')
-      .withIndex('by_channel', (q) => q.eq('channelId', channelId))
-      .take(BATCH)
-    for (const row of pageUploads) {
-      try {
-        await r2.deleteObject(ctx, row.key)
-      } catch {
-        // orphaned object, not a failure
-      }
-      await ctx.db.delete(row._id)
-    }
-    if (pageUploads.length === BATCH) more = true
 
     // Small, bounded sets — drain them once the big ones are done so we don't keep
     // re-reading them every batch.
@@ -158,27 +186,31 @@ export const channel = internalMutation({
         .collect()
       for (const row of columns) await ctx.db.delete(row._id)
 
-      const page = await ctx.db
-        .query('pages')
-        .withIndex('by_channel', (q) => q.eq('channelId', channelId))
-        .unique()
-      if (page) {
-        if (page.coverKey) {
-          try {
-            await r2.deleteObject(ctx, page.coverKey)
-          } catch {
-            // ignore
-          }
-        }
-        await ctx.db.delete(page._id)
-      }
-
-      // The whiteboard canvas — one row, like the page.
+      // The whiteboard canvas — one row per channel.
       const whiteboard = await ctx.db
         .query('whiteboards')
         .withIndex('by_channel', (q) => q.eq('channelId', channelId))
         .unique()
       if (whiteboard) await ctx.db.delete(whiteboard._id)
+
+      // The doc document — one row per channel, plus its uploaded cover object. Media
+      // *inside* the document (images/video/files) is left to `sweepOrphanUploads`: the
+      // keys are embedded in the ProseMirror JSON, and parsing a document here to reclaim
+      // them would put an editor-version-dependent walk in a cascade that must never fail.
+      const doc = await ctx.db
+        .query('channelDocs')
+        .withIndex('by_channel', (q) => q.eq('channelId', channelId))
+        .unique()
+      if (doc) {
+        if (doc.coverKey) {
+          try {
+            await r2.deleteObject(ctx, doc.coverKey)
+          } catch {
+            // A stale object is wasted storage, never a failed cascade.
+          }
+        }
+        await ctx.db.delete(doc._id)
+      }
 
       // Ephemeral typing rows — self-expiring and few, but drop them with the channel
       // so nothing lingers.
@@ -252,6 +284,17 @@ export const channelMember = internalMutation({
       .unique()
     if (read) await ctx.db.delete(read._id)
 
+    // Losing access to a private board has to stop the clock on it — otherwise the timer
+    // keeps running against a task they can no longer open. Their logged hours stay.
+    // A JS filter over ≤20 rows, so this needs no extra index.
+    const timers = await ctx.db
+      .query('timerStates')
+      .withIndex('by_workspace_user', (q) => q.eq('workspaceId', workspaceId).eq('userId', userId))
+      .take(MAX_TIMERS_PER_USER)
+    for (const timer of timers) {
+      if (timer.channelId === channelId) await ctx.db.delete(timer._id)
+    }
+
     // Notifications CAN be many — batch, and reschedule while a batch stays full.
     const notifications = await ctx.db
       .query('notifications')
@@ -307,6 +350,94 @@ export const sharedChannelGuest = internalMutation({
 })
 
 /** Drain a thread's replies (and their reactions/attachments/notifications). */
+/**
+ * A deleted task's time state.
+ *
+ * Its timers and its rollup go; its logged **hours stay**, keyed to the snapshot columns on
+ * the entry. Deleting a card is a board-tidying action, not a decision to erase what people
+ * worked on — and a teammate tidying up must not silently delete your billable history.
+ *
+ * A timer that was *running* when the task vanished is auto-logged rather than dropped:
+ * silently discarding someone's 40 minutes because a colleague deleted the card is data
+ * loss dressed up as a cascade. Below a minute it's noise, so it goes.
+ *
+ * Bounded without batching: there is at most one timer per member per task, and exactly one
+ * totals row.
+ */
+export const taskTime = internalMutation({
+  args: { taskId: v.id('kanbanTasks'), channelId: v.id('channels') },
+  handler: async (ctx, { taskId, channelId }) => {
+    const now = Date.now()
+    const timers = await ctx.db
+      .query('timerStates')
+      .withIndex('by_task', (q) => q.eq('taskId', taskId))
+      .take(MAX_TIMERS_PER_TASK)
+
+    for (const timer of timers) {
+      const elapsed = computeElapsed(timer, now)
+      if (elapsed >= MIN_AUTOLOG_MS) {
+        const task = await ctx.db.get(timer.taskId)
+        const channel = await ctx.db.get(channelId)
+        const user = await ctx.db.get(timer.userId)
+        await ctx.db.insert('timesheetEntries', {
+          workspaceId: timer.workspaceId,
+          // Keep `channelId` — only the TASK is gone, and the board's timesheet is the one
+          // place these hours can be seen. Dropping it would preserve the row in the
+          // database and make it unreachable in the product, which is the same as losing
+          // it. `taskId` is deliberately absent: that document no longer exists.
+          channelId,
+          taskTitle: task?.title ?? 'Deleted task',
+          channelName: channel?.name ?? 'board',
+          userName: user?.name ?? 'Member',
+          userId: timer.userId,
+          startedAt: Math.max(timer._creationTime, now - elapsed),
+          durationMs: elapsed,
+          trackedMs: elapsed,
+          source: 'timer',
+          note: 'Task was deleted while this timer was running'
+        })
+      }
+      await ctx.db.delete(timer._id)
+    }
+
+    // The totals row goes with the task — which is why the auto-logged entry above
+    // deliberately does not bump it.
+    const totals = await ctx.db
+      .query('taskTimeTotals')
+      .withIndex('by_task', (q) => q.eq('taskId', taskId))
+      .unique()
+    if (totals) await ctx.db.delete(totals._id)
+  }
+})
+
+/**
+ * A deleted column's tasks, in batches.
+ *
+ * `boards.removeColumn` used to delete up to 500 tasks inline. Each task now also carries
+ * timers and a rollup, so that would blow a mutation's document limit — hence the move to
+ * the standard batched shape. The column row is already gone; `by_column_order` still
+ * resolves by its id.
+ */
+export const column = internalMutation({
+  args: { columnId: v.id('kanbanColumns'), channelId: v.id('channels') },
+  handler: async (ctx, { columnId, channelId }) => {
+    const tasks = await ctx.db
+      .query('kanbanTasks')
+      .withIndex('by_column_order', (q) => q.eq('columnId', columnId))
+      .take(BATCH)
+    for (const task of tasks) {
+      await ctx.db.delete(task._id)
+      await ctx.scheduler.runAfter(0, internal.cleanup.taskTime, {
+        taskId: task._id,
+        channelId
+      })
+    }
+    if (tasks.length === BATCH) {
+      await ctx.scheduler.runAfter(0, internal.cleanup.column, { columnId, channelId })
+    }
+  }
+})
+
 export const thread = internalMutation({
   args: { threadId: v.id('threads') },
   handler: async (ctx, { threadId }) => {
@@ -362,6 +493,17 @@ export const member = internalMutation({
       .take(BATCH)
     for (const row of channelMemberships) await ctx.db.delete(row._id)
     if (channelMemberships.length === BATCH) more = true
+
+    // Their running timers stop. Their `timesheetEntries` deliberately STAY — the same rule
+    // as their authored messages: the hours were worked, and payroll/billing history can't
+    // depend on someone still being in the workspace. `userId` stays resolvable (the `users`
+    // row survives leaving) and `userName` covers a hard account deletion.
+    const timers = await ctx.db
+      .query('timerStates')
+      .withIndex('by_workspace_user', (q) => q.eq('workspaceId', workspaceId).eq('userId', userId))
+      .take(BATCH)
+    for (const row of timers) await ctx.db.delete(row._id)
+    if (timers.length === BATCH) more = true
 
     // Voice presence is one row per user (upsert) — drop it if it's in this workspace.
     const presence = await ctx.db
@@ -437,6 +579,41 @@ export const workspace = internalMutation({
       await ctx.db.delete(member._id)
     }
     if (members.length === BATCH) {
+      await ctx.scheduler.runAfter(0, internal.cleanup.workspace, { workspaceId })
+      return
+    }
+
+    // The time ledger + its audit trail. This is the ONLY place a `timesheetEntries` row is
+    // ever really deleted — every other cascade nulls its FKs and leaves the hours standing.
+    // Both grow without bound over a workspace's life, so both are batched.
+    const timeEntries = await ctx.db
+      .query('timesheetEntries')
+      .withIndex('by_workspace_started', (q) => q.eq('workspaceId', workspaceId))
+      .take(BATCH)
+    for (const row of timeEntries) await ctx.db.delete(row._id)
+    if (timeEntries.length === BATCH) {
+      await ctx.scheduler.runAfter(0, internal.cleanup.workspace, { workspaceId })
+      return
+    }
+
+    const timeEdits = await ctx.db
+      .query('timesheetEntryEdits')
+      .withIndex('by_workspace_at', (q) => q.eq('workspaceId', workspaceId))
+      .take(BATCH)
+    for (const row of timeEdits) await ctx.db.delete(row._id)
+    if (timeEdits.length === BATCH) {
+      await ctx.scheduler.runAfter(0, internal.cleanup.workspace, { workspaceId })
+      return
+    }
+
+    // Any timers that outlived their channel cascade (a workspace with no boards left, or a
+    // timer whose channel batch hasn't drained yet). Bounded per pass.
+    const staleTimers = await ctx.db
+      .query('timerStates')
+      .withIndex('by_workspace_user', (q) => q.eq('workspaceId', workspaceId))
+      .take(BATCH)
+    for (const row of staleTimers) await ctx.db.delete(row._id)
+    if (staleTimers.length === BATCH) {
       await ctx.scheduler.runAfter(0, internal.cleanup.workspace, { workspaceId })
       return
     }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Kanban as Kanban2, Plus } from '@phosphor-icons/react'
 
 import { Button } from '@renderer/components/ui/button'
@@ -55,7 +55,8 @@ export function BoardView({
   onRenameColumn,
   onDeleteColumn,
   onReorder,
-  onUseDefaultColumns
+  onUseDefaultColumns,
+  reordering = false
 }: {
   columns: BoardColumn[]
   members: BoardMember[]
@@ -69,6 +70,9 @@ export function BoardView({
   onReorder: (order: BoardOrder) => void
   /** Offered only on an empty board — see `EmptyBoard`. */
   onUseDefaultColumns: () => void
+  /** A drop is still being saved. Dragging is disabled until it lands, so a second drag
+   *  can't compute its layout from a board the server hasn't caught up with. */
+  reordering?: boolean
 }): React.JSX.Element {
   const [dialog, setDialog] = useState<DialogState | null>(null)
   /** Grab the board's background to pan it, instead of reaching for the scrollbar.
@@ -80,6 +84,23 @@ export function BoardView({
    *  it back. Dropping it on `onDragEnd` would snap the board to stale data for
    *  the length of the round-trip. */
   const [local, setLocal] = useState<Record<string, KanbanTask[]> | null>(null)
+
+  /**
+   * The same layout, in a ref — and this is load-bearing, not a convenience.
+   *
+   * For a **same-column** reorder the primitive does the `arrayMove` inside its own
+   * `handleDragEnd`: it calls `onValueChange(next)` and then, in the same synchronous tick,
+   * calls our `onDragEnd`. React hasn't re-rendered yet, so `local` still holds the layout
+   * from *before* the drop — persisting it saved the card's previous position and the board
+   * then snapped back to it. Writing the ref synchronously here is what makes the final
+   * position available to `onDragEnd`. `_zinx` solves it the same way, with the same
+   * primitive.
+   */
+  const localRef = useRef<Record<string, KanbanTask[]> | null>(null)
+  const applyLocal = useCallback((next: Record<string, KanbanTask[]>) => {
+    localRef.current = next
+    setLocal(next)
+  }, [])
 
   const names = useMemo(
     () => Object.fromEntries(columns.map((column) => [column.id, column.title])),
@@ -95,6 +116,7 @@ export function BoardView({
   // `[signature]`-guarded mirror the channel sidebar uses for its DnD state. A
   // single set, so it can't cascade.
   useEffect(() => {
+    localRef.current = null
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLocal(null)
   }, [serverSignature])
@@ -109,23 +131,39 @@ export function BoardView({
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-hidden bg-muted/20 p-4">
+    <div
+      className={cn(
+        'min-h-0 flex-1 overflow-hidden bg-muted/20 p-4 transition-opacity',
+        // A quiet cue that the drop is still saving — enough to explain why the board won't
+        // accept another drag yet, without the flicker of a spinner on a sub-second write.
+        reordering && 'pointer-events-none opacity-70'
+      )}
+      aria-busy={reordering || undefined}
+    >
       <Kanban
         value={value}
-        // Fires on every pointer move during a drag, so it only touches local state.
-        onValueChange={setLocal}
+        // Fires on every pointer move during a drag, so it only touches local state (and
+        // the ref, synchronously — see `applyLocal`).
+        onValueChange={applyLocal}
+        // Reads the REF, never `local`: the primitive's final `arrayMove` lands one tick
+        // before React re-renders, so the state variable is a drop behind here.
         onDragEnd={() => {
-          if (!local || layoutSignature(local) === serverSignature) return
+          const dropped = localRef.current
+          if (!dropped || layoutSignature(dropped) === serverSignature) return
           onReorder({
-            columnIds: Object.keys(local),
+            columnIds: Object.keys(dropped),
             taskIdsByColumn: Object.fromEntries(
-              Object.entries(local).map(([columnId, tasks]) => [
+              Object.entries(dropped).map(([columnId, tasks]) => [
                 columnId,
                 tasks.map((task) => task.id)
               ])
             )
           })
         }}
+        // Freeze the board while the previous drop is still saving. Without this a second
+        // drag races the first: it computes its layout from a board the server hasn't caught
+        // up with, and the two reorders overwrite each other's positions.
+        disabled={reordering}
         getItemValue={(task: KanbanTask) => task.id}
         className="h-full"
       >

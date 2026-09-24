@@ -26,7 +26,10 @@ export interface DirectoryMember {
 export interface DirectoryChannel {
   id: string
   name: string
-  kind: 'chat' | 'voice' | 'page' | 'kanban' | 'whiteboard'
+  /** Every real channel kind — the `#` autocomplete and a rendered `#pill` must be able to
+   *  name any channel, and each shows its kind icon. Keep in step with `CHANNEL_KINDS`
+   *  (`convex/lib/channels.ts`); `dm` is excluded, as it is there. */
+  kind: 'chat' | 'voice' | 'kanban' | 'whiteboard' | 'doc' | 'database' | 'form'
 }
 
 /** Everything the chat surface needs to turn ids back into people and channels:

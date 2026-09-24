@@ -19,7 +19,7 @@ import { cn } from '@renderer/lib/utils'
  * supplies its own data + routing (an online `<Link>` to `/w/…` vs an offline one to
  * `/local/…`, Convex mutations vs local-store actions); everything you *see* comes from here.
  *
- * This is the same presentational-adapter split that `PageEditor`/`BoardView` already use —
+ * This is the same presentational-adapter split that `BoardView` already uses —
  * one look, two data sources.
  */
 

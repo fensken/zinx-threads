@@ -4,10 +4,10 @@ import { useMutation } from 'convex/react'
 import {
   Check,
   ClipboardText,
-  FileText,
   Hash,
   Kanban,
   LockSimple,
+  Notebook,
   PenNib,
   SpeakerHigh,
   Table
@@ -30,23 +30,23 @@ import { cn } from '@renderer/lib/utils'
 import { errorMessage } from '@renderer/lib/convex-error'
 
 export type ChannelDialogKind =
-  'chat' | 'voice' | 'page' | 'kanban' | 'whiteboard' | 'database' | 'form'
+  'chat' | 'voice' | 'kanban' | 'whiteboard' | 'doc' | 'database' | 'form'
 
 const KIND_META: Record<ChannelDialogKind, { label: string; Icon: typeof Hash }> = {
   chat: { label: 'Text', Icon: Hash },
   voice: { label: 'Voice', Icon: SpeakerHigh },
-  page: { label: 'Page', Icon: FileText },
   kanban: { label: 'Board', Icon: Kanban },
   whiteboard: { label: 'Whiteboard', Icon: PenNib },
+  doc: { label: 'Doc', Icon: Notebook },
   database: { label: 'Database', Icon: Table },
   form: { label: 'Form', Icon: ClipboardText }
 }
 const ALL_KINDS: ChannelDialogKind[] = [
   'chat',
   'voice',
-  'page',
   'kanban',
   'whiteboard',
+  'doc',
   'database',
   'form'
 ]

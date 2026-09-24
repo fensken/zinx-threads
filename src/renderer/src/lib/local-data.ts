@@ -11,9 +11,9 @@ import {
   type LocalChannel,
   type LocalData,
   type LocalDatabase,
+  type LocalDoc,
   type LocalGroup,
   type LocalWhiteboard,
-  type LocalPage,
   type LocalWorkspace
 } from '@renderer/store/local-store'
 
@@ -21,7 +21,7 @@ import {
  * Persistence for the offline workspaces.
  *
  * Desktop: **one folder per workspace** on disk (`userData/offline-workspaces/<id>/`
- * — `workspace.json` + `pages/<channelId>.json` + `boards/<channelId>.json`), fully
+ * — `workspace.json` + `boards|whiteboards|databases|docs/<channelId>.json`), fully
  * isolated from each other, plus a root `profile.json` (device profile + current
  * workspace). The store is hydrated from the folders once, then every change is
  * debounced and only the files whose content actually changed are rewritten
@@ -46,10 +46,10 @@ function emptyData(): LocalData {
     profile: { name: 'You' },
     channels: [],
     groups: [],
-    pages: {},
     boards: {},
     whiteboards: {},
-    databases: {}
+    databases: {},
+    docs: {}
   }
 }
 
@@ -61,10 +61,10 @@ function dataOf(): LocalData {
     profile: s.profile,
     channels: s.channels,
     groups: s.groups,
-    pages: s.pages,
     boards: s.boards,
     whiteboards: s.whiteboards,
-    databases: s.databases
+    databases: s.databases,
+    docs: s.docs
   }
 }
 
@@ -85,7 +85,6 @@ function tryParse<T>(raw: string | null | undefined): T | null {
 interface LegacyV0 {
   channels?: Omit<LocalChannel, 'workspaceId'>[]
   groups?: Omit<LocalGroup, 'workspaceId'>[]
-  pages?: Record<string, LocalPage>
   boards?: Record<string, LocalBoard>
 }
 
@@ -110,11 +109,11 @@ function readLegacy(): LocalData | null {
     profile: { name: 'You' },
     channels: (state.channels ?? []).map((channel) => ({ ...channel, workspaceId })),
     groups: (state.groups ?? []).map((group) => ({ ...group, workspaceId })),
-    pages: state.pages ?? {},
     boards: state.boards ?? {},
-    // v0 predates whiteboards + databases entirely — there are none to carry over.
+    // v0 predates whiteboards, databases and docs entirely — none to carry over.
     whiteboards: {},
-    databases: {}
+    databases: {},
+    docs: {}
   }
 }
 
@@ -134,7 +133,8 @@ function writeLegacy(data: LocalData): void {
 // ---------------------------------------------------------------------------
 
 /** What a `workspace.json` holds — the workspace's identity + its channel/group
- *  structure. Pages/boards live beside it as their own files. */
+ *  structure. Each channel's content — board, whiteboard, database or doc — lives beside
+ *  it as its own file. */
 interface WorkspaceFileJson {
   id: string
   name: string
@@ -175,17 +175,17 @@ function parseSnapshot(snapshot: OfflineSnapshot): LocalData {
       data.groups.push({ ...group, workspaceId: ws.id })
     }
     for (const [rel, content] of Object.entries(ws.files)) {
-      const match = rel.match(/^(pages|boards|whiteboards|databases)\/(.+)\.json$/)
+      const match = rel.match(/^(boards|whiteboards|databases|docs)\/(.+)\.json$/)
       if (!match) continue
-      const parsed = tryParse<LocalPage & LocalBoard & LocalWhiteboard & LocalDatabase>(content)
+      const parsed = tryParse<LocalBoard & LocalWhiteboard & LocalDatabase & LocalDoc>(content)
       if (!parsed) {
         console.error(`[offline] skipping corrupt file ${ws.id}/${rel}`)
         continue
       }
       // All are keyed by the CHANNEL's id — the file name IS the channel id.
-      if (match[1] === 'pages') data.pages[match[2]] = parsed
       else if (match[1] === 'whiteboards') data.whiteboards[match[2]] = parsed
       else if (match[1] === 'databases') data.databases[match[2]] = parsed
+      else if (match[1] === 'docs') data.docs[match[2]] = parsed
       else data.boards[match[2]] = parsed
     }
   }
@@ -229,8 +229,6 @@ function buildFileMap(data: LocalData): Map<string, string> {
     }
     map.set(`${ws.id}/workspace.json`, JSON.stringify(meta, null, 2))
     for (const channel of channels) {
-      const page = data.pages[channel.id]
-      if (page) map.set(`${ws.id}/pages/${channel.id}.json`, JSON.stringify(page, null, 2))
       const board = data.boards[channel.id]
       if (board) map.set(`${ws.id}/boards/${channel.id}.json`, JSON.stringify(board, null, 2))
       const whiteboard = data.whiteboards[channel.id]
@@ -241,6 +239,8 @@ function buildFileMap(data: LocalData): Map<string, string> {
       if (database) {
         map.set(`${ws.id}/databases/${channel.id}.json`, JSON.stringify(database, null, 2))
       }
+      const doc = data.docs[channel.id]
+      if (doc) map.set(`${ws.id}/docs/${channel.id}.json`, JSON.stringify(doc, null, 2))
     }
   }
   return map

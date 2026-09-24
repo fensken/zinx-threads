@@ -363,40 +363,13 @@ describe('read-only channels (postingPolicy: selected)', () => {
   })
 })
 
-describe('private non-chat channels (pages / boards / whiteboards / voice)', () => {
+describe('private non-chat channels (boards / whiteboards / voice)', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
   // The same rule as chat, and the same load-bearing case: an ADMIN who isn't a member of
-  // a private page/board/whiteboard/voice channel gets NOTHING — read or write. These route
+  // a private board/whiteboard/voice channel gets NOTHING — read or write. These route
   // through `getChannelAccess` exactly like `messages.*` do.
-
-  it('a private PAGE is off-limits to an admin who is not a member', async () => {
-    const { asAlice, asBob, asCarol, workspaceId, bobId } = await setup()
-    const channelId = await asAlice.mutation(api.channels.create, {
-      workspaceId,
-      name: 'private-page',
-      kind: 'page',
-      visibility: 'private'
-    })
-    await asAlice.mutation(api.channelMembers.add, { channelId, userIds: [bobId] })
-    await asAlice.mutation(api.pages.saveContent, { channelId, content: '[{"secret":true}]' })
-
-    // A member reads + writes.
-    expect(await asBob.query(api.pages.getByChannel, { channelId })).not.toBeNull()
-    await expect(
-      asBob.mutation(api.pages.saveMeta, { channelId, title: 'Plans' })
-    ).resolves.toBeNull()
-
-    // Carol (admin, not in the room): nothing.
-    expect(await asCarol.query(api.pages.getByChannel, { channelId })).toBeNull()
-    await expect(
-      asCarol.mutation(api.pages.saveContent, { channelId, content: '[]' })
-    ).rejects.toThrow()
-    await expect(
-      asCarol.mutation(api.pages.saveMeta, { channelId, title: 'Hack' })
-    ).rejects.toThrow()
-  })
 
   it('a private BOARD is off-limits to an admin who is not a member', async () => {
     const { asAlice, asBob, asCarol, workspaceId, bobId } = await setup()

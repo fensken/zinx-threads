@@ -13,13 +13,20 @@ export interface SuggestionApplyContext {
   /** The document range covering the trigger char + the typed query. */
   range: { from: number; to: number }
   openGif: () => void
-  openEmoji: () => void
+  /** `anchor` (when given) is where the picker should appear — the caret rect. The doc
+   *  editor's `/emoji` passes one, since it has no button to anchor to; the chat
+   *  composer's picker hangs off its own toolbar button and ignores it. */
+  openEmoji: (anchor?: DOMRect) => void
+  /** The page editor's `/bookmark`. Optional because the chat composer has no such command —
+   *  and because `window.prompt` is unavailable (Electron refuses it), so the host has to own
+   *  a dialog. */
+  openBookmark?: () => void
 }
 
 /** The left-hand visual for a menu row. Kept as a *token*, not a `ReactNode`, so
  *  entry builders stay in plain `.ts` and the menu owns all rendering. */
 export type SuggestionIcon =
-  'chat' | 'voice' | 'page' | 'kanban' | 'whiteboard' | 'group' | 'silent'
+  'chat' | 'voice' | 'kanban' | 'whiteboard' | 'doc' | 'database' | 'form' | 'group' | 'silent'
 
 export interface SuggestionEntry {
   id: string
@@ -31,6 +38,10 @@ export interface SuggestionEntry {
   keywords?: string[]
   avatar?: { initials: string; color: string; image?: string | null }
   icon?: SuggestionIcon
+  /** An already-rendered icon, for callers whose vocabulary is bigger than the token set
+   *  above — the page editor's block menu needs one per block type. `.tsx` callers only;
+   *  the chat composer stays on `icon`. */
+  iconNode?: React.ReactNode
   apply: (context: SuggestionApplyContext) => void
 }
 

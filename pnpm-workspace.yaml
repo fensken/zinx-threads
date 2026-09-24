@@ -5,6 +5,27 @@ allowBuilds:
   electron: true
   electron-winstaller: true
   esbuild: true
+
+# ── ProseMirror must resolve to EXACTLY ONE copy ──────────────────────────────
+# ProseMirror identifies nodes, schemas and plugins with `instanceof`, so two copies of
+# `prosemirror-model` make every cross-copy check fail *silently*: `Fragment.from` throws
+# "looks like multiple versions of prosemirror-model were loaded", and — worse — the base
+# keymap from one copy stops acting on state from the other, so **Enter stops splitting
+# blocks and lists / quotes / tables stop toggling** while the editor still looks fine.
+#
+# This is a pnpm-specific trap, and it is exactly why the doc editor worked in `_zinx` and
+# not here on identical TipTap versions: `@tiptap/pm` pins `prosemirror-model@1.25.11`,
+# while `prosemirror-schema-list` and friends resolve `^1.25.9` on their own. pnpm's
+# isolated store honours both; bun (which `_zinx` uses) hoists them flat to one.
+#
+# Note the settings home: pnpm 11 **ignores** `"pnpm": { "overrides" }` in package.json and
+# says so in a warning. `resolve.dedupe` in the Vite configs is the belt to this braces —
+# keep both. On a TipTap upgrade, re-pin these to whatever `@tiptap/pm` depends on.
+overrides:
+  prosemirror-model: 1.25.11
+  prosemirror-state: 1.4.4
+  prosemirror-transform: 1.12.0
+  prosemirror-view: 1.42.0
 minimumReleaseAgeExclude:
   - '@openai/codex-sdk@0.144.3'
   - '@openai/codex@0.144.3'

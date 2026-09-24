@@ -3,7 +3,7 @@
  * Grid/Board components take these (keyed on a plain `id`), so BOTH the online adapter
  * (`real-database-view.tsx`, mapping Convex `_id`→`id`) and the offline adapter
  * (`local/local-database-view.tsx`, reading the local store) render through the same
- * components — the same "one look, two data sources" split `PageEditor`/`BoardView` use.
+ * components — the same "one look, two data sources" split `BoardView` uses.
  */
 export type DbFieldType =
   'text' | 'longText' | 'number' | 'select' | 'multiSelect' | 'checkbox' | 'date' | 'user' | 'url'

@@ -6,7 +6,6 @@ import Image from '@tiptap/extension-image'
 import { Placeholder } from '@tiptap/extensions'
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion'
 import {
-  BellSlash,
   Code,
   CodeBlock,
   LinkSimple,
@@ -16,7 +15,6 @@ import {
   Paperclip,
   Plus,
   Quotes,
-  ShieldStar,
   Smiley,
   TextAa,
   TextB,
@@ -24,8 +22,7 @@ import {
   TextStrikethrough,
   X
 } from '@phosphor-icons/react'
-import { Avatar } from '@renderer/components/common/avatar'
-import { ChannelKindIcon } from '@renderer/components/chat/channel-kind-icon'
+import { SuggestionGlyph } from '@renderer/components/common/suggestion-glyph'
 import {
   ComposerContext,
   useChatComposer,
@@ -692,29 +689,6 @@ function SuggestionMenuList({
       </div>
     </div>
   )
-}
-
-function SuggestionGlyph({ entry }: { entry: SuggestionEntry }): React.JSX.Element | null {
-  if (entry.avatar) {
-    return (
-      <Avatar
-        initials={entry.avatar.initials}
-        color={entry.avatar.color}
-        image={entry.avatar.image}
-        className="size-6 text-[10px]"
-      />
-    )
-  }
-  if (entry.icon === 'group') {
-    return <ShieldStar className="size-5 shrink-0 text-muted-foreground" weight="fill" />
-  }
-  if (entry.icon === 'silent') {
-    return <BellSlash className="size-5 shrink-0 text-muted-foreground" weight="fill" />
-  }
-  if (entry.icon) {
-    return <ChannelKindIcon kind={entry.icon} className="size-5 shrink-0 text-muted-foreground" />
-  }
-  return null
 }
 
 // ── Parts ────────────────────────────────────────────────────────────────────

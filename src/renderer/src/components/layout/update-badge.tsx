@@ -45,7 +45,8 @@ export function UpdateBadge(): React.JSX.Element | null {
 
   if (phase === 'idle' || phase === 'checking') return null
 
-  const base = 'app-no-drag ml-auto mr-1 flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2'
+  // No `ml-auto`: the title bar's right-hand group owns the alignment.
+  const base = 'app-no-drag mr-1 flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2'
 
   // Downloading is a status, not an action — a button here would do nothing when clicked.
   if (phase === 'downloading') {

@@ -37,9 +37,9 @@ async function assertGroupInWorkspace(
 const channelKind = v.union(
   v.literal('chat'),
   v.literal('voice'),
-  v.literal('page'),
   v.literal('kanban'),
   v.literal('whiteboard'),
+  v.literal('doc'),
   v.literal('database'),
   v.literal('form')
 )
@@ -163,7 +163,10 @@ export const create = mutation({
       })
     }
     // A board opens with the default columns rather than a blank canvas.
-    // (`page`/`whiteboard` channels need no seeding — they just open empty.)
+    // (`whiteboard` and `doc` channels need no seeding — a whiteboard opens as an empty
+    // canvas, and a doc's row is born from its first real edit; seeding one up front would
+    // create a document nobody has touched, and its title from the channel name is applied
+    // on the first save anyway.)
     if (kind === 'kanban') {
       await seedBoardColumns(ctx, { workspaceId, channelId, userId: user._id })
     }
@@ -379,7 +382,7 @@ export const reorder = mutation({
 
 /** Delete a channel (member-only). Removes the channel row now — so it vanishes
  *  from the sidebar immediately — and schedules `cleanup.channel` to drain its
- *  messages/threads/reactions/reads/notifications/kanban/page in bounded batches
+ *  messages/threads/reactions/reads/notifications/kanban in bounded batches
  *  (they can far exceed a single mutation's document limit). */
 export const remove = mutation({
   args: { channelId: v.id('channels') },

@@ -3,22 +3,18 @@ import { useQuery } from 'convex-helpers/react/cache/hooks'
 import { api } from '@convex/_generated/api'
 import type { Id } from '@convex/_generated/dataModel'
 import { Spinner } from '@renderer/components/ui/spinner'
-import { RealBoardView } from '../kanban/real-board-view'
+import { DocLoading } from '@renderer/components/doc/doc-loading'
+import { KanbanChannelView } from '../kanban/kanban-channel-view'
 import { RealDatabaseView } from '@renderer/components/database/real-database-view'
 import { RealFormEditor } from '@renderer/components/form/real-form-editor'
 import { RealChannelView } from '@renderer/components/chat/real-channel-view'
 import { RealChannelHeader } from '@renderer/components/chat/real-channel-header'
 import { ChannelDirectoryScope } from '@renderer/components/chat/channel-directory-scope'
 
-// Page editor, voice room and whiteboard are large chunks (BlockNote ~900kB, LiveKit,
-// Excalidraw ~1MB) — only load them for the channel kinds that use them. A static import
-// of any of these puts it in the main bundle and every user pays for it, whether or not
-// they ever open that kind of channel.
-const RealPageEditor = lazy(() =>
-  import('@renderer/components/page/real-page-editor').then((module) => ({
-    default: module.RealPageEditor
-  }))
-)
+// The voice room and the whiteboard are large chunks (LiveKit, Excalidraw ~1MB) — only
+// load them for the channel kinds that use them. A static import of either puts it in the
+// main bundle and every user pays for it, whether or not they ever open that kind of
+// channel.
 const RealVoiceView = lazy(() =>
   import('@renderer/components/voice/voice-room').then((module) => ({
     default: module.RealVoiceView
@@ -27,6 +23,13 @@ const RealVoiceView = lazy(() =>
 const RealWhiteboardView = lazy(() =>
   import('@renderer/components/whiteboard/real-whiteboard-view').then((module) => ({
     default: module.RealWhiteboardView
+  }))
+)
+// Likewise the doc editor: TipTap plus ~20 highlight.js grammars, Vidstack, and (only if
+// the document actually holds one) Excalidraw. A workspace with no docs never loads it.
+const RealDocEditor = lazy(() =>
+  import('@renderer/components/doc/real-doc-editor').then((module) => ({
+    default: module.RealDocEditor
   }))
 )
 
@@ -72,18 +75,8 @@ export function RealChannelPage({
   }
 
   const body =
-    channel.kind === 'page' ? (
-      <Suspense
-        fallback={
-          <div className="flex flex-1 items-center justify-center">
-            <Spinner className="size-6 text-muted-foreground" />
-          </div>
-        }
-      >
-        <RealPageEditor key={channel._id} channel={channel} />
-      </Suspense>
-    ) : channel.kind === 'kanban' ? (
-      <RealBoardView key={channel._id} channel={channel} />
+    channel.kind === 'kanban' ? (
+      <KanbanChannelView key={channel._id} channel={channel} />
     ) : channel.kind === 'database' ? (
       <RealDatabaseView key={channel._id} channel={channel} />
     ) : channel.kind === 'form' ? (
@@ -92,6 +85,14 @@ export function RealChannelPage({
         channel={channel}
         canManage={!isGuest && (resolved?.role === 'owner' || resolved?.role === 'admin')}
       />
+    ) : channel.kind === 'doc' ? (
+      // Wrapped in the directory scope so `@person` and `#channel` pills inside the
+      // document resolve — the same context chat messages read from.
+      <ChannelDirectoryScope channelId={channel._id}>
+        <Suspense fallback={<DocLoading />}>
+          <RealDocEditor key={channel._id} channelId={channel._id} channelName={channel.name} />
+        </Suspense>
+      </ChannelDirectoryScope>
     ) : channel.kind === 'whiteboard' ? (
       <Suspense
         fallback={
